@@ -12,5 +12,10 @@ node_modules/
 out/
 dist/
 build/
+
+# TypeScript build cache
+*.tsbuildinfo
+
+# Docs and design files (untracked)
 Docs/
 Operator Zero Design Files/

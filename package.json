@@ -1,0 +1,46 @@
+{
+  "name": "operator-zero",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "0.97.1",
+    "@sentry/nextjs": "10.53.1",
+    "@supabase/ssr": "0.10.3",
+    "@supabase/supabase-js": "2.106.1",
+    "@tailwindcss/postcss": "^4.3.0",
+    "@upstash/ratelimit": "2.0.8",
+    "@upstash/redis": "1.38.0",
+    "@vercel/analytics": "2.0.1",
+    "drizzle-orm": "0.45.2",
+    "inngest": "4.4.0",
+    "libsodium-wrappers": "0.8.4",
+    "next": "16.2.6",
+    "postgres": "3.4.9",
+    "react": "19.1.0",
+    "react-dom": "19.1.0",
+    "voyageai": "0.2.1",
+    "zod": "^3.24.0"
+  },
+  "devDependencies": {
+    "@types/libsodium-wrappers": "^0.7.14",
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@vitejs/plugin-react": "6.0.2",
+    "drizzle-kit": "0.31.10",
+    "eslint": "^9.0.0",
+    "eslint-config-next": "16.2.6",
+    "postcss": "^8.5.0",
+    "tailwindcss": "^4.1.0",
+    "typescript": "^5.8.0",
+    "vitest": "4.1.7"
+  }
+}
