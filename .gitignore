@@ -1,0 +1,16 @@
+# local env files
+.env*.local
+
+# macOS
+.DS_Store
+
+# dependencies
+node_modules/
+
+# build output
+.next/
+out/
+dist/
+build/
+Docs/
+Operator Zero Design Files/
