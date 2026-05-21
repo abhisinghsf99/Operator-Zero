@@ -165,7 +165,7 @@ Explicitly excluded for v1. Documented to prevent scope creep.
 
 ## Traceability
 
-Pre-mapped to the four GSD phases (mirroring PRD phasing). The roadmapper validates 100% coverage and finalizes.
+Validated by roadmapper 2026-05-21. Coverage confirmed 87/87 v1 requirements mapped across 4 phases. All statuses initialized to Pending.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
@@ -192,4 +192,4 @@ Pre-mapped to the four GSD phases (mirroring PRD phasing). The roadmapper valida
 
 ---
 *Requirements defined: 2026-05-21*
-*Last updated: 2026-05-21 after initial definition*
+*Last updated: 2026-05-21 after roadmapper validation — 87/87 mapped, ROADMAP.md and STATE.md written*
