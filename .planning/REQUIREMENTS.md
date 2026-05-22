@@ -70,12 +70,12 @@
 - [ ] **AGENT-02**: v1 read tools (products, orders, inventory, pages, redirects, gmail threads, recall memory, search activity, brand voice) are available and always safe
 - [ ] **AGENT-03**: v1 write tools (descriptions, meta fields, image alt, status, price, inventory, redirects, page content, gmail draft/send) are gated by automation level
 - [ ] **AGENT-04**: Tool inputs are validated against Zod schemas; invalid input returns a correctable error to the model
-- [ ] **AGENT-05**: Agent records durable memory items silently (record/update/soft-delete) with embeddings for semantic recall
+- [x] **AGENT-05**: Agent records durable memory items silently (record/update/soft-delete) with embeddings for semantic recall
 - [ ] **AGENT-06**: Agent errors are classified — transient → retry with backoff; auth → pause + reconnect; budget → degrade
 
 ### Workflows & Engine (WF)
 
-- [ ] **WF-01**: A workflow has name, description, trigger (schedule/event/manual), steps, automation level, status, and source attribution
+- [x] **WF-01**: A workflow has name, description, trigger (schedule/event/manual), steps, automation level, status, and source attribution
 - [ ] **WF-02**: The Workflow Engine executes multi-step runs durably via Inngest and resumes from the last checkpoint on failure
 - [ ] **WF-03**: L1 (manual) workflows prepare an action and wait for the user to trigger it — no approval entry
 - [ ] **WF-04**: L2 (approval-gated) workflows pause at execution boundaries, create an approval, and resume on approve/reject
