@@ -4,13 +4,13 @@ milestone: v1.0
 milestone_name: milestone
 status: executing
 stopped_at: Roadmap and STATE initialized; REQUIREMENTS.md traceability confirmed 87/87 mapped
-last_updated: "2026-05-22T07:28:19.996Z"
-last_activity: 2026-05-22 -- Phase 02 execution started
+last_updated: "2026-05-22T07:39:31.700Z"
+last_activity: 2026-05-22
 progress:
   total_phases: 4
   completed_phases: 1
   total_plans: 12
-  completed_plans: 4
+  completed_plans: 5
   percent: 25
 ---
 
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-05-21)
 ## Current Position
 
 Phase: 02 (foundation-prove-the-agent) — EXECUTING
-Plan: 1 of 8
-Status: Executing Phase 02
-Last activity: 2026-05-22 -- Phase 02 execution started
+Plan: 2 of 8
+Status: Ready to execute
+Last activity: 2026-05-22
 
-Progress: [██████████] 100%
+Progress: [████░░░░░░] 42%
 
 ## Performance Metrics
 
@@ -52,6 +52,7 @@ Progress: [██████████] 100%
 - Trend: -
 
 *Updated after each plan completion*
+| Phase 02-foundation-prove-the-agent P01 | 35 | 3 tasks | 13 files |
 
 ## Accumulated Context
 
@@ -66,6 +67,10 @@ Recent decisions affecting current work:
 - [01-04] getClaims() returns {data: {claims}|null} not {data: {claims}} — destructure data first; RESEARCH.md pattern corrected in implementation
 - [01-04] validateNextParam rejects absolute and protocol-relative next params in OAuth callback — open-redirect guard (T-1-04-04)
 - [01-04] vitest.config.mts must exclude tests/e2e/** — Playwright test() conflicts with Vitest globals
+- [Phase ?]: [02-01] shadcn CLI bypassed — components written manually to shadcn v4 data-slot spec; identical output, avoids interactive TTY requirement
+- [Phase ?]: [02-01] @radix-ui/react-dialog added as Rule 3 (blocking) dependency for shadcn Dialog primitive
+- [Phase ?]: [02-01] Fonts via next/font/google (self-hosted at build) not CDN link — aligns with T-2-01-01 accept disposition, no user data in font requests
+- [Phase ?]: [02-01] Lucide icon mapping: GitBranch=Workflows, MessageSquare=Chat, Inbox=Approvals, Activity=Activity, Settings=Settings
 
 ### Pending Todos
 
@@ -79,6 +84,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-05-22T03:35:13.149Z
+Last session: 2026-05-22T07:39:23.131Z
 Stopped at: Roadmap and STATE initialized; REQUIREMENTS.md traceability confirmed 87/87 mapped
 Resume file: None

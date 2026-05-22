@@ -56,7 +56,7 @@
 
 - [ ] **CONV-01**: User can send a natural-language message and receive a streamed Orchestrator response (<2s first token p50)
 - [ ] **CONV-02**: User can describe a goal and the Orchestrator proposes a workflow plan (trigger + steps) with a "Save as Workflow" action
-- [ ] **CONV-03**: A live workflow build visualizer renders inline, assembling each step as the Orchestrator narrates it
+- [x] **CONV-03**: A live workflow build visualizer renders inline, assembling each step as the Orchestrator narrates it
 - [ ] **CONV-04**: Conversations are organized into threads, auto-named from first message or workflow context, listed reverse-chronologically
 - [ ] **CONV-05**: User can start a new thread that inherits brand voice + memory but carries no message history
 - [ ] **CONV-06**: Agent memory persists across threads — a decision made in one thread is recalled in another

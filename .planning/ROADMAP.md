@@ -48,7 +48,7 @@ Four phases ordered by moat depth: Phase 1 lays the infrastructure rails before 
 Plans:
 **Wave 1**
 
-- [ ] 02-01-PLAN.md — UI Foundation: shadcn/ui + OKLCH tokens + fonts + app-shell nav (wave 1)
+- [x] 02-01-PLAN.md — UI Foundation: shadcn/ui + OKLCH tokens + fonts + app-shell nav (wave 1)
 - [ ] 02-02-PLAN.md — Schema migration 0003 (22 tables + RLS + pgvector) + Wave-0 test scaffolds (wave 1)
 
 **Wave 2** *(blocked on Wave 1 completion)*
@@ -110,6 +110,6 @@ Plans:
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Infrastructure Foundation | 4/4 | Complete   | 2026-05-22 |
-| 2. Foundation — Prove the Agent | 0/8 | Planned | - |
+| 2. Foundation — Prove the Agent | 1/8 | In Progress|  |
 | 3. Ownership — The Portfolio | 0/TBD | Not started | - |
 | 4. Polish — Effortless Daily Use | 0/TBD | Not started | - |
