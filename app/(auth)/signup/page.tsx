@@ -17,7 +17,7 @@
 
 import { signUp } from "./actions";
 import Link from "next/link";
-import { useState, useActionState } from "react";
+import { useActionState } from "react";
 
 type SignUpState = { error: string } | null;
 
@@ -36,9 +36,10 @@ export default function SignUpPage() {
           Create your account
         </h1>
 
-        {/* Error banner */}
+        {/* Error banner — id="form-error" matches aria-describedby on the inputs below. */}
         {state?.error && (
           <div
+            id="form-error"
             role="alert"
             aria-live="polite"
             className="mb-4 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700"
