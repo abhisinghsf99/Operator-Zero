@@ -38,12 +38,12 @@ Sarah builds workflows in plain language and trusts the agent to run them — mo
 - [x] Workflow data model + Workflow Engine (Inngest execute function, durable L1/L2/L3 + L2 pause/resume) + agent runtime (chat + step paths) + 22-tool catalog
 - [x] Activity entries written for every agent action (idempotent, observability-before-effect)
 
-**Phase 2 — Ownership (make the portfolio visible)**
-- [ ] My Workflows landing surface (library grouped by status, recent activity strip, inline L1/L2/L3 toggle)
-- [ ] Workflow Detail page (visual definition, historical runs, inline-editable name/description/schedule/level, "Open in Chat", Run Now)
-- [ ] Activity log (chronological, filters, detail view with before/after, revert subject to drift rules, bulk revert)
-- [ ] Workflow versioning (10-version retention, restore, run-references-version)
-- [ ] Default landing surface flips Conversation → My Workflows
+**Phase 2 — Ownership (make the portfolio visible)** — _built & code-verified in GSD Phase 3 (2026-05-22); live validation pending human UAT (load/perf, usage metrics, live Realtime + accessibility) tracked in `03-HUMAN-UAT.md`. Not yet moved to Validated until confirmed valuable via real usage._
+- [x] My Workflows landing surface (library grouped by status, recent activity strip, inline L1/L2/L3 toggle)
+- [x] Workflow Detail page (visual definition, historical runs, inline-editable name/description/schedule/level, "Open in Chat", Run Now)
+- [x] Activity log (chronological, filters, detail view with before/after, revert subject to drift rules, atomic bulk revert)
+- [x] Workflow versioning (10-version retention, forward-only restore, run-references-version)
+- [x] Default landing surface flips Conversation → My Workflows (D-16 redirect)
 
 **Phase 3 — Polish (daily use feels effortless)**
 - [ ] Approval Inbox surface (batch triage, stakes sort, approve/edit/reject/snooze, bulk actions)
@@ -121,4 +121,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-05-22 — GSD Phase 2 (Foundation — Prove the Agent) complete: 8 plans, agent runtime + Shopify/Gmail integrations + Conversation surface + durable Workflow Engine (L1/L2/L3) + onboarding wizard. Code-verified (278 tests, build green); live validation pending in 02-HUMAN-UAT.md.*
+*Last updated: 2026-05-22 — GSD Phase 3 (Ownership — The Portfolio) complete: 4 plans, My Workflows landing (new default) + Workflow Detail + Activity log (atomic revert, drift rules, bulk revert) + workflow versioning + migration 0005 (Activity indexes + Realtime RLS, applied live). Code-verified (315 tests, tsc clean; 3 review blockers + 9 warnings fixed); live validation pending in 03-HUMAN-UAT.md.*
