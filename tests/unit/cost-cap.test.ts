@@ -17,10 +17,11 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 // ─── Hoist mock functions ─────────────────────────────────────────────────────
 // vi.hoisted() runs before vi.mock() — safe to use in the factory below.
 
-const { mockGet, mockIncrbyfloat, mockExpire } = vi.hoisted(() => ({
+const { mockGet, mockIncrbyfloat, mockExpire, mockSet } = vi.hoisted(() => ({
   mockGet: vi.fn(),
   mockIncrbyfloat: vi.fn(),
   mockExpire: vi.fn(),
+  mockSet: vi.fn(),
 }));
 
 // ─── Mock Upstash Redis ────────────────────────────────────────────────────────
@@ -31,6 +32,7 @@ vi.mock("@upstash/redis", () => ({
       get: mockGet,
       incrbyfloat: mockIncrbyfloat,
       expire: mockExpire,
+      set: mockSet,
     })),
   },
 }));
@@ -93,24 +95,35 @@ describe("AUTH-07 — Cost-cap soft/hard threshold logic", () => {
 
   it("recordCost increments the daily key by the given USD amount", async () => {
     const costUsd = 0.005;
-    mockIncrbyfloat.mockResolvedValue(costUsd); // first increment = same as input
+    mockSet.mockResolvedValue("OK");
+    mockIncrbyfloat.mockResolvedValue(costUsd);
     await recordCost(USER_ID, costUsd);
     expect(mockIncrbyfloat).toHaveBeenCalledWith(getTodayKey(), costUsd);
   });
 
-  it("recordCost sets 25h TTL on first increment of the day", async () => {
+  it("recordCost uses SET NX EX to atomically create key with 25h TTL (WR-02)", async () => {
+    // WR-02 fix: SET NX EX is used instead of EXPIRE after increment
     const costUsd = 0.002;
-    // When newVal <= costUsd, it's the first write of the day
+    mockSet.mockResolvedValue("OK"); // SET NX fired (key didn't exist)
     mockIncrbyfloat.mockResolvedValue(costUsd);
     await recordCost(USER_ID, costUsd);
-    expect(mockExpire).toHaveBeenCalledWith(getTodayKey(), 25 * 60 * 60);
+    // SET NX EX should be called with nx:true and ex:25h
+    expect(mockSet).toHaveBeenCalledWith(getTodayKey(), 0, { nx: true, ex: 25 * 60 * 60 });
+    // INCRBYFLOAT is always called regardless
+    expect(mockIncrbyfloat).toHaveBeenCalledWith(getTodayKey(), costUsd);
+    // Old EXPIRE should NOT be called (WR-02 fix)
+    expect(mockExpire).not.toHaveBeenCalled();
   });
 
-  it("recordCost does NOT set TTL on subsequent increments of the same day", async () => {
+  it("recordCost always calls SET NX EX + INCRBYFLOAT (WR-02: no race condition)", async () => {
     const costUsd = 0.002;
-    // newVal > costUsd means the key already existed
+    mockSet.mockResolvedValue(null); // SET NX didn't fire (key already existed)
     mockIncrbyfloat.mockResolvedValue(costUsd * 5);
     await recordCost(USER_ID, costUsd);
+    // SET NX EX is always attempted (idempotent — only sets TTL if key was absent)
+    expect(mockSet).toHaveBeenCalledWith(getTodayKey(), 0, { nx: true, ex: 25 * 60 * 60 });
+    expect(mockIncrbyfloat).toHaveBeenCalledWith(getTodayKey(), costUsd);
+    // EXPIRE should NOT be called
     expect(mockExpire).not.toHaveBeenCalled();
   });
 
@@ -119,6 +132,7 @@ describe("AUTH-07 — Cost-cap soft/hard threshold logic", () => {
     await checkCostCap(USER_ID);
     expect(mockIncrbyfloat).not.toHaveBeenCalled();
     expect(mockExpire).not.toHaveBeenCalled();
+    expect(mockSet).not.toHaveBeenCalled();
   });
 
   it("SOFT_CAP_USD and HARD_CAP_USD are exported constants", () => {
