@@ -92,9 +92,9 @@
 
 ### Activity (ACT)
 
-- [ ] **ACT-01**: Activity log lists all agent actions chronologically with timestamp, workflow, summary, result, and automation level
-- [ ] **ACT-02**: User can filter by workflow, date range, result type, and automation level (filters combine with AND)
-- [ ] **ACT-03**: Activity detail shows full breakdown, before/after state, reasoning chain, and a link to the parent workflow
+- [x] **ACT-01**: Activity log lists all agent actions chronologically with timestamp, workflow, summary, result, and automation level
+- [x] **ACT-02**: User can filter by workflow, date range, result type, and automation level (filters combine with AND)
+- [x] **ACT-03**: Activity detail shows full breakdown, before/after state, reasoning chain, and a link to the parent workflow
 - [x] **ACT-04**: User can revert a recent change subject to drift rules; disabled reverts show a tooltip explaining why
 - [x] **ACT-05**: User can multi-select and bulk-revert atomically (all-or-none)
 - [x] **ACT-06**: User can promote a one-off action into a saved workflow ("Save as Workflow")

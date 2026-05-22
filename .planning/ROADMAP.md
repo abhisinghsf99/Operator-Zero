@@ -94,7 +94,7 @@ Plans:
 **Wave 2** *(blocked on Wave 1 completion)*
 
 - [x] 03-02-PLAN.md — My Workflows surface: grouped portfolio + live strip + inline level/pause + search + New Workflow (wave 2)
-- [ ] 03-04-PLAN.md — Activity log: virtualized timeline + AND filters + before/after diff + single/atomic-bulk revert + Save as Workflow (wave 2)
+- [x] 03-04-PLAN.md — Activity log: virtualized timeline + AND filters + before/after diff + single/atomic-bulk revert + Save as Workflow (wave 2)
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
@@ -125,5 +125,5 @@ Plans:
 |-------|----------------|--------|-----------|
 | 1. Infrastructure Foundation | 4/4 | Complete   | 2026-05-22 |
 | 2. Foundation — Prove the Agent | 8/8 | Complete   | 2026-05-22 |
-| 3. Ownership — The Portfolio | 2/4 | In Progress|  |
+| 3. Ownership — The Portfolio | 3/4 | In Progress|  |
 | 4. Polish — Effortless Daily Use | 0/TBD | Not started | - |
