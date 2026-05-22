@@ -82,24 +82,24 @@
 - [x] **WF-05**: L3 (autonomous) workflows execute without approval and log everything to Activity
 - [x] **WF-06**: Every agent action writes an Activity entry within 5s of execution
 - [ ] **WF-07**: My Workflows shows all workflows grouped by status (Scheduled / Triggered / Manual / Paused / Drafts) with a recent-activity strip
-- [ ] **WF-08**: User can change a workflow's automation level inline (L1/L2/L3) with immediate save; switching to L3 shows a one-time confirmation
-- [ ] **WF-09**: User can pause/resume a workflow without deleting it (history + config retained)
+- [x] **WF-08**: User can change a workflow's automation level inline (L1/L2/L3) with immediate save; switching to L3 shows a one-time confirmation
+- [x] **WF-09**: User can pause/resume a workflow without deleting it (history + config retained)
 - [ ] **WF-10**: User can start a new workflow from My Workflows ("+ New Workflow" opens a creation thread in Conversation)
 - [ ] **WF-11**: Workflow Detail shows the visual definition + historical runs; name/description/schedule/level are inline-editable
 - [ ] **WF-12**: User can edit workflow logic via "Open in Chat" — a scoped thread pre-loaded with the workflow's context
-- [ ] **WF-13**: User can "Run Now" to trigger immediate execution; the run appears in Historical Runs within seconds
-- [ ] **WF-14**: Workflows are versioned (number increments on edit); runs reference their version; restore creates a new version; last 10 retained
+- [x] **WF-13**: User can "Run Now" to trigger immediate execution; the run appears in Historical Runs within seconds
+- [x] **WF-14**: Workflows are versioned (number increments on edit); runs reference their version; restore creates a new version; last 10 retained
 
 ### Activity (ACT)
 
 - [ ] **ACT-01**: Activity log lists all agent actions chronologically with timestamp, workflow, summary, result, and automation level
 - [ ] **ACT-02**: User can filter by workflow, date range, result type, and automation level (filters combine with AND)
 - [ ] **ACT-03**: Activity detail shows full breakdown, before/after state, reasoning chain, and a link to the parent workflow
-- [ ] **ACT-04**: User can revert a recent change subject to drift rules; disabled reverts show a tooltip explaining why
-- [ ] **ACT-05**: User can multi-select and bulk-revert atomically (all-or-none)
-- [ ] **ACT-06**: User can promote a one-off action into a saved workflow ("Save as Workflow")
-- [ ] **ACT-07**: Activity log loads <1s p50 with 1000+ entries; entries retained 6 months
-- [ ] **ACT-08**: Drift rules are enforced consistently in UI and backend (content 7d, structural 24h, sent never; manual-edit-since blocks revert)
+- [x] **ACT-04**: User can revert a recent change subject to drift rules; disabled reverts show a tooltip explaining why
+- [x] **ACT-05**: User can multi-select and bulk-revert atomically (all-or-none)
+- [x] **ACT-06**: User can promote a one-off action into a saved workflow ("Save as Workflow")
+- [x] **ACT-07**: Activity log loads <1s p50 with 1000+ entries; entries retained 6 months
+- [x] **ACT-08**: Drift rules are enforced consistently in UI and backend (content 7d, structural 24h, sent never; manual-edit-since blocks revert)
 
 ### Approvals (APRV)
 

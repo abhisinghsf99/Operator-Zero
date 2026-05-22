@@ -89,7 +89,7 @@ Plans:
 Plans:
 **Wave 1**
 
-- [ ] 03-01-PLAN.md — Foundation: migration 0005 + version/revert/grouping libs + Server Actions + D-16 redirect + Wave 0 tests (wave 1)
+- [x] 03-01-PLAN.md — Foundation: migration 0005 + version/revert/grouping libs + Server Actions + D-16 redirect + Wave 0 tests (wave 1)
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
@@ -125,5 +125,5 @@ Plans:
 |-------|----------------|--------|-----------|
 | 1. Infrastructure Foundation | 4/4 | Complete   | 2026-05-22 |
 | 2. Foundation — Prove the Agent | 8/8 | Complete   | 2026-05-22 |
-| 3. Ownership — The Portfolio | 0/4 | Planned | - |
+| 3. Ownership — The Portfolio | 1/4 | In Progress|  |
 | 4. Polish — Effortless Daily Use | 0/TBD | Not started | - |

@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: "03-01 Task 3 checkpoint — awaiting migration 0005 DB push"
-last_updated: "2026-05-22T18:02:00Z"
-last_activity: "2026-05-22 -- 03-01 Tasks 1+2 complete, stopped at checkpoint:human-verify"
+stopped_at: "03-01 complete — migration 0005 applied live; ready for 03-02"
+last_updated: "2026-05-22T18:10:04.706Z"
+last_activity: 2026-05-22
 progress:
   total_phases: 4
   completed_phases: 2
   total_plans: 16
-  completed_plans: 12
+  completed_plans: 13
   percent: 50
 ---
 
@@ -26,17 +26,17 @@ See: .planning/PROJECT.md (updated 2026-05-21)
 ## Current Position
 
 Phase: 03 (ownership-the-portfolio) — EXECUTING
-Plan: 1 of 4
-Status: Executing Phase 03
-Last activity: 2026-05-22 -- Phase 03 execution started
+Plan: 2 of 4
+Status: Ready to execute
+Last activity: 2026-05-22
 
-Progress: [██████████] 100%
+Progress: [████████░░] 81%
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 12
+- Total plans completed: 13
 - Average duration: -
 - Total execution time: 0 hours
 
@@ -61,6 +61,7 @@ Progress: [██████████] 100%
 | Phase 02-foundation-prove-the-agent P06 | 7 minutes | 3 tasks | 11 files |
 | Phase 02-foundation-prove-the-agent P07 | 13 minutes | 3 tasks | 10 files |
 | Phase 02 P08 | 16 minutes | 3 tasks | 22 files |
+| Phase 03 P01 | ~50min | 3 tasks | 14 files |
 
 ## Accumulated Context
 
@@ -96,6 +97,9 @@ Recent decisions affecting current work:
 - [02-06] SSE route is a Route Handler (not Inngest) — streaming requires force-dynamic ReadableStream, Inngest breaks streaming
 - [02-06] Composer queue extracted as pure zustand store factory (createComposerStore) — FIFO hold+flush-once testable without browser
 - [02-06] react-markdown used without rehype-raw — no raw HTML passthrough prevents XSS from model-generated markdown (T-2-06-02)
+- [Phase ?]: [03-01] Migration 0005 applied via 'supabase db push --db-url <session-pooler>' (not Supabase MCP — MCP lacked project permission); recorded in remote migration history (Local 0005 / Remote 0005)
+- [Phase ?]: [03-01] createWorkflowVersion retries once on UNIQUE(workflow_id,version_number) 23505 with a fresh MAX read — absorbs concurrent version inserts
+- [Phase ?]: [03-01] canRevert is one shared pure function (D-11) re-evaluated server-side with a fresh shopify_updated_at fetch; UI classification never trusted (T-3-01-05); unknown action_type defaults to content (7d) window
 
 ### Pending Todos
 
@@ -109,6 +113,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-05-22T18:02:00Z
-Stopped at: "03-01 Task 3 checkpoint — awaiting migration 0005 DB push approval"
-Resume file: .planning/phases/03-ownership-the-portfolio/03-01-PLAN.md (Task 3)
+Last session: 2026-05-22T18:09:47.154Z
+Stopped at: "03-01 complete — migration 0005 applied live; ready for 03-02"
+Resume file: None
