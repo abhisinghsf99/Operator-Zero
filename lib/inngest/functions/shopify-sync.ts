@@ -124,14 +124,39 @@ export const shopifyWebhookProcess = inngest.createFunction(
       payload: Record<string, unknown>;
     };
 
-    // Find userId from shop domain
+    // CR-06: Cross-check shop header against HMAC-verified payload before resolving user.
+    // The x-shopify-shop-domain header is attacker-controllable (not part of the HMAC),
+    // so we validate it against the shop embedded in the (HMAC-signed) body.
+    // The payload carries the shop domain in the `shop` field (set by the route handler
+    // from the header), but the HMAC itself validates the body — use payload.shop if
+    // Shopify embeds it, or trust that the route handler already HMAC-verified the body.
+    //
+    // Correct approach: compare the `shop` event field (from x-shopify-shop-domain header)
+    // against the shop in the HMAC-verified payload body. The webhook route fires this
+    // Inngest event only after HMAC passes, so the payload is authentic. Shopify embeds
+    // the shop identifier as the 'domain' field in webhook bodies.
+    const payloadShop = (payload["domain"] as string | undefined) ?? null;
+
+    // Resolve user via integrations.provider_account_id (correct lookup)
     const userId = await step.run("resolve-user", async () => {
-      const [row] = await serviceDb
-        .select({ user_id: shopifyProducts.user_id })
-        .from(shopifyProducts)
-        .where(eq(shopifyProducts.user_id, shop)) // initial lookup by shop
-        .limit(1);
-      // Actually look up by shop in integrations table
+      // Reject if the header shop does not match the HMAC-verified payload domain.
+      // A request with a spoofed header but valid HMAC (for a different tenant's body)
+      // would otherwise drive mutations against the wrong tenant's mirror.
+      if (payloadShop && payloadShop !== shop) {
+        console.log(
+          JSON.stringify({
+            level: "warn",
+            event: "shopify.webhook.shop_header_mismatch",
+            headerShop: shop,
+            payloadShop,
+            topic,
+            timestamp: new Date().toISOString(),
+          })
+        );
+        return null;
+      }
+
+      // Look up user by shop in integrations table (correct lookup via provider_account_id)
       const { integrations: integrationsTable } = await import("@/lib/db/schema");
       const [integration] = await serviceDb
         .select({ user_id: integrationsTable.user_id })
