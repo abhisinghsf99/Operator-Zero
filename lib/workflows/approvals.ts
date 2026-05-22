@@ -19,7 +19,7 @@
 
 import { serviceDb } from "@/lib/db/client";
 import { approvals } from "@/lib/db/schema";
-import { eq, and } from "drizzle-orm";
+import { eq, and, inArray } from "drizzle-orm";
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
@@ -148,4 +148,97 @@ export async function resolveApprovalRow(
     .where(and(eq(approvals.id, approvalId), eq(approvals.user_id, userId)));
 
   return approvalId;
+}
+
+// ─── snoozeApproval ───────────────────────────────────────────────────────────
+
+/**
+ * snoozeApproval — set an approval to snoozed status with a future wake time.
+ *
+ * Ownership check: looks up row by (id + user_id), returns null on failure.
+ * Does NOT fire approval.resolved — the Inngest workflow run stays paused (A1).
+ *
+ * @param approvalId   — the approval row UUID
+ * @param userId       — the user who is snoozing (must own the row)
+ * @param snoozedUntil — the Date when the item should re-surface
+ * @returns the approval id on success, null on ownership failure
+ */
+export async function snoozeApproval(
+  approvalId: string,
+  userId: string,
+  snoozedUntil: Date
+): Promise<string | null> {
+  // Ownership check — same pattern as resolveApprovalRow
+  const [existing] = await serviceDb
+    .select()
+    .from(approvals)
+    .where(and(eq(approvals.id, approvalId), eq(approvals.user_id, userId)))
+    .limit(1);
+
+  if (!existing) {
+    return null;
+  }
+
+  await serviceDb
+    .update(approvals)
+    .set({ status: "snoozed", snoozed_until: snoozedUntil })
+    .where(and(eq(approvals.id, approvalId), eq(approvals.user_id, userId)));
+
+  return approvalId;
+}
+
+// ─── bulkResolveApprovals ─────────────────────────────────────────────────────
+
+/**
+ * bulkResolveApprovals — atomically approve or reject multiple pending approvals.
+ *
+ * Only updates rows where:
+ *   - id is in approvalIds
+ *   - user_id matches (ownership)
+ *   - status = 'pending' (T-4-02-05: non-pending rows silently skipped)
+ *
+ * @param approvalIds — array of approval UUIDs (max 100)
+ * @param userId      — the user who is resolving (must own all rows)
+ * @param decision    — 'approved' | 'rejected'
+ * @returns array of IDs that were actually updated
+ */
+export async function bulkResolveApprovals(
+  approvalIds: string[],
+  userId: string,
+  decision: "approved" | "rejected"
+): Promise<string[]> {
+  if (approvalIds.length === 0) return [];
+
+  // Fetch only rows that are pending + owned by this user
+  const pendingRows = await serviceDb
+    .select({ id: approvals.id })
+    .from(approvals)
+    .where(
+      and(
+        inArray(approvals.id, approvalIds),
+        eq(approvals.user_id, userId),
+        eq(approvals.status, "pending")
+      )
+    );
+
+  if (pendingRows.length === 0) return [];
+
+  const eligibleIds = pendingRows.map((r) => r.id);
+
+  // Atomic bulk update — only eligible rows (pending + owned)
+  await serviceDb
+    .update(approvals)
+    .set({
+      status: decision,
+      resolved_at: new Date(),
+    })
+    .where(
+      and(
+        inArray(approvals.id, eligibleIds),
+        eq(approvals.user_id, userId),
+        eq(approvals.status, "pending") // belt-and-suspenders: re-filter in UPDATE too
+      )
+    );
+
+  return eligibleIds;
 }
