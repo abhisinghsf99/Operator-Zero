@@ -36,8 +36,8 @@
 - [x] **INTEG-01**: User can connect Shopify via OAuth with minimum-necessary scopes; handshake completes <60s p50
 - [x] **INTEG-02**: On Shopify connect, catalog/orders/content/inventory full-sync runs in background to a local Postgres mirror
 - [x] **INTEG-03**: Shopify webhooks update the mirror on change; 15-min polling fallback catches missed webhooks
-- [ ] **INTEG-04**: User can connect Gmail via Google OAuth (`gmail.modify`); skippable in onboarding with an explicit warning
-- [ ] **INTEG-05**: On Gmail connect, last 30 days of threads sync; 5-min polling pulls new inbound; support emails are classified
+- [x] **INTEG-04**: User can connect Gmail via Google OAuth (`gmail.modify`); skippable in onboarding with an explicit warning
+- [x] **INTEG-05**: On Gmail connect, last 30 days of threads sync; 5-min polling pulls new inbound; support emails are classified
 - [x] **INTEG-06**: Connection health is visible (status, last sync); broken/expired tokens surface a clear reconnect path
 - [x] **INTEG-07**: All Shopify writes are idempotent, go direct to Shopify, then re-read to update the mirror
 

@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: "Completed 02-02: Schema migration + Wave-0 test scaffolds applied to live DB"
-last_updated: "2026-05-22T08:13:41.133Z"
+stopped_at: "Completed 02-04: Gmail OAuth + sync + classification + Inngest functions"
+last_updated: "2026-05-22T08:29:08.064Z"
 last_activity: 2026-05-22
 progress:
   total_phases: 4
   completed_phases: 1
   total_plans: 12
-  completed_plans: 7
+  completed_plans: 8
   percent: 25
 ---
 
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-05-21)
 ## Current Position
 
 Phase: 02 (foundation-prove-the-agent) — EXECUTING
-Plan: 4 of 8
+Plan: 5 of 8
 Status: Ready to execute
 Last activity: 2026-05-22
 
-Progress: [██████░░░░] 58%
+Progress: [███████░░░] 67%
 
 ## Performance Metrics
 
@@ -55,6 +55,7 @@ Progress: [██████░░░░] 58%
 | Phase 02-foundation-prove-the-agent P01 | 35 | 3 tasks | 13 files |
 | Phase 02-foundation-prove-the-agent P02 | 18 | 4 tasks | 37 files |
 | Phase 02-foundation-prove-the-agent P03 | 8 minutes | 4 tasks | 17 files |
+| Phase 02-foundation-prove-the-agent P04 | 67 | 3 tasks | 11 files |
 
 ## Accumulated Context
 
@@ -79,6 +80,9 @@ Recent decisions affecting current work:
 - [Phase 02-03]: shopify.auth.begin() bypassed — manual URL construction avoids Next.js Request adapter incompatibility
 - [Phase 02-03]: nonce stored as 'nonce:<hex>' prefix in access_token_encrypted — avoids extra DB column for OAuth state
 - [Phase 02-03]: maxRuntime '4m' / maxDuration 300 — required for Shopify full-sync of large stores
+- [Phase ?]: [02-04] Gmail OAuth uses same nonce-in-DB CSRF pattern as Shopify (nonce: prefix in access_token_encrypted)
+- [Phase ?]: [02-04] classifySupport uses claude-haiku-4-5 not Opus — fast-path YES/NO needs low latency
+- [Phase ?]: [02-04] historyId expiry triggers full re-sync fallback rather than erroring
 
 ### Pending Todos
 
@@ -92,6 +96,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-05-22T08:13:41.129Z
-Stopped at: Completed 02-02: Schema migration + Wave-0 test scaffolds applied to live DB
+Last session: 2026-05-22T08:29:08.060Z
+Stopped at: Completed 02-04: Gmail OAuth + sync + classification + Inngest functions
 Resume file: None
