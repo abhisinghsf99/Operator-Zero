@@ -1315,33 +1315,34 @@ useEffect(() => {
 
 ---
 
-## Open Questions
+## Open Questions (RESOLVED)
+
+> All five open questions are resolved below. Each resolution records the decision the Phase 2 plans already encode (confirmed against the relevant plan Task 0/Task 2 actions). Inline `RESOLVED:` markers state the binding decision.
 
 1. **Voyage AI embedding dimensions**
    - What we know: `lib/agent/embeddings.ts` uses `voyage-4`; Phase 1 `sdk-smoke.test.ts` was written for this model
    - What's unclear: DATA-FLOW.md says `vector(1536)` but Voyage AI models typically output 1024 dimensions. The actual model response dimension determines the migration.
-   - Recommendation: Run `embedText("test")` smoke test and log `embedding.length` before writing the migration. Fix DATA-FLOW.md if 1024 is confirmed.
+   - **RESOLVED:** Use **1024 dimensions** — the dimension the installed `voyageai` (`voyage-4`) output produces. The pgvector columns (`memory_embeddings.embedding`, `brand_voice_samples.embedding`) are sized `vector(1024)` in migration 0003 with an HNSW `vector_cosine_ops` index. To confirm before the migration applies, **02-02 Task 0** runs an `embedText("test")` smoke check and asserts `embedding.length === 1024` (red-scaffold gate); the migration's vector columns are only authored against the confirmed dimension. DATA-FLOW.md's `vector(1536)` note is superseded by this 1024 decision.
 
 2. **Shopify app type — custom vs public**
    - What we know: PRD says Shopify OAuth; SYSTEMS-DESIGN says Custom App
    - What's unclear: Custom apps use a different OAuth flow than public apps (no app store listing, direct installation URL). The `@shopify/shopify-api` library's `begin()/callback()` flow is for public apps. For a true custom app, the merchant gets a direct installation URL.
-   - Recommendation: For v1 beta (1–50 stores), use a **custom app** flow (simpler, no review required, direct URL installation). This changes the OAuth initiation step slightly but uses the same access token endpoints.
+   - **RESOLVED:** Default to a **custom app** flow for v1 beta (1–50 stores) — simpler, no app-store review, direct-URL installation, same access-token endpoints. The decision is finalized at **02-03 Task 0** (a `checkpoint:human-action` gate where the user creates the Shopify Partner credentials and confirms the app type before any code runs); 02-03 Task 0 text assumes the custom-app flow as the default and asks the user to confirm. Task 1's `connect()`/`callback()` flow is built against the confirmed app type.
 
 3. **Realtime subscription for approval badge — frequency of updates**
    - What we know: Supabase Realtime subscriptions fire on every DB change
    - What's unclear: At what point does real-time badge update latency become noticeable vs. acceptable? PRD says <5s cross-device.
-   - Recommendation: Use `postgres_changes` on the `approvals` table filtered by `user_id`. The Supabase Realtime infrastructure should deliver within 1-2s which satisfies the <5s requirement.
+   - **RESOLVED:** Use **Supabase Realtime `postgres_changes` on the `approvals` table, filtered by `user_id`, on a private channel (`{ config: { private: true } }`)** to drive the live approval badge and cross-surface sync. This delivers within ~1–2s, satisfying the <5s requirement. Wired in **02-07 Task 3** (the inline approval card subscribes to the private `approvals` channel so card status syncs); the same subscription pattern feeds the sidebar approval badge. The Code Example "Supabase Realtime subscription for approval badge" above is the canonical pattern.
 
 4. **Inngest `maxDuration` increase — impact on existing hello-world**
    - What we know: Phase 1 has `maxDuration = 60` and `maxRuntime: '1m'`
    - What's unclear: Increasing to 300 changes both. Existing hello-world tests assert `maxDuration = 60`.
-   - Recommendation: Update both and update the test assertion in `tests/unit/hello-world.test.ts`. The unit test change is trivial but must not be forgotten.
+   - **RESOLVED:** Bump `lib/inngest/client.ts` `maxRuntime` to **`'4m'`** (≈20% below the Vercel ceiling) and `app/api/inngest/route.ts` to **`export const maxDuration = 300`**. This is handled once in **02-03 Task 2** (which also updates the existing `tests/unit/hello-world.test.ts` assertion that pinned `maxDuration=60`). The bumped values then apply to the L2 workflow engine added in **02-07** (which registers `executeWorkflowRun` in the same serve route and explicitly does NOT re-touch `maxDuration`).
 
 5. **Phase scope — is 38 requirements too large for one "phase"?**
    - What we know: 38 requirements, 15+ new DB tables, 2 OAuth integrations, a full component library, and a novel streaming UX.
-   - Assessment: Yes, this is too large for one atomic plan. The recommendation of 5-6 plans with dependency gates is appropriate.
-   - Risk: Treating this as one undifferentiated plan leads to a "big bang" integration problem where nothing works until everything works.
-   - Recommendation: Strictly follow the dependency ordering from the Architecture Patterns section.
+   - Assessment: Too large for one atomic plan, but tractable as a multi-plan phase with dependency gates.
+   - **RESOLVED:** **No phase split needed.** The phase is decomposed into an **8-plan / 5-wave** structure covering all **38 requirements** (UI Foundation, Schema+Wave-0 tests, Shopify integration, Gmail integration, Onboarding, Agent runtime, Conversation surface, Workflow engine, plus Cost-cap/Settings). Each plan is independently verifiable with an `<automated>` gate, and the dependency ordering above is enforced via plan `depends_on` + waves. The "big bang" risk is mitigated by per-plan verification rather than a single atomic plan.
 
 ---
 
@@ -1403,7 +1404,7 @@ useEffect(() => {
 
 4. **UI Foundation must precede all surface work.** `components/` is currently empty. shadcn/ui `init` + OKLCH token translation into Tailwind v4 `@theme inline` must be Plan 1.
 
-5. **Voyage AI embedding dimensions need verification before writing the migration.** DATA-FLOW.md says `vector(1536)` but the installed model (`voyage-4`) likely outputs 1024 dimensions. Write a quick smoke test before the migration.
+5. **Voyage AI embedding dimensions need verification before writing the migration.** DATA-FLOW.md says `vector(1536)` but the installed model (`voyage-4`) likely outputs 1024 dimensions. Write a quick smoke test before the migration. (Resolved: 1024 — see Open Questions #1.)
 
 6. **Two new credential sets are required** (Shopify Partner credentials + Google Cloud Gmail API credentials) that must be provisioned by the user before Plans 3+ can be tested. This is a human action item that blocks integration testing.
 
@@ -1423,11 +1424,7 @@ useEffect(() => {
 | Cost cap pattern | MEDIUM | Upstash Redis INCRBY confirmed; exact thresholds are [ASSUMED] placeholders |
 
 ### Open Questions Requiring Action Before Build
-1. Verify Voyage `voyage-4` embedding dimensions (run smoke test)
-2. Confirm Shopify app type (custom vs. public app flow)
-3. Provision Shopify Partner credentials
-4. Provision Google Cloud Gmail API credentials
-5. Decide whether expiring Shopify offline tokens (Dec 2025 feature) are used and plan token refresh accordingly
+All five Open Questions are now RESOLVED (see `## Open Questions (RESOLVED)`). The two human prerequisites that remain (Shopify Partner credentials and Google Cloud Gmail API credentials) are gated by the `checkpoint:human-action` Task 0 in 02-03 (Shopify) and the Gmail integration plan, respectively.
 
 ### Ready for Planning
 Research complete. Planner can now create PLAN.md files using the dependency order: Plan 1 (UI Foundation) → Plan 2 (Schema) → Plan 3 (Integrations) → Plan 4 (Onboarding) → Plan 5 (Conversation/Agent) → Plan 6 (Workflow Engine) → Plan 7 (Cost Cap + SET-01).

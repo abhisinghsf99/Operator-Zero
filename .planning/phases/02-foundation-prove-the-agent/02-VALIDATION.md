@@ -1,8 +1,8 @@
 ---
 phase: 2
 slug: foundation-prove-the-agent
-status: draft
-nyquist_compliant: false
+status: approved
+nyquist_compliant: true
 wave_0_complete: false
 created: 2026-05-22
 ---
@@ -110,4 +110,4 @@ created: 2026-05-22
 - [ ] Feedback latency < 30s (unit)
 - [ ] `nyquist_compliant: true` set in frontmatter once planner attaches tests to tasks
 
-**Approval:** pending
+**Approval:** approved 2026-05-22 (plan-checker confirmed every auto task has automated verify; Wave-0 covers all test files)
