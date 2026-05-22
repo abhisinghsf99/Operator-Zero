@@ -29,14 +29,14 @@ Sarah builds workflows in plain language and trusts the agent to run them — mo
 - [ ] Inngest configured (local dev + deploy); integration adapter interface skeleton
 - [ ] CI: PR previews + tests; Sentry + Axiom observability rails
 
-**Phase 1 — Foundation (prove the agent works)**
-- [ ] Onboarding wizard: Shopify connect, initial sync, Gmail connect (skippable), brand-voice bootstrap, catalog audit → starter workflow seeding
-- [ ] Conversation surface: Orchestrator chat with SSE token streaming, threads (auto-named), composer
-- [ ] Live workflow build visualizer (inline animated diagram + narration)
-- [ ] Inline approval card — Phase 1 placeholder (routes to Inbox)
-- [ ] Settings (minimal): Connections only — status, reconnect, disconnect
-- [ ] Workflow data model + Workflow Engine (Inngest execute function) + agent runtime (chat + step paths) + v1 tool catalog
-- [ ] Activity entries written for every agent action
+**Phase 1 — Foundation (prove the agent works)** — _built & code-verified in GSD Phase 2 (2026-05-22); live validation pending human UAT (creds + user/perf/durability testing) tracked in `02-HUMAN-UAT.md`. Not yet moved to Validated until confirmed valuable via real usage._
+- [x] Onboarding wizard: Shopify connect, initial sync, Gmail connect (skippable), brand-voice bootstrap, catalog audit → starter workflow seeding
+- [x] Conversation surface: Orchestrator chat with SSE token streaming, threads (auto-named), composer
+- [x] Live workflow build visualizer (inline animated diagram + narration)
+- [x] Inline approval card — full-fidelity inline card + Approvals route (upgraded past the Phase-1 placeholder)
+- [x] Settings (minimal): Connections only — status, reconnect, disconnect
+- [x] Workflow data model + Workflow Engine (Inngest execute function, durable L1/L2/L3 + L2 pause/resume) + agent runtime (chat + step paths) + 22-tool catalog
+- [x] Activity entries written for every agent action (idempotent, observability-before-effect)
 
 **Phase 2 — Ownership (make the portfolio visible)**
 - [ ] My Workflows landing surface (library grouped by status, recent activity strip, inline L1/L2/L3 toggle)
@@ -121,4 +121,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-05-21 after initialization*
+*Last updated: 2026-05-22 — GSD Phase 2 (Foundation — Prove the Agent) complete: 8 plans, agent runtime + Shopify/Gmail integrations + Conversation surface + durable Workflow Engine (L1/L2/L3) + onboarding wizard. Code-verified (278 tests, build green); live validation pending in 02-HUMAN-UAT.md.*
