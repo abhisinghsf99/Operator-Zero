@@ -22,7 +22,7 @@ import { getOrCreateProfile } from "@/lib/auth/profile";
 import { withUserRls } from "@/lib/db/client";
 import { createClient } from "@/lib/auth/server";
 import { workflows, activityEntries, approvals } from "@/lib/db/schema";
-import { eq, and, gte, count } from "drizzle-orm";
+import { eq, and, gte, count, desc } from "drizzle-orm";
 import { groupWorkflowsByStatus, type WorkflowSummary } from "@/lib/workflows/grouping";
 import { WorkflowsView } from "./_workflows-view";
 
@@ -168,7 +168,8 @@ export default async function WorkflowsPage() {
           })
           .from(activityEntries)
           .where(eq(activityEntries.user_id, userId))
-          .orderBy(activityEntries.occurred_at)
+          // WR-01: newest 5 for "what just happened" — must be DESC
+          .orderBy(desc(activityEntries.occurred_at))
           .limit(5);
       }),
     ]);
