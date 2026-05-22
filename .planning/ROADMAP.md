@@ -120,7 +120,7 @@ Plans:
 Plans:
 **Wave 1**
 
-- [ ] 04-01-PLAN.md — Foundation: user_sessions + user_exports schema, migration 0006 + perf indexes (BLOCKING push), axe-core + mobile project, reduced-motion, Wave-0 test scaffolds (wave 1)
+- [x] 04-01-PLAN.md — Foundation: user_sessions + user_exports schema, migration 0006 + perf indexes (BLOCKING push), axe-core + mobile project, reduced-motion, Wave-0 test scaffolds (wave 1)
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
@@ -148,4 +148,4 @@ Plans:
 | 1. Infrastructure Foundation | 4/4 | Complete   | 2026-05-22 |
 | 2. Foundation — Prove the Agent | 8/8 | Complete   | 2026-05-22 |
 | 3. Ownership — The Portfolio | 4/4 | Complete   | 2026-05-22 |
-| 4. Polish — Effortless Daily Use | 0/6 | Not started | - |
+| 4. Polish — Effortless Daily Use | 1/6 | In Progress|  |

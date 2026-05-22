@@ -26,8 +26,8 @@
 - [x] **AUTH-01**: User can sign up with email and password
 - [x] **AUTH-02**: User can sign in with Google OAuth
 - [x] **AUTH-03**: Session persists via httpOnly cookie with 30-day rolling refresh; middleware guards `/app/*` routes
-- [ ] **AUTH-04**: User can view active sessions (device, location, last seen) and revoke any session
-- [ ] **AUTH-05**: User can "sign out all devices" with confirmation
+- [x] **AUTH-04**: User can view active sessions (device, location, last seen) and revoke any session
+- [x] **AUTH-05**: User can "sign out all devices" with confirmation
 - [x] **AUTH-06**: Per-user rate limits on chat sends and concurrent workflow runs prevent runaway cost
 - [x] **AUTH-07**: Per-user daily cost cap — soft-cap warns in chat, hard-cap disables write tools while chat continues in degraded mode
 
@@ -119,7 +119,7 @@
 - [ ] **SET-03**: Autonomy Thresholds set a global default level + curated per-action overrides that win over workflow level
 - [ ] **SET-04**: "What I Remember About You" lists memory items by category; user can edit inline, delete (24h reversible), or add
 - [ ] **SET-05**: Profile section edits name, email, password, and avatar
-- [ ] **SET-06**: User can export all account data (workflows + history, activity, memory, brand voice) as JSON, initiated within 60s
+- [x] **SET-06**: User can export all account data (workflows + history, activity, memory, brand voice) as JSON, initiated within 60s
 - [ ] **SET-07**: User can delete account (hard delete, 7-day grace, email confirmation); blocked while workflows are mid-run
 - [ ] **SET-08**: Notifications section shows only the in-app sidebar badge + a "coming soon" placeholder (no non-functional toggles)
 
@@ -128,7 +128,7 @@
 - [ ] **UX-01**: The 5 core surfaces (Workflows, Chat, Approvals, Activity, More) are fully functional on mobile via a bottom tab bar — no read-only stripping
 - [ ] **UX-02**: All surfaces meet WCAG 2.1 AA — keyboard nav, screen-reader labels, focus indicators, color contrast, reduced-motion
 - [ ] **UX-03**: Inline approval cards and the workflow visualizer are keyboard-accessible and have text equivalents
-- [ ] **UX-04**: Performance targets met per PRD §5.4.2 (app shell <1.5s, surface nav <300ms, My Workflows <500ms p50)
+- [x] **UX-04**: Performance targets met per PRD §5.4.2 (app shell <1.5s, surface nav <300ms, My Workflows <500ms p50)
 
 ## v2 Requirements
 
