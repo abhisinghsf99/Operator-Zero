@@ -31,8 +31,12 @@ import { buildSystemPrompt } from "@/lib/agent/prompt";
 import { checkCostCap, recordCost } from "@/lib/cost-cap";
 import { getAnthropicToolDefinitions, dispatchTool } from "@/lib/agent/tools/index";
 import { anthropic } from "@/lib/agent/anthropic";
+import type Anthropic from "@anthropic-ai/sdk";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
+
+// Anthropic message param type for multi-turn tool loops
+type AnthropicMessage = Anthropic.MessageParam;
 
 // ─── Route config ─────────────────────────────────────────────────────────────
 
@@ -168,8 +172,15 @@ export async function POST(
         .returning();
     }) as Array<{ id: string }>;
     userMsgId = userMsg?.id ?? null;
-  } catch {
-    // Non-fatal — continue even if persist fails (rare DB error)
+  } catch (persistErr) {
+    // Non-fatal — continue even if persist fails, but log for observability (IN-03)
+    console.error(JSON.stringify({
+      level: "error",
+      event: "chat.persist_user_message_failed",
+      threadId,
+      error: persistErr instanceof Error ? persistErr.message : "unknown",
+      timestamp: new Date().toISOString(),
+    }));
   }
   void userMsgId; // suppress unused var warning
 
@@ -190,8 +201,15 @@ export async function POST(
         .returning();
     }) as Array<{ id: string }>;
     assistantMsgId = asstMsg?.id ?? null;
-  } catch {
-    // Non-fatal
+  } catch (placeholderErr) {
+    // Non-fatal but log for observability (IN-03)
+    console.error(JSON.stringify({
+      level: "error",
+      event: "chat.persist_assistant_placeholder_failed",
+      threadId,
+      error: placeholderErr instanceof Error ? placeholderErr.message : "unknown",
+      timestamp: new Date().toISOString(),
+    }));
   }
 
   // 9. Cost cap check (T-2-05-02) and system prompt
@@ -217,46 +235,90 @@ export async function POST(
   const stream = new ReadableStream({
     async start(controller) {
       try {
-        const anthropicStream = anthropic.messages.stream({
-          model: "claude-opus-4-7",
-          system: systemPrompt,
-          messages: allMessages,
-          tools: toolDefs as Parameters<typeof anthropic.messages.stream>[0]["tools"],
-          max_tokens: 4096,
-        });
-
         const agentCtx = {
           userId,
           automationLevel: "L2" as const,
           threadId,
         };
 
-        for await (const event of anthropicStream) {
-          // Text delta — forward promptly to client (first token target <2s)
-          if (
-            event.type === "content_block_delta" &&
-            event.delta.type === "text_delta"
-          ) {
-            accumulatedContent += event.delta.text;
-            controller.enqueue(
-              encoder.encode(
-                `data: ${JSON.stringify({ text: event.delta.text })}\n\n`
-              )
-            );
+        // ── Agentic tool loop (CR-05) ───────────────────────────────────────────
+        // Run the model, collect tool_use blocks, dispatch each, append tool_result
+        // user turn, re-invoke. Bounded by MAX_TOOL_ITERATIONS to prevent runaway.
+        const MAX_TOOL_ITERATIONS = 5;
+        let currentMessages: AnthropicMessage[] = allMessages.map(m => ({
+          role: m.role,
+          content: m.content,
+        }));
+        let totalInputTokens = 0;
+        let totalOutputTokens = 0;
+
+        for (let iteration = 0; iteration < MAX_TOOL_ITERATIONS; iteration++) {
+          const anthropicStream = anthropic.messages.stream({
+            model: "claude-opus-4-7",
+            system: systemPrompt,
+            messages: currentMessages,
+            tools: toolDefs as Parameters<typeof anthropic.messages.stream>[0]["tools"],
+            max_tokens: 4096,
+          });
+
+          // Collect tool_use blocks from this iteration
+          const pendingToolUses: Array<{ id: string; name: string; input: unknown }> = [];
+          const assistantContentBlocks: Array<unknown> = [];
+
+          for await (const event of anthropicStream) {
+            // Text delta — only stream on the final turn (no tool requests)
+            // We forward text during every turn; the model's final turn has no tool_use.
+            if (
+              event.type === "content_block_delta" &&
+              event.delta.type === "text_delta"
+            ) {
+              accumulatedContent += event.delta.text;
+              controller.enqueue(
+                encoder.encode(
+                  `data: ${JSON.stringify({ text: event.delta.text })}\n\n`
+                )
+              );
+            }
+
+            // Capture completed tool_use blocks
+            if (
+              event.type === "content_block_stop"
+            ) {
+              // Handled below via finalMessage
+            }
           }
 
-          // Tool use — dispatch inline (CONV-02/03)
-          if (
-            event.type === "content_block_start" &&
-            event.content_block.type === "tool_use"
-          ) {
-            const toolBlock = event.content_block;
+          const finalMsg = await anthropicStream.finalMessage();
+          totalInputTokens += finalMsg.usage.input_tokens;
+          totalOutputTokens += (finalMsg.usage as { output_tokens?: number }).output_tokens ?? 0;
+
+          // Collect tool_use content blocks from this turn's response
+          for (const block of finalMsg.content) {
+            assistantContentBlocks.push(block);
+            if (block.type === "tool_use") {
+              pendingToolUses.push({
+                id: block.id,
+                name: block.name,
+                input: block.input,
+              });
+            }
+          }
+
+          // If model made no tool calls, we're done
+          if (pendingToolUses.length === 0) {
+            break;
+          }
+
+          // Dispatch all tool calls and collect results
+          const toolResultContents: Array<{
+            type: "tool_result";
+            tool_use_id: string;
+            content: string;
+          }> = [];
+
+          for (const tu of pendingToolUses) {
             try {
-              const toolResult = await dispatchTool(
-                toolBlock.name,
-                toolBlock.input,
-                agentCtx
-              );
+              const toolResult = await dispatchTool(tu.name, tu.input, agentCtx);
 
               // Check if tool result embeds an inline block (propose_workflow_plan)
               if (toolResult && toolResult.content) {
@@ -265,8 +327,7 @@ export async function POST(
                   if (parsed.inline_block_type === "workflow_plan") {
                     inlineBlockType = "workflow_plan";
                     inlineBlockPayload = parsed.inline_block_payload;
-
-                    // Emit an SSE event so the client can render the visualizer
+                    // Emit SSE event so client can render the visualizer
                     controller.enqueue(
                       encoder.encode(
                         `data: ${JSON.stringify({
@@ -280,15 +341,35 @@ export async function POST(
                   // Not JSON or not an inline block — ignore
                 }
               }
-            } catch {
-              // Tool dispatch error — non-fatal, continue stream
+
+              toolResultContents.push({
+                type: "tool_result",
+                tool_use_id: tu.id,
+                content: toolResult?.content ?? "",
+              });
+            } catch (toolErr) {
+              // Tool dispatch error — return an error result so the model can handle it
+              toolResultContents.push({
+                type: "tool_result",
+                tool_use_id: tu.id,
+                content: JSON.stringify({ error: String(toolErr) }),
+              });
             }
           }
+
+          // Append the assistant turn (with tool_use blocks) + tool results turn
+          currentMessages = [
+            ...currentMessages,
+            { role: "assistant" as const, content: assistantContentBlocks as Anthropic.ContentBlock[] },
+            { role: "user" as const, content: toolResultContents as Anthropic.ToolResultBlockParam[] },
+          ] as AnthropicMessage[];
         }
 
         // 11. Finalize assistant message → status='complete'
-        const finalMsg = await anthropicStream.finalMessage();
-        const usage = finalMsg.usage;
+        const usage = {
+          input_tokens: totalInputTokens,
+          output_tokens: totalOutputTokens,
+        };
         const costUsd =
           (usage.input_tokens * 3 + ((usage as { output_tokens?: number }).output_tokens ?? 0) * 15) /
           1_000_000;
@@ -316,8 +397,15 @@ export async function POST(
                 })
                 .where(eq(messages.id, assistantMsgId));
             });
-          } catch {
-            // Non-fatal — message still delivered via SSE
+          } catch (finalizeErr) {
+            // Non-fatal — message still delivered via SSE, but log for observability (IN-03)
+            console.error(JSON.stringify({
+              level: "error",
+              event: "chat.finalize_message_failed",
+              threadId,
+              error: finalizeErr instanceof Error ? finalizeErr.message : "unknown",
+              timestamp: new Date().toISOString(),
+            }));
           }
         }
 
@@ -329,8 +417,15 @@ export async function POST(
               .set({ last_message_at: new Date() })
               .where(eq(threads.id, threadId));
           });
-        } catch {
-          // Non-fatal
+        } catch (threadUpdateErr) {
+          // Non-fatal but log for observability (IN-03)
+          console.error(JSON.stringify({
+            level: "error",
+            event: "chat.update_thread_timestamp_failed",
+            threadId,
+            error: threadUpdateErr instanceof Error ? threadUpdateErr.message : "unknown",
+            timestamp: new Date().toISOString(),
+          }));
         }
 
         // Signal stream end
@@ -358,8 +453,15 @@ export async function POST(
                 .set({ status: "errored" })
                 .where(eq(messages.id, assistantMsgId));
             });
-          } catch {
-            // Non-fatal
+          } catch (errorMarkErr) {
+            // Non-fatal but log for observability (IN-03)
+            console.error(JSON.stringify({
+              level: "error",
+              event: "chat.mark_message_errored_failed",
+              threadId,
+              error: errorMarkErr instanceof Error ? errorMarkErr.message : "unknown",
+              timestamp: new Date().toISOString(),
+            }));
           }
         }
       }
