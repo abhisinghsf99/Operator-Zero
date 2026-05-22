@@ -181,15 +181,22 @@ describe("lib/db/schema/index re-exports", () => {
   });
 });
 
-describe("lib/db/client — two distinct clients", () => {
-  it("exports db and serviceDb", async () => {
-    const { db, serviceDb } = await import("@/lib/db/client");
-    expect(db).toBeDefined();
+describe("lib/db/client — RLS wrapper + service-role client", () => {
+  it("exports withUserRls (web tier) and serviceDb (agent tier)", async () => {
+    const { withUserRls, serviceDb } = await import("@/lib/db/client");
+    expect(typeof withUserRls).toBe("function");
     expect(serviceDb).toBeDefined();
   });
 
-  it("db and serviceDb are not the same instance", async () => {
-    const { db, serviceDb } = await import("@/lib/db/client");
-    expect(db).not.toBe(serviceDb);
+  it("does NOT export a raw `db` client (web tier must go through withUserRls)", async () => {
+    const client = await import("@/lib/db/client");
+    expect(client).not.toHaveProperty("db");
+  });
+
+  it("withUserRls rejects claims without a string `sub`", async () => {
+    const { withUserRls } = await import("@/lib/db/client");
+    await expect(
+      withUserRls({} as Record<string, unknown>, async () => "unreachable")
+    ).rejects.toThrow(/sub/);
   });
 });

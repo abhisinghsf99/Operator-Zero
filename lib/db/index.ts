@@ -3,8 +3,11 @@
  * Convenience re-export barrel for the entire db layer.
  *
  * Import from here:
- *   import { db, serviceDb } from '@/lib/db'
+ *   import { withUserRls, serviceDb } from '@/lib/db'
  *   import { userProfiles, integrations } from '@/lib/db'
+ *
+ * Web tier: use withUserRls(claims, tx => ...) so RLS is enforced.
+ * Agent tier: use serviceDb (bypasses RLS — always filter by user_id in code).
  */
-export { db, serviceDb } from "./client";
+export { withUserRls, serviceDb } from "./client";
 export * from "./schema";

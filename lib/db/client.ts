@@ -1,119 +1,106 @@
 /**
  * lib/db/client.ts
- * Two Drizzle-ORM clients for different access patterns.
+ * Postgres connection + two Drizzle access patterns.
  *
- * ─── db (RLS-enforced, web tier) ─────────────────────────────────────────────
- *   Uses the publishable/authenticated key. RLS is enforced at the Postgres level
- *   via the policies declared in lib/db/schema/. Safe for use in Server Components,
- *   Route Handlers, and Server Actions — the user's JWT context flows through
- *   Supabase and RLS limits results to their rows only.
+ * ─── serviceDb (service-role / agent tier) ───────────────────────────────────
+ *   Runs as the privileged `postgres` role, which BYPASSES RLS. Use ONLY in
+ *   Inngest background functions and internal agent tooling, and ALWAYS include
+ *   an explicit `where user_id = $1` filter — RLS will not protect you here.
+ *   Never expose serviceDb to web-request code.
  *
- * ─── serviceDb (service-role, agent tier) ────────────────────────────────────
- *   Uses SUPABASE_SERVICE_ROLE_KEY. Bypasses RLS entirely.
- *   MANDATORY: every query on serviceDb MUST include an explicit `user_id = $1`
- *   WHERE clause. Without it, the query sees all users' data.
- *   Use ONLY in Inngest background functions and internal agent tooling.
- *   NEVER expose serviceDb to client code or pass it into Route Handlers.
+ * ─── withUserRls() (RLS-enforced / web tier) ─────────────────────────────────
+ *   Use in Server Components, Route Handlers, and Server Actions. Runs the
+ *   callback inside a transaction that (a) loads the caller's validated JWT
+ *   claims into `request.jwt.claims` and (b) switches to the `authenticated`
+ *   Postgres role — so `auth.uid()` resolves and the per-table RLS policies
+ *   (`(SELECT auth.uid()) = user_id`, declared in lib/db/schema/) are enforced
+ *   at the database layer. This is the real multi-tenant safety net; do not
+ *   rely on code-level user_id filters alone.
+ *
+ * WHY A POOLER URL + prepare:false:
+ *   We connect through Supabase's transaction-mode connection pooler (port 6543).
+ *   Transaction-mode pooling does not support prepared statements, so postgres.js
+ *   must be created with { prepare: false }. SET LOCAL role / set_config(..., true)
+ *   are transaction-scoped, which is exactly what transaction-mode pooling pins.
  *
  * THREAT MODEL:
- *   T-1-02-03: SUPABASE_SERVICE_ROLE_KEY is server-only (no NEXT_PUBLIC_).
- *              serviceDb confined here; RLS bypass documented and code-review-checked.
- *
- * RESEARCH NOTE (Pitfall 7): The two-client split prevents RLS from blocking
- * Inngest functions (which run without a user JWT) while preserving RLS for
- * all web-tier queries.
+ *   T-1-02-03: the DB password and service-role access live only in DATABASE_URL
+ *              (server-only, never NEXT_PUBLIC_). RLS bypass is confined to serviceDb.
  */
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
+import { sql } from "drizzle-orm";
 import * as schema from "./schema";
 
 /**
- * Resolve and validate required DB env vars.
- * Called lazily when clients are first used (not at module import time)
- * so that unit tests importing schema files don't fail if DB env isn't set.
+ * Resolve the Postgres connection string.
+ *
+ * MUST be the Supabase **Transaction pooler** URI (port 6543) with the project's
+ * database password — NOT a Supabase API key. Get it from:
+ *   Supabase Dashboard → Project Settings → Database → Connection string → Transaction pooler
+ * It looks like:
+ *   postgresql://postgres.<ref>:<DB_PASSWORD>@aws-<n>-<region>.pooler.supabase.com:6543/postgres
+ *
+ * Resolved lazily (at first client use), so unit tests that only import schema
+ * files don't require DB env to be present.
  */
-function resolveDbConfig(): {
-  projectRef: string;
-  publishableKey: string;
-  serviceRoleKey: string;
-} {
-  const supabaseUrl = process.env["NEXT_PUBLIC_SUPABASE_URL"];
-  const publishableKey = process.env["NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY"];
-  const serviceRoleKey = process.env["SUPABASE_SERVICE_ROLE_KEY"];
-
-  if (!supabaseUrl) {
+function getConnectionString(): string {
+  const url = process.env["DATABASE_URL"];
+  if (!url) {
     throw new Error(
-      "NEXT_PUBLIC_SUPABASE_URL is not set. Add it to .env.local and Vercel environment variables."
+      "DATABASE_URL is not set. Use the Supabase Transaction pooler connection " +
+        "string (port 6543) with your database password (NOT an API key). " +
+        "Add it to .env.local and Vercel environment variables."
     );
   }
-  if (!publishableKey) {
-    throw new Error(
-      "NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY is not set. Add it to .env.local and Vercel environment variables."
-    );
-  }
-  if (!serviceRoleKey) {
-    throw new Error(
-      "SUPABASE_SERVICE_ROLE_KEY is not set. Add it to .env.local and Vercel environment variables. " +
-        "This must NEVER have a NEXT_PUBLIC_ prefix."
-    );
-  }
-
-  const projectRef = supabaseUrl
-    .replace("https://", "")
-    .replace(".supabase.co", "");
-
-  return { projectRef, publishableKey, serviceRoleKey };
+  return url;
 }
 
-// ─── Lazy client construction ─────────────────────────────────────────────────
-// Clients are constructed on first import — env validation happens then.
-// This allows schema test files to import schema/* without needing DB env vars.
-
-const { projectRef, publishableKey, serviceRoleKey } = resolveDbConfig();
-
-/**
- * Connection string for the RLS-enforced client.
- * Uses the publishable (anon) key — Supabase enforces RLS with the user's JWT
- * when auth.uid() is set via the session middleware.
- *
- * Connection pooler endpoint (port 6543) for serverless environments.
- */
-const rlsConnectionString =
-  `postgresql://postgres.${projectRef}:${publishableKey}` +
-  `@aws-0-us-east-1.pooler.supabase.com:6543/postgres`;
-
-/**
- * Connection string for the service-role client.
- * Service role bypasses RLS. Code MUST filter by user_id explicitly.
- */
-const serviceConnectionString =
-  `postgresql://postgres.${projectRef}:${serviceRoleKey}` +
-  `@aws-0-us-east-1.pooler.supabase.com:6543/postgres`;
-
-// ─── Postgres driver instances ────────────────────────────────────────────────
-
-const rlsPostgres = postgres(rlsConnectionString, {
-  prepare: false, // Required for Supabase connection pooler (pgBouncer transaction mode)
-  max: 1,         // Serverless: one connection per function invocation
-});
-
-const servicePostgres = postgres(serviceConnectionString, {
+// Single pooled connection. prepare:false is REQUIRED for the transaction-mode pooler.
+const client = postgres(getConnectionString(), {
   prepare: false,
-  max: 1,
+  max: 1, // serverless: one connection per function invocation
 });
 
-// ─── Drizzle client exports ───────────────────────────────────────────────────
+/**
+ * serviceDb — service-role Drizzle client (agent tier).
+ * Bypasses RLS (runs as the postgres role). EVERY query MUST filter by user_id.
+ * Use ONLY in Inngest functions / internal tooling. Never in web-request code.
+ */
+export const serviceDb = drizzle(client, { schema });
 
 /**
- * RLS-enforced Drizzle client — use in the web tier.
- * Server Components, Route Handlers, Server Actions.
- * Safe to use without explicit user_id filters (RLS enforces isolation).
+ * Internal base client for the web tier. Not exported — web-tier code must go
+ * through withUserRls() so RLS is actually enforced.
  */
-export const db = drizzle(rlsPostgres, { schema });
+const baseDb = drizzle(client, { schema });
+
+/** A Drizzle transaction handle, as passed to the withUserRls() callback. */
+type RlsTx = Parameters<Parameters<typeof baseDb.transaction>[0]>[0];
 
 /**
- * Service-role Drizzle client — use ONLY in the agent tier (Inngest functions).
- * Bypasses RLS. EVERY query must include WHERE user_id = <userId>.
- * Never import this in client components or Route Handlers serving web requests.
+ * withUserRls — run web-tier queries as the signed-in user with RLS enforced.
+ *
+ * Wraps `fn` in a transaction that sets the caller's JWT claims and switches to
+ * the `authenticated` role, so Supabase's `auth.uid()` resolves to the user and
+ * the table RLS policies limit/permit rows accordingly. The role + claims are
+ * set with SET LOCAL / is_local=true, so they reset automatically at COMMIT.
+ *
+ * @param claims The validated JWT claims from supabase.auth.getClaims() (must include `sub`).
+ * @param fn     Callback that receives the RLS-scoped transaction.
  */
-export const serviceDb = drizzle(servicePostgres, { schema });
+export async function withUserRls<T>(
+  claims: Record<string, unknown>,
+  fn: (tx: RlsTx) => Promise<T>
+): Promise<T> {
+  if (!claims || typeof claims["sub"] !== "string") {
+    throw new Error("withUserRls requires validated JWT claims with a string `sub`.");
+  }
+  const claimsJson = JSON.stringify(claims);
+  return baseDb.transaction(async (tx) => {
+    // Order matters: load claims, then drop privileges to `authenticated`.
+    await tx.execute(sql`select set_config('request.jwt.claims', ${claimsJson}, true)`);
+    await tx.execute(sql`set local role authenticated`);
+    return fn(tx);
+  });
+}

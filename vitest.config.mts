@@ -16,6 +16,10 @@ export default defineConfig({
       NEXT_PUBLIC_SUPABASE_URL: "https://testprojectref.supabase.co",
       NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: "test-anon-key-for-unit-tests",
       SUPABASE_SERVICE_ROLE_KEY: "test-service-role-key-for-unit-tests",
+      // postgres.js does not connect until first query, so a stub URL lets the
+      // db client be imported in unit tests without a real DB.
+      DATABASE_URL:
+        "postgresql://postgres.testprojectref:test-db-password@aws-0-us-east-1.pooler.supabase.com:6543/postgres",
     },
   },
   resolve: {
