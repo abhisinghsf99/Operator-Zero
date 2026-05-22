@@ -8,7 +8,7 @@ Four phases ordered by moat depth: Phase 1 lays the infrastructure rails before 
 
 - [x] **Phase 1: Infrastructure Foundation** - Backend rails, auth, schema, Inngest, SDK wiring, and CI — no user-facing surfaces (completed 2026-05-22)
 - [x] **Phase 2: Foundation — Prove the Agent** - Onboarding, Conversation surface, agent runtime, workflow engine, and a running L2 workflow (completed 2026-05-22)
-- [ ] **Phase 3: Ownership — The Portfolio** - My Workflows landing surface, Workflow Detail, Activity log, versioning, and portfolio ownership
+- [x] **Phase 3: Ownership — The Portfolio** - My Workflows landing surface, Workflow Detail, Activity log, versioning, and portfolio ownership (completed 2026-05-22)
 - [ ] **Phase 4: Polish — Effortless Daily Use** - Approval Inbox, full-fidelity inline approvals, complete Settings, mobile parity, and accessibility
 
 ## Phase Details
@@ -98,7 +98,7 @@ Plans:
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
-- [ ] 03-03-PLAN.md — Workflow Detail: inline edit + schedule picker + version history/restore + Run Now + Open in Chat (wave 3)
+- [x] 03-03-PLAN.md — Workflow Detail: inline edit + schedule picker + version history/restore + Run Now + Open in Chat (wave 3)
 
 **UI hint**: yes
 
@@ -125,5 +125,5 @@ Plans:
 |-------|----------------|--------|-----------|
 | 1. Infrastructure Foundation | 4/4 | Complete   | 2026-05-22 |
 | 2. Foundation — Prove the Agent | 8/8 | Complete   | 2026-05-22 |
-| 3. Ownership — The Portfolio | 3/4 | In Progress|  |
+| 3. Ownership — The Portfolio | 4/4 | Complete   | 2026-05-22 |
 | 4. Polish — Effortless Daily Use | 0/TBD | Not started | - |

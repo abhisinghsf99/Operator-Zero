@@ -85,8 +85,8 @@
 - [x] **WF-08**: User can change a workflow's automation level inline (L1/L2/L3) with immediate save; switching to L3 shows a one-time confirmation
 - [x] **WF-09**: User can pause/resume a workflow without deleting it (history + config retained)
 - [x] **WF-10**: User can start a new workflow from My Workflows ("+ New Workflow" opens a creation thread in Conversation)
-- [ ] **WF-11**: Workflow Detail shows the visual definition + historical runs; name/description/schedule/level are inline-editable
-- [ ] **WF-12**: User can edit workflow logic via "Open in Chat" — a scoped thread pre-loaded with the workflow's context
+- [x] **WF-11**: Workflow Detail shows the visual definition + historical runs; name/description/schedule/level are inline-editable
+- [x] **WF-12**: User can edit workflow logic via "Open in Chat" — a scoped thread pre-loaded with the workflow's context
 - [x] **WF-13**: User can "Run Now" to trigger immediate execution; the run appears in Historical Runs within seconds
 - [x] **WF-14**: Workflows are versioned (number increments on edit); runs reference their version; restore creates a new version; last 10 retained
 
