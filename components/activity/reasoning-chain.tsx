@@ -20,7 +20,7 @@
 
 import { useState } from "react";
 import { ChevronDown, ChevronRight } from "lucide-react";
-import { createBrowserClient } from "@supabase/ssr";
+import { createBrowserClient } from "@/lib/auth/client";
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
@@ -173,10 +173,10 @@ export function ReasoningChain({
       setFetchError(null);
 
       try {
-        const supabase = createBrowserClient(
-          process.env["NEXT_PUBLIC_SUPABASE_URL"]!,
-          process.env["NEXT_PUBLIC_SUPABASE_ANON_KEY"]!
-        );
+        // CR-03: use the project factory (reads NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY).
+        // The previous inline construction referenced NEXT_PUBLIC_SUPABASE_ANON_KEY,
+        // which is not defined anywhere in this project → broken client + failed fetch.
+        const supabase = createBrowserClient();
 
         // Extract the storage path from the URL
         // reasoning_chain_url is a full Supabase Storage URL
