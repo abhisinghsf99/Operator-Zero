@@ -81,10 +81,10 @@
 - [x] **WF-04**: L2 (approval-gated) workflows pause at execution boundaries, create an approval, and resume on approve/reject
 - [x] **WF-05**: L3 (autonomous) workflows execute without approval and log everything to Activity
 - [x] **WF-06**: Every agent action writes an Activity entry within 5s of execution
-- [ ] **WF-07**: My Workflows shows all workflows grouped by status (Scheduled / Triggered / Manual / Paused / Drafts) with a recent-activity strip
+- [x] **WF-07**: My Workflows shows all workflows grouped by status (Scheduled / Triggered / Manual / Paused / Drafts) with a recent-activity strip
 - [x] **WF-08**: User can change a workflow's automation level inline (L1/L2/L3) with immediate save; switching to L3 shows a one-time confirmation
 - [x] **WF-09**: User can pause/resume a workflow without deleting it (history + config retained)
-- [ ] **WF-10**: User can start a new workflow from My Workflows ("+ New Workflow" opens a creation thread in Conversation)
+- [x] **WF-10**: User can start a new workflow from My Workflows ("+ New Workflow" opens a creation thread in Conversation)
 - [ ] **WF-11**: Workflow Detail shows the visual definition + historical runs; name/description/schedule/level are inline-editable
 - [ ] **WF-12**: User can edit workflow logic via "Open in Chat" — a scoped thread pre-loaded with the workflow's context
 - [x] **WF-13**: User can "Run Now" to trigger immediate execution; the run appears in Historical Runs within seconds

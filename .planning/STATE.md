@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: "03-01 complete — migration 0005 applied live; ready for 03-02"
-last_updated: "2026-05-22T18:10:04.706Z"
+stopped_at: "03-02 complete — My Workflows landing surface live; ready for 03-03"
+last_updated: "2026-05-22T18:55:00.000Z"
 last_activity: 2026-05-22
 progress:
   total_phases: 4
   completed_phases: 2
   total_plans: 16
-  completed_plans: 13
-  percent: 50
+  completed_plans: 14
+  percent: 88
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-05-21)
 ## Current Position
 
 Phase: 03 (ownership-the-portfolio) — EXECUTING
-Plan: 2 of 4
+Plan: 3 of 4
 Status: Ready to execute
 Last activity: 2026-05-22
 
-Progress: [████████░░] 81%
+Progress: [█████████░] 88% (14/16 plans complete)
 
 ## Performance Metrics
 
@@ -62,6 +62,7 @@ Progress: [████████░░] 81%
 | Phase 02-foundation-prove-the-agent P07 | 13 minutes | 3 tasks | 10 files |
 | Phase 02 P08 | 16 minutes | 3 tasks | 22 files |
 | Phase 03 P01 | ~50min | 3 tasks | 14 files |
+| Phase 03 P02 | ~25min | 2 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -100,6 +101,8 @@ Recent decisions affecting current work:
 - [Phase ?]: [03-01] Migration 0005 applied via 'supabase db push --db-url <session-pooler>' (not Supabase MCP — MCP lacked project permission); recorded in remote migration history (Local 0005 / Remote 0005)
 - [Phase ?]: [03-01] createWorkflowVersion retries once on UNIQUE(workflow_id,version_number) 23505 with a fresh MAX read — absorbs concurrent version inserts
 - [Phase ?]: [03-01] canRevert is one shared pure function (D-11) re-evaluated server-side with a fresh shopify_updated_at fetch; UI classification never trusted (T-3-01-05); unknown action_type defaults to content (7d) window
+- [03-02] WorkflowRow name is a Link to detail page — inline edit is D-01 detail-surface feature, not list
+- [03-02] context_workflow_id explicitly omitted in new-workflow navigation — WF-10 routes to blank /app/chat; WF-12 ("Open in Chat" with context) is plan 03-03
 
 ### Pending Todos
 
@@ -113,6 +116,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-05-22T18:09:47.154Z
-Stopped at: "03-01 complete — migration 0005 applied live; ready for 03-02"
+Last session: 2026-05-22T18:55:00.000Z
+Stopped at: "03-02 complete — My Workflows landing surface live; ready for 03-03"
 Resume file: None
