@@ -53,7 +53,7 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 02-03-PLAN.md — Shopify integration: OAuth + full sync + webhooks + idempotent writes + health (wave 2)
+- [x] 02-03-PLAN.md — Shopify integration: OAuth + full sync + webhooks + idempotent writes + health (wave 2)
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
@@ -110,6 +110,6 @@ Plans:
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Infrastructure Foundation | 4/4 | Complete   | 2026-05-22 |
-| 2. Foundation — Prove the Agent | 2/8 | In Progress|  |
+| 2. Foundation — Prove the Agent | 3/8 | In Progress|  |
 | 3. Ownership — The Portfolio | 0/TBD | Not started | - |
 | 4. Polish — Effortless Daily Use | 0/TBD | Not started | - |
