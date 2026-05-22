@@ -73,7 +73,6 @@ interface LevelSelectorProps {
 }
 
 function LevelSelector({ workflowId, currentLevel, onLevelChanged }: LevelSelectorProps) {
-  const [pendingLevel, setPendingLevel] = useState<AutomationLevel | null>(null);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [isPending, startTransition] = useTransition();
 
@@ -82,7 +81,7 @@ function LevelSelector({ workflowId, currentLevel, onLevelChanged }: LevelSelect
   function handleLevelClick(level: AutomationLevel) {
     if (level === currentLevel || isPending) return;
     if (level === "L3") {
-      setPendingLevel("L3");
+      // L3 requires explicit confirmation (D-03)
       setConfirmOpen(true);
     } else {
       applyLevel(level);
@@ -102,9 +101,11 @@ function LevelSelector({ workflowId, currentLevel, onLevelChanged }: LevelSelect
   }
 
   function handleConfirmL3() {
+    // WR-04: pass the level explicitly rather than reading async pendingLevel
+    // state — removes any chance of applying a stale/nulled value on a fast
+    // double-confirm or interleaved re-render (mirrors workflow-row.tsx).
     setConfirmOpen(false);
-    if (pendingLevel) applyLevel(pendingLevel);
-    setPendingLevel(null);
+    applyLevel("L3");
   }
 
   return (
