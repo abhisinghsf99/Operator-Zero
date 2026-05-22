@@ -38,7 +38,16 @@ Four phases ordered by moat depth: Phase 1 lays the infrastructure rails before 
   3. The Orchestrator's first response token arrives in under 2 seconds (p50), and full workflow plan in under 8 seconds (p50)
   4. A live workflow build visualizer renders inline in the message stream, assembling each step as the Orchestrator narrates it
   5. An L2 workflow pauses at an execution boundary, creates an approval entry, and resumes correctly when approved — durable across Inngest restarts
-**Plans**: TBD
+**Plans**: 8 plans (5 waves)
+Plans:
+- [ ] 02-01-PLAN.md — UI Foundation: shadcn/ui + OKLCH tokens + fonts + app-shell nav (wave 1)
+- [ ] 02-02-PLAN.md — Schema migration 0003 (22 tables + RLS + pgvector) + Wave-0 test scaffolds (wave 1)
+- [ ] 02-03-PLAN.md — Shopify integration: OAuth + full sync + webhooks + idempotent writes + health (wave 2)
+- [ ] 02-04-PLAN.md — Gmail integration: OAuth offline + 30-day sync + History polling + classify (wave 3)
+- [ ] 02-05-PLAN.md — Agent runtime: prompt budget + 22-tool catalog + memory + error class + cost cap (wave 3)
+- [ ] 02-06-PLAN.md — Conversation surface: SSE streaming + visualizer + threads + degradation (wave 4)
+- [ ] 02-07-PLAN.md — Workflow engine: durable L1/L2/L3 + L2 pause/resume keystone + Activity (wave 4)
+- [ ] 02-08-PLAN.md — Onboarding wizard + Settings/Connections + full-journey e2e (wave 5)
 **UI hint**: yes
 
 ### Phase 3: Ownership — The Portfolio
@@ -74,6 +83,6 @@ Four phases ordered by moat depth: Phase 1 lays the infrastructure rails before 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Infrastructure Foundation | 4/4 | Complete   | 2026-05-22 |
-| 2. Foundation — Prove the Agent | 0/TBD | Not started | - |
+| 2. Foundation — Prove the Agent | 0/8 | Planned | - |
 | 3. Ownership — The Portfolio | 0/TBD | Not started | - |
 | 4. Polish — Effortless Daily Use | 0/TBD | Not started | - |
