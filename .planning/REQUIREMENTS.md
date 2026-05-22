@@ -13,9 +13,9 @@
 ### Infrastructure (INFRA)
 
 - [x] **INFRA-01**: Vercel + Supabase projects provisioned; app deploys on merge to main with PR preview deployments and CI tests
-- [ ] **INFRA-02**: Drizzle schema + forward-only migrations for initial tables (users, user_profiles, integrations)
-- [ ] **INFRA-03**: RLS policies enforce per-user row access on every user-data table (defense-in-depth with explicit query filters)
-- [ ] **INFRA-04**: Integration tokens are encrypted at rest (libsodium, key from Supabase secret); plaintext never hits the DB
+- [x] **INFRA-02**: Drizzle schema + forward-only migrations for initial tables (users, user_profiles, integrations)
+- [x] **INFRA-03**: RLS policies enforce per-user row access on every user-data table (defense-in-depth with explicit query filters)
+- [x] **INFRA-04**: Integration tokens are encrypted at rest (libsodium, key from Supabase secret); plaintext never hits the DB
 - [ ] **INFRA-05**: Inngest configured with local dev server and deploys with the app; a durable hello-world function fires and checkpoints
 - [ ] **INFRA-06**: Anthropic SDK + Voyage embeddings wired and callable from the agent tier
 - [ ] **INFRA-07**: Integration adapter interface defined with skeleton Shopify + Gmail clients (no real ops yet)

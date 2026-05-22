@@ -73,7 +73,7 @@ Four phases ordered by moat depth: Phase 1 lays the infrastructure rails before 
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Infrastructure Foundation | 1/4 | In Progress|  |
+| 1. Infrastructure Foundation | 2/4 | In Progress|  |
 | 2. Foundation — Prove the Agent | 0/TBD | Not started | - |
 | 3. Ownership — The Portfolio | 0/TBD | Not started | - |
 | 4. Polish — Effortless Daily Use | 0/TBD | Not started | - |
