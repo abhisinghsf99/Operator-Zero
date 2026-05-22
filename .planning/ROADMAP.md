@@ -85,7 +85,12 @@ Plans:
   4. User can revert a recent agent action subject to drift rules; disabled reverts show a tooltip explaining why; bulk revert is atomic (all-or-none)
   5. Workflows are versioned — editing increments the version, runs reference their version, and restore creates a new version without overwriting history
 
-**Plans**: TBD
+**Plans**: 4 plans (3 waves)
+Plans:
+- [ ] 03-01-PLAN.md — Foundation: migration 0005 + version/revert/grouping libs + Server Actions + D-16 redirect + Wave 0 tests (wave 1)
+- [ ] 03-02-PLAN.md — My Workflows surface: grouped portfolio + live strip + inline level/pause + search + New Workflow (wave 2)
+- [ ] 03-04-PLAN.md — Activity log: virtualized timeline + AND filters + before/after diff + single/atomic-bulk revert + Save as Workflow (wave 2)
+- [ ] 03-03-PLAN.md — Workflow Detail: inline edit + schedule picker + version history/restore + Run Now + Open in Chat (wave 3)
 **UI hint**: yes
 
 ### Phase 4: Polish — Effortless Daily Use
@@ -111,5 +116,5 @@ Plans:
 |-------|----------------|--------|-----------|
 | 1. Infrastructure Foundation | 4/4 | Complete   | 2026-05-22 |
 | 2. Foundation — Prove the Agent | 8/8 | Complete   | 2026-05-22 |
-| 3. Ownership — The Portfolio | 0/TBD | Not started | - |
+| 3. Ownership — The Portfolio | 0/4 | Planned | - |
 | 4. Polish — Effortless Daily Use | 0/TBD | Not started | - |
