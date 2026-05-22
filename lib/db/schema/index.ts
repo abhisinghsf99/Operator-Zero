@@ -42,3 +42,7 @@ export { gmailThreads, gmailMessages, gmailSyncState } from "./gmail-mirror";
 
 // Phase 2 — Telemetry + cost
 export { agentTelemetry, costAggregates } from "./telemetry";
+
+// Phase 4 — Session registry + export job status
+export { userSessions } from "./user-sessions";
+export { userExports } from "./user-exports";

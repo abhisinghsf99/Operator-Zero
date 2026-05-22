@@ -30,6 +30,12 @@ export default defineConfig({
       name: "chromium",
       use: { ...devices["Desktop Chrome"] },
     },
+    {
+      // UX-01: Mobile parity — 375px-class viewport for two-pane drill-down tests.
+      // Pixel 7 is a representative Android device at 412px logical width.
+      name: "mobile-chrome",
+      use: { ...devices["Pixel 7"] },
+    },
   ],
 
   webServer: {
