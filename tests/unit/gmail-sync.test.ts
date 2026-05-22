@@ -40,6 +40,7 @@ vi.mock("@/lib/db/client", () => {
     },
     insert: () => {
       const chain: Record<string, unknown> = {};
+      let _insertVal: Record<string, unknown> | null = null;
       chain.values = (val: Record<string, unknown>) => {
         // Check gmail_message_id FIRST — message rows have both gmail_message_id + gmail_thread_id
         // Thread rows only have gmail_thread_id (no gmail_message_id)
@@ -48,15 +49,26 @@ vi.mock("@/lib/db/client", () => {
         } else if ("gmail_thread_id" in val) {
           gmailState.upsertedThreads.push(val);
         }
+        _insertVal = val;
         chain._val = val;
         return chain;
       };
-      chain.onConflictDoUpdate = () => Promise.resolve(undefined);
+      chain.onConflictDoUpdate = (opts: Record<string, unknown>) => {
+        // WR-10: capture the upsert set values for sync state assertions
+        // The upsert for gmailSyncState uses last_history_id / sync_status fields
+        const setVals = opts.set as Record<string, unknown> | undefined;
+        if (setVals && ("last_history_id" in setVals || "sync_status" in setVals)) {
+          // Merge the insert values + the conflict-update set values
+          gmailState.updatedSyncState = { ...(_insertVal ?? {}), ...(setVals ?? {}) };
+        }
+        return Promise.resolve(undefined);
+      };
       return chain;
     },
     update: () => {
       const chain: Record<string, unknown> = {};
       chain.set = (val: Record<string, unknown>) => {
+        // Keep update mock for any remaining UPDATE calls in incremental sync
         gmailState.updatedSyncState = val;
         return chain;
       };

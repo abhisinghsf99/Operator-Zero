@@ -252,17 +252,9 @@ export async function gmailInitialSync(userId: string): Promise<void> {
   const profileRes = await gmail.users.getProfile({ userId: "me" });
   const historyId = (profileRes.data.historyId as string | undefined) ?? null;
 
-  await serviceDb
-    .update(gmailSyncState)
-    .set({
-      last_history_id: historyId,
-      last_poll_at: new Date(),
-      sync_status: "healthy",
-    })
-    .where(eq(gmailSyncState.user_id, userId));
-
-  // Insert if not exists (initial sync creates the row)
-  // Using insert with onConflictDoUpdate to handle both create and update
+  // WR-10 FIX: Remove the dead standalone UPDATE (no-ops on first sync when the row
+  // doesn't exist yet). Keep only the upsert (insert-on-conflict) which handles
+  // both the initial-sync case (creates the row) and subsequent syncs (updates it).
   await serviceDb
     .insert(gmailSyncState)
     .values({
