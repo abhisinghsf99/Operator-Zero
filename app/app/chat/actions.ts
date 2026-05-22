@@ -106,6 +106,61 @@ export async function createThread(
   }
 }
 
+// ─── openWorkflowInChat ───────────────────────────────────────────────────────
+
+const openWorkflowInChatSchema = z.object({
+  workflowId: z.string().uuid("workflowId must be a UUID"),
+  workflowName: z.string().min(1).max(256),
+});
+
+/**
+ * openWorkflowInChat — create a new scoped thread with context_workflow_id set.
+ *
+ * D-06/WF-12: "Open in Chat" opens a scoped Conversation thread pre-loaded
+ * with the workflow's context. The thread's context_workflow_id FK tells the
+ * system prompt assembler which workflow to pre-load.
+ *
+ * Security: withUserRls enforces user_id ownership; workflowId is UUID-validated.
+ *
+ * Returns { threadId } on success or { error } on failure.
+ */
+export async function openWorkflowInChat(
+  workflowId: string,
+  workflowName: string
+): Promise<{ threadId: string } | { error: string }> {
+  const parsed = openWorkflowInChatSchema.safeParse({ workflowId, workflowName });
+  if (!parsed.success) {
+    return { error: parsed.error.errors[0]?.message ?? "invalid input" };
+  }
+
+  const supabase = await createClient();
+  const { data } = await supabase.auth.getClaims();
+  const claims = data?.claims ?? null;
+  if (!claims?.sub) return { error: "unauthenticated" };
+
+  const userId = claims.sub as string;
+  const title = autoNameThread(`Workflow: ${parsed.data.workflowName}`);
+
+  try {
+    const [row] = await withUserRls(claims as Record<string, unknown>, async (tx) => {
+      return tx
+        .insert(threads)
+        .values({
+          user_id: userId,
+          title,
+          agent_context: "orchestrator",
+          context_workflow_id: parsed.data.workflowId,
+          last_message_at: new Date(),
+        })
+        .returning();
+    }) as Array<{ id: string }>;
+
+    return { threadId: row?.id ?? "" };
+  } catch (err) {
+    return { error: String(err) };
+  }
+}
+
 // ─── renameThread ─────────────────────────────────────────────────────────────
 
 /**
