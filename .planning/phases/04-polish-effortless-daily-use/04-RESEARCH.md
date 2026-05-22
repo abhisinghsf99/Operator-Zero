@@ -773,22 +773,25 @@ const effectiveLevel = overrideLevel
 
 ---
 
-## Open Questions
+## Open Questions (RESOLVED)
 
 1. **Snoozed approval and Inngest wait timeout**
    - What we know: `step.waitForEvent` in `execute-workflow-run.ts` has a 14d timeout. Snoozed items can come back before that timeout.
    - What's unclear: Does a snooze "return" fire `approval.resolved` (resuming the paused Inngest run) or does the user need to explicitly approve after unsnooze? D-02 says items "reappear at return time sorted to top" — they still need explicit approval.
    - Recommendation: Snooze = DB status update only; do NOT fire `approval.resolved`. The Inngest `waitForEvent` continues waiting. When the snoozed item surfaces and the user approves, that fires `approval.resolved`. Confirm this interpretation with D-09 context before implementing.
+   - **RESOLVED (A1/Q1):** Snooze does NOT fire `approval.resolved` — the Inngest run stays paused; only approve/reject resolve it (see 04-02 `snoozeItem`; confirmed against `resolveApprovalRow`). Implementer must NOT halt on this question.
 
 2. **Brand voice encryption: current state**
    - What we know: `brand_voice_profiles` exists. CLAUDE.md security baseline requires encrypted-at-rest for brand voice.
    - What's unclear: Onboarding writes to this table in Phase 2 — is it currently encrypted?
    - Recommendation: Read `app/onboarding` actions or `lib/agent/memory.ts` brand voice write path before writing the Settings save action.
+   - **RESOLVED (A2/Q2):** Onboarding writes plaintext brand voice; the Phase 4 read path tolerates legacy plaintext via try-catch on `decryptToken`, and `saveBrandVoice` encrypts going forward (see 04-03 Task 1). Implementer must NOT halt on this question.
 
 3. **Session table write timing**
    - What we know: Session must be written at login. Auth middleware already runs on `/app/*`.
    - What's unclear: Best place to write the session row — middleware (runs on every request, would need dedup) or a dedicated login Server Action / auth callback hook.
    - Recommendation: Write on the `/auth/callback` route (post-OAuth) + on `supabase.auth.signInWithPassword` success, not in middleware (too frequent). Use `INSERT ... ON CONFLICT (supabase_session_id) DO UPDATE SET last_seen_at = now()` for idempotency.
+   - **RESOLVED (A3/Q3):** `automation_level` ordering is L1/L2/L3 with lower = stricter; the autonomy override only ADDS friction, wired in `execute-workflow-run.ts` per D-06/D-07b (see 04-04). Implementer must NOT halt on this question.
 
 ---
 
