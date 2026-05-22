@@ -10,7 +10,7 @@
  *
  * THREAT MODEL: T-1-02-01 (cross-user row access) — mitigated by RLS policy here.
  */
-import { pgTable, uuid, text, timestamp, pgPolicy } from "drizzle-orm/pg-core";
+import { pgTable, uuid, text, timestamp, pgPolicy, integer } from "drizzle-orm/pg-core";
 import { authenticatedRole } from "drizzle-orm/supabase";
 import { sql } from "drizzle-orm";
 
@@ -28,6 +28,12 @@ export const userProfiles = pgTable(
 
     /** Shopify shop domain, e.g. "acme-store.myshopify.com" (nullable) */
     shopify_shop: text("shopify_shop"),
+
+    /**
+     * Current onboarding step (0 = not started; 1-5 = in progress; null or check onboarding_completed_at for done).
+     * Added in migration 0003 (Phase 2). Used by ONBOARD-06 to resume interrupted onboarding.
+     */
+    onboarding_step: integer("onboarding_step").default(0),
 
     /** Timestamp when onboarding was completed (nullable) */
     onboarding_completed_at: timestamp("onboarding_completed_at", {
