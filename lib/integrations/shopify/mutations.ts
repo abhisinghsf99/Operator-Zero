@@ -113,13 +113,14 @@ export async function updateProduct(
   //    (Full idempotency store in Redis deferred to scale phase.)
 
   // 3. writeActivity BEFORE Shopify API call (WF-06 / CLAUDE.md observability constraint).
-  //    step_id = idempotency_key so retries are idempotent via ON CONFLICT DO NOTHING.
-  //    workflow_run_id is not known at this layer (mutations.ts is called by the workflow engine);
-  //    use idempotency_key as a stable step_id placeholder — the engine-level writeActivity
-  //    (in execute-workflow-run.ts) has the canonical run context.
+  //    workflow_run_id is null at this tool layer — activity_entries.workflow_run_id is
+  //    NULLABLE ("direct chat actions have no workflow run", schema comment).
+  //    The idempotency key lives in step_id; the unique index on (workflow_run_id, step_id)
+  //    is a partial index WHERE both are non-null, so null workflow_run_id entries are
+  //    always inserted (correct for one-shot chat-tool calls).
   await writeActivity(userId, {
-    workflow_run_id: idempotency_key,
-    step_id: `${idempotency_key}:pre`,
+    workflow_run_id: null,
+    step_id: idempotency_key,
     action_type: "product_update",
     summary: `Updating product ${input.product_gid}`,
     result: "success",
@@ -278,9 +279,10 @@ export async function updateInventory(
   const before_state = beforeRow ?? null;
 
   // 3. writeActivity BEFORE Shopify API call (WF-06 / CLAUDE.md observability constraint).
+  //    workflow_run_id is null at the tool layer (same reasoning as updateProduct above).
   await writeActivity(userId, {
-    workflow_run_id: idempotency_key,
-    step_id: `${idempotency_key}:pre`,
+    workflow_run_id: null,
+    step_id: idempotency_key,
     action_type: "inventory_update",
     summary: `Updating inventory for variant ${input.variant_gid}`,
     result: "success",
@@ -290,39 +292,81 @@ export async function updateInventory(
     is_revertable: true,
   });
 
-  // 4. Write to Shopify (variant inventory is managed via inventoryAdjustQuantity or
-  //    inventorySetOnHandQuantities in newer API versions)
+  // 4. Write to Shopify using an absolute-set mutation (inventorySetOnHandQuantities).
+  //    Using a delta derived from the possibly-stale mirror baseline is incorrect —
+  //    if the mirror is stale the delta lands at the wrong absolute value.
+  //    inventorySetOnHandQuantities sets the desired quantity directly (WR-04).
   const adapter = new ShopifyAdapter(userId);
   await adapter.shopifyGraphQL(
-    `mutation AdjustInventory($input: InventoryAdjustItemInput!) {
-      inventoryAdjustQuantities(input: {
-        reason: "other",
-        name: "available",
-        changes: [$input]
-      }) {
+    `mutation SetInventory($input: InventorySetOnHandQuantitiesInput!) {
+      inventorySetOnHandQuantities(input: $input) {
         inventoryAdjustmentGroup { id }
         userErrors { field message }
       }
     }`,
     {
       input: {
-        inventoryItemId: input.variant_gid,
-        delta: input.inventory_qty - (before_state?.inventory_qty ?? 0),
+        reason: "correction",
+        setQuantities: [
+          {
+            inventoryItemId: input.variant_gid,
+            locationId: "gid://shopify/Location/1", // default location; v2 will resolve dynamically
+            quantity: input.inventory_qty,
+          },
+        ],
       },
     }
   );
 
-  // 5. Re-read to update mirror
+  // 5. Re-read from Shopify and upsert (insert-on-conflict) the mirror row.
+  //    Using a bare UPDATE silently no-ops when the variant hasn't been mirrored yet (WR-03).
+  //    The re-read ensures the mirror reflects what Shopify accepted.
   const syncNow = new Date();
-  await serviceDb
-    .update(shopifyProductVariants)
-    .set({ inventory_qty: input.inventory_qty, last_synced_at: syncNow })
-    .where(
-      and(
-        eq(shopifyProductVariants.user_id, userId),
-        eq(shopifyProductVariants.variant_gid, input.variant_gid)
-      )
-    );
+  const reReadVariant = await adapter.shopifyGraphQL<{
+    productVariant: {
+      id: string;
+      inventoryQuantity?: number;
+      price?: string;
+      sku?: string;
+      product?: { id: string };
+    } | null;
+  }>(
+    `query GetVariant($id: ID!) {
+      productVariant(id: $id) {
+        id inventoryQuantity price sku
+        product { id }
+      }
+    }`,
+    { id: input.variant_gid }
+  );
+
+  const v = reReadVariant.productVariant;
+  if (v) {
+    // product_gid is required by the schema — prefer the re-read value from Shopify,
+    // then fall back to the before_state value (from the mirror at step 1).
+    const productGid =
+      v.product?.id ??
+      (before_state?.product_gid as string | undefined) ??
+      "";
+    await serviceDb
+      .insert(shopifyProductVariants)
+      .values({
+        user_id: userId,
+        variant_gid: v.id,
+        product_gid: productGid,
+        inventory_qty: v.inventoryQuantity ?? input.inventory_qty,
+        price: v.price ?? null,
+        sku: v.sku ?? null,
+        last_synced_at: syncNow,
+      })
+      .onConflictDoUpdate({
+        target: [shopifyProductVariants.user_id, shopifyProductVariants.variant_gid],
+        set: {
+          inventory_qty: v.inventoryQuantity ?? input.inventory_qty,
+          last_synced_at: syncNow,
+        },
+      });
+  }
 
   const [afterRow] = await serviceDb
     .select()

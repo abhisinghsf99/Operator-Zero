@@ -256,6 +256,64 @@ describe("WF-06 — writeActivity called BEFORE Shopify API call (observability-
     expect(writeActivityIdx).toBeLessThan(shopifyWriteIdx);
   });
 
+  it("CR-01: writeActivity is called with workflow_run_id=null (not the idempotency key)", async () => {
+    vi.resetModules();
+
+    let capturedInput: Record<string, unknown> | null = null;
+
+    vi.doMock("@/lib/workflows/activity", () => ({
+      writeActivity: async function (_userId: string, input: Record<string, unknown>) {
+        capturedInput = input;
+      },
+    }));
+
+    let selectCallCount = 0;
+    const mockServiceDb = {
+      select: vi.fn().mockImplementation(() => ({
+        from: vi.fn().mockReturnValue({
+          where: vi.fn().mockReturnValue({
+            limit: vi.fn().mockImplementation(async () => {
+              selectCallCount++;
+              if (selectCallCount === 1) return [{ product_gid: "gid://shopify/Product/1", title: "Old" }];
+              return [{ product_gid: "gid://shopify/Product/1", title: "New" }];
+            }),
+          }),
+        }),
+      })),
+      insert: vi.fn().mockReturnValue({
+        values: vi.fn().mockReturnValue({
+          onConflictDoUpdate: vi.fn().mockResolvedValue([]),
+        }),
+      }),
+    };
+    vi.doMock("@/lib/db/client", () => ({ serviceDb: mockServiceDb }));
+    vi.doMock("@/lib/db/schema/shopify-mirror", () => ({
+      shopifyProducts: { name: "shopify_products" },
+      shopifyProductVariants: { name: "shopify_product_variants" },
+    }));
+
+    function MockAdapterCR01() {}
+    MockAdapterCR01.prototype.shopifyGraphQL = async function (query: string) {
+      if (query.includes("mutation")) return {};
+      return { product: { id: "gid://shopify/Product/1", title: "New" } };
+    };
+    vi.doMock("@/lib/integrations/shopify/client", () => ({
+      ShopifyAdapter: MockAdapterCR01,
+    }));
+
+    const { updateProduct } = await import("@/lib/integrations/shopify/mutations");
+    await updateProduct("user-1", {
+      product_gid: "gid://shopify/Product/1",
+      title: "New",
+    });
+
+    // CR-01: workflow_run_id MUST be null — not the colon-delimited idempotency key
+    expect(capturedInput).not.toBeNull();
+    expect(capturedInput!["workflow_run_id"]).toBeNull();
+    // The idempotency key should live in step_id
+    expect(capturedInput!["step_id"]).toContain("user-1:product_update:");
+  });
+
   it("writeActivity receives before_state and action_type from updateProduct", async () => {
     vi.resetModules();
 

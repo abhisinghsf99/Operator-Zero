@@ -24,8 +24,14 @@ import { activityEntries } from "@/lib/db/schema";
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
 export interface WriteActivityInput {
-  /** FK to workflow_runs(id) — required for idempotency constraint */
-  workflow_run_id: string;
+  /**
+   * FK to workflow_runs(id) — nullable.
+   * Pass null for direct-chat/tool-layer actions that have no workflow run.
+   * The idempotency constraint is on (workflow_run_id, step_id) WHERE both
+   * are non-null; when workflow_run_id is null the entry is still written
+   * (no dedup) which is correct for one-shot chat-originated tool calls.
+   */
+  workflow_run_id: string | null;
   /** Step identifier within the run — required for idempotency constraint */
   step_id: string;
   /** Action type (e.g., 'product_update', 'inventory_update', 'send_email_reply') */
