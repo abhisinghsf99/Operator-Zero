@@ -58,7 +58,7 @@ blocked: 0
 
 ## Deferred (non-blocking, from 02-REVIEW.md — track for v1.1)
 
-- WR-07: verify Supabase Realtime authorization policies for `approvals`/`messages` (so `{ private: true }` enforces tenant isolation server-side)
+- ~~WR-07: Supabase Realtime authorization policies~~ — **RESOLVED 2026-05-22** during `/gsd:secure-phase 2` (migration 0004: ownership-checked `realtime.messages` RLS for `thread:*`/`approval:*` + client `setAuth()`). Closed threats T-2-06-05 & T-2-07-04.
 - WR-09: batch/cap Gmail support classification + route its cost through the cost cap
 - WR-11: implement an `updatedAt`-cursor incremental Shopify sync (current poll re-runs full sync)
 - IN-04: record real per-step LLM cost for workflow steps (currently a non-zero placeholder)
