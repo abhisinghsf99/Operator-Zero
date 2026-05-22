@@ -79,9 +79,27 @@ const mockOAuth2Client = vi.hoisted(() => ({
   refreshAccessToken: vi.fn(),
 }));
 
-vi.mock("google-auth-library", () => ({
-  OAuth2Client: vi.fn().mockImplementation(() => mockOAuth2Client),
-}));
+vi.mock("google-auth-library", () => {
+  // Must use `function` keyword (not arrow) so vi.fn() is usable as a constructor
+  const MockOAuth2Client = vi.fn(function () {
+    return mockOAuth2Client;
+  });
+  return { OAuth2Client: MockOAuth2Client };
+});
+
+// Also mock googleapis (which re-exports from google-auth-library)
+vi.mock("googleapis", () => {
+  const MockOAuth2Client = vi.fn(function () {
+    return mockOAuth2Client;
+  });
+  return {
+    google: {
+      gmail: vi.fn().mockReturnValue({ users: {} }),
+      auth: { OAuth2: MockOAuth2Client },
+    },
+    OAuth2Client: MockOAuth2Client,
+  };
+});
 
 // Mock Supabase for auth guard
 vi.mock("@/lib/auth/server", () => ({
@@ -135,7 +153,7 @@ describe("INTEG-04 — Gmail OAuth + refresh-token handling", () => {
     );
 
     buildGmailAuthUrl("test-nonce");
-    const callArgs = mockOAuth2Client.generateAuthUrl.mock.calls[0][0] as {
+    const callArgs = mockOAuth2Client.generateAuthUrl.mock.calls[0]?.[0] as {
       scope: string[];
     };
     expect(callArgs.scope).toContain(

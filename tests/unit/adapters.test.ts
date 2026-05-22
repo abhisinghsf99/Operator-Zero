@@ -4,8 +4,10 @@
 //
 // ShopifyAdapter is a real Phase 2 implementation (02-03): isHealthy() and
 // refreshToken() query/update the integrations table via serviceDb, which is mocked
-// here so these remain true unit tests (no live DB). GmailAdapter is still a Phase 1
-// skeleton until 02-04 implements it.
+// here so these remain true unit tests (no live DB). GmailAdapter is a real Phase 2
+// implementation (02-04): isHealthy() queries the integrations table via serviceDb;
+// refreshToken() delegates to getAccessToken() which also uses serviceDb and
+// google-auth-library (both mocked here).
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
@@ -35,6 +37,48 @@ vi.mock("@/lib/db/client", () => {
   };
   return { serviceDb };
 });
+
+// Mock google-auth-library — GmailAdapter uses OAuth2Client for token refresh
+const mockOAuth2Instance = vi.hoisted(() => ({
+  setCredentials: vi.fn(),
+  refreshAccessToken: vi.fn(),
+}));
+
+vi.mock("google-auth-library", () => {
+  const MockOAuth2Client = vi.fn(function () {
+    return mockOAuth2Instance;
+  });
+  return { OAuth2Client: MockOAuth2Client };
+});
+
+// Mock googleapis (also used by GmailAdapter.createGmailClient)
+vi.mock("googleapis", () => {
+  const MockOAuth2Client = vi.fn(function () {
+    return mockOAuth2Instance;
+  });
+  return {
+    google: {
+      gmail: vi.fn().mockReturnValue({ users: {} }),
+      auth: { OAuth2: MockOAuth2Client },
+    },
+    OAuth2Client: MockOAuth2Client,
+  };
+});
+
+// Mock inngest — GmailAdapter.exchangeGmailCode fires an event (not needed for adapter tests)
+vi.mock("@/lib/inngest/client", () => ({
+  inngest: { send: vi.fn().mockResolvedValue(undefined) },
+}));
+
+// Mock crypto — GmailAdapter.getAccessToken decrypts tokens
+vi.mock("@/lib/integrations/crypto", () => ({
+  encryptToken: vi.fn().mockImplementation((v: string) =>
+    Promise.resolve(`encrypted:${v}`)
+  ),
+  decryptToken: vi.fn().mockImplementation((v: string) =>
+    Promise.resolve(v.replace("encrypted:", ""))
+  ),
+}));
 
 import type { IntegrationAdapter } from "@/lib/integrations/adapter";
 import { ShopifyAdapter } from "@/lib/integrations/shopify/client";
@@ -82,21 +126,72 @@ describe("ShopifyAdapter (Phase 2 — real, DB mocked)", () => {
   });
 });
 
-describe("GmailAdapter (Phase 1 skeleton — until 02-04)", () => {
+describe("GmailAdapter (Phase 2 — real, DB mocked)", () => {
   const adapter = new GmailAdapter("test-user-456");
+
+  beforeEach(() => {
+    dbState.selectRows = [];
+    vi.clearAllMocks();
+  });
 
   it("instantiates without throwing", () => {
     expect(adapter).toBeInstanceOf(GmailAdapter);
   });
 
-  it("isHealthy() resolves to false (Phase 1 skeleton)", async () => {
-    const result = await adapter.isHealthy();
-    expect(result).toBe(false);
+  it("isHealthy() resolves to true when the integration row status is 'active' and not expired", async () => {
+    dbState.selectRows = [
+      { status: "active", expires_at: new Date(Date.now() + 3600 * 1000) },
+    ];
+    await expect(adapter.isHealthy()).resolves.toBe(true);
   });
 
-  it("refreshToken() rejects with 'Not implemented until Phase 2'", async () => {
-    await expect(adapter.refreshToken()).rejects.toThrow(
-      "Not implemented until Phase 2"
-    );
+  it("isHealthy() resolves to false when there is no active integration", async () => {
+    dbState.selectRows = [];
+    await expect(adapter.isHealthy()).resolves.toBe(false);
+
+    dbState.selectRows = [{ status: "expired", expires_at: null }];
+    await expect(adapter.isHealthy()).resolves.toBe(false);
+  });
+
+  it("isHealthy() resolves to false when token is expired", async () => {
+    dbState.selectRows = [
+      { status: "active", expires_at: new Date(Date.now() - 60 * 1000) },
+    ];
+    await expect(adapter.isHealthy()).resolves.toBe(false);
+  });
+
+  it("refreshToken() refreshes via OAuth2Client when token is expired", async () => {
+    dbState.selectRows = [
+      {
+        id: "int-1",
+        status: "active",
+        access_token_encrypted: "encrypted:old-access",
+        refresh_token_encrypted: "encrypted:my-refresh",
+        expires_at: new Date(Date.now() - 60 * 1000),
+      },
+    ];
+    mockOAuth2Instance.refreshAccessToken.mockResolvedValue({
+      credentials: {
+        access_token: "new-access-token",
+        expiry_date: Date.now() + 3600 * 1000,
+      },
+    });
+
+    await expect(adapter.refreshToken()).resolves.not.toThrow();
+    expect(mockOAuth2Instance.refreshAccessToken).toHaveBeenCalled();
+  });
+
+  it("refreshToken() rejects when no refresh token is stored", async () => {
+    dbState.selectRows = [
+      {
+        id: "int-1",
+        status: "active",
+        access_token_encrypted: "encrypted:old-access",
+        refresh_token_encrypted: null,
+        expires_at: new Date(Date.now() - 60 * 1000),
+      },
+    ];
+
+    await expect(adapter.refreshToken()).rejects.toThrow(/refresh token/i);
   });
 });
