@@ -155,7 +155,10 @@ function DiffRow({
   diff: FieldDiff;
   targetType: string;
 }) {
-  const [expanded, setExpanded] = useState(false);
+  // WR-07: independent expand state per side so "Show more" on the before value
+  // does not also expand the after value (they previously shared one boolean).
+  const [expandedBefore, setExpandedBefore] = useState(false);
+  const [expandedAfter, setExpandedAfter] = useState(false);
 
   return (
     <div
@@ -212,8 +215,8 @@ function DiffRow({
               flex: 1,
             }}
           >
-            {renderValue(diff.oldValue, diff.field, targetType, expanded, () =>
-              setExpanded((v) => !v)
+            {renderValue(diff.oldValue, diff.field, targetType, expandedBefore, () =>
+              setExpandedBefore((v) => !v)
             )}
           </span>
         </div>
@@ -249,8 +252,8 @@ function DiffRow({
               flex: 1,
             }}
           >
-            {renderValue(diff.newValue, diff.field, targetType, expanded, () =>
-              setExpanded((v) => !v)
+            {renderValue(diff.newValue, diff.field, targetType, expandedAfter, () =>
+              setExpandedAfter((v) => !v)
             )}
           </span>
         </div>
