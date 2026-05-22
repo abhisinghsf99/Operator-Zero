@@ -4,13 +4,13 @@ milestone: v1.0
 milestone_name: milestone
 status: executing
 stopped_at: "Completed 02-05: Shared agent runtime (prompt, memory, tools, cost-cap)"
-last_updated: "2026-05-22T09:06:15.990Z"
+last_updated: "2026-05-22T09:19:22.857Z"
 last_activity: 2026-05-22
 progress:
   total_phases: 4
   completed_phases: 1
   total_plans: 12
-  completed_plans: 10
+  completed_plans: 11
   percent: 25
 ---
 
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-05-21)
 ## Current Position
 
 Phase: 02 (foundation-prove-the-agent) — EXECUTING
-Plan: 7 of 8
+Plan: 8 of 8
 Status: Ready to execute
 Last activity: 2026-05-22
 
-Progress: [████████░░] 83%
+Progress: [█████████░] 92%
 
 ## Performance Metrics
 
@@ -57,6 +57,7 @@ Progress: [████████░░] 83%
 | Phase 02-foundation-prove-the-agent P03 | 8 minutes | 4 tasks | 17 files |
 | Phase 02-foundation-prove-the-agent P04 | 67 | 3 tasks | 11 files |
 | Phase 02 P05 | 14 | 3 tasks | 13 files |
+| Phase 02-foundation-prove-the-agent P06 | 7 minutes | 3 tasks | 11 files |
 | Phase 02-foundation-prove-the-agent P07 | 13 minutes | 3 tasks | 10 files |
 
 ## Accumulated Context
@@ -90,6 +91,9 @@ Recent decisions affecting current work:
 - [Phase ?]: [02-05] dispatchTool does not check approvalRequired — workflow engine (02-07) enforces the gate
 - [Phase ?]: [02-07] CEL if: async.data.approvalId NOT event.data — async=awaited event, event=original trigger (Pitfall 1)
 - [Phase ?]: [02-07] Module-level _testState bypasses vi.doMock closure isolation for cross-boundary tracking in Vitest
+- [02-06] SSE route is a Route Handler (not Inngest) — streaming requires force-dynamic ReadableStream, Inngest breaks streaming
+- [02-06] Composer queue extracted as pure zustand store factory (createComposerStore) — FIFO hold+flush-once testable without browser
+- [02-06] react-markdown used without rehype-raw — no raw HTML passthrough prevents XSS from model-generated markdown (T-2-06-02)
 
 ### Pending Todos
 
@@ -103,6 +107,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-05-22T09:06:15.986Z
+Last session: 2026-05-22T09:19:22.853Z
 Stopped at: Completed 02-05: Shared agent runtime (prompt, memory, tools, cost-cap)
 Resume file: None
