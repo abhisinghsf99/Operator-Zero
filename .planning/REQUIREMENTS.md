@@ -43,14 +43,14 @@
 
 ### Onboarding (ONBOARD)
 
-- [ ] **ONBOARD-01**: New user is guided through an inline onboarding wizard within the app shell (not a separate modal)
-- [ ] **ONBOARD-02**: Wizard requires Shopify to proceed; Gmail is skippable with an explicit warning and reachable later in Settings
-- [ ] **ONBOARD-03**: Brand-voice bootstrap (3–5 message conversation) produces an initial brand voice profile, saved before the user enters Conversation
-- [ ] **ONBOARD-04**: Orchestrator runs a read-only catalog audit and returns ≥3 tailored starter-workflow suggestions for any non-empty store
-- [ ] **ONBOARD-05**: Selected starter workflows are created as Draft workflows at L2
-- [ ] **ONBOARD-06**: Abandoned onboarding saves progress and resumes from the last completed step on next login
-- [ ] **ONBOARD-07**: Empty store (zero products) skips the catalog audit and suggests content/Q&A workflows only
-- [ ] **ONBOARD-08**: Post-onboarding lands the user in Conversation with a welcome message (Phase 1 landing)
+- [x] **ONBOARD-01**: New user is guided through an inline onboarding wizard within the app shell (not a separate modal)
+- [x] **ONBOARD-02**: Wizard requires Shopify to proceed; Gmail is skippable with an explicit warning and reachable later in Settings
+- [x] **ONBOARD-03**: Brand-voice bootstrap (3–5 message conversation) produces an initial brand voice profile, saved before the user enters Conversation
+- [x] **ONBOARD-04**: Orchestrator runs a read-only catalog audit and returns ≥3 tailored starter-workflow suggestions for any non-empty store
+- [x] **ONBOARD-05**: Selected starter workflows are created as Draft workflows at L2
+- [x] **ONBOARD-06**: Abandoned onboarding saves progress and resumes from the last completed step on next login
+- [x] **ONBOARD-07**: Empty store (zero products) skips the catalog audit and suggests content/Q&A workflows only
+- [x] **ONBOARD-08**: Post-onboarding lands the user in Conversation with a welcome message (Phase 1 landing)
 
 ### Conversation (CONV)
 
@@ -114,7 +114,7 @@
 
 ### Settings (SET)
 
-- [ ] **SET-01**: Connections section shows Shopify/Gmail status + last sync, with reconnect and disconnect-with-confirmation
+- [x] **SET-01**: Connections section shows Shopify/Gmail status + last sync, with reconnect and disconnect-with-confirmation
 - [ ] **SET-02**: Brand Voice Profile is editable markdown with preview; changes take effect on the next agent action; "regenerate from examples" is available
 - [ ] **SET-03**: Autonomy Thresholds set a global default level + curated per-action overrides that win over workflow level
 - [ ] **SET-04**: "What I Remember About You" lists memory items by category; user can edit inline, delete (24h reversible), or add
@@ -177,7 +177,7 @@ Validated by roadmapper 2026-05-21. Coverage confirmed 87/87 v1 requirements map
 | CONV-01 … CONV-09 | Phase 2 | Pending |
 | AGENT-01 … AGENT-06 | Phase 2 | Pending |
 | WF-01 … WF-06 | Phase 2 | Pending |
-| SET-01 | Phase 2 | Pending |
+| SET-01 | Phase 2 | Complete |
 | WF-07 … WF-14 | Phase 3 | Pending |
 | ACT-01 … ACT-08 | Phase 3 | Pending |
 | APRV-01 … APRV-08 | Phase 4 | Pending |
