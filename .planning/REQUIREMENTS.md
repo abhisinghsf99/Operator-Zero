@@ -23,9 +23,9 @@
 
 ### Authentication & Platform (AUTH)
 
-- [ ] **AUTH-01**: User can sign up with email and password
-- [ ] **AUTH-02**: User can sign in with Google OAuth
-- [ ] **AUTH-03**: Session persists via httpOnly cookie with 30-day rolling refresh; middleware guards `/app/*` routes
+- [x] **AUTH-01**: User can sign up with email and password
+- [x] **AUTH-02**: User can sign in with Google OAuth
+- [x] **AUTH-03**: Session persists via httpOnly cookie with 30-day rolling refresh; middleware guards `/app/*` routes
 - [ ] **AUTH-04**: User can view active sessions (device, location, last seen) and revoke any session
 - [ ] **AUTH-05**: User can "sign out all devices" with confirmation
 - [x] **AUTH-06**: Per-user rate limits on chat sends and concurrent workflow runs prevent runaway cost

@@ -6,7 +6,7 @@ Four phases ordered by moat depth: Phase 1 lays the infrastructure rails before 
 
 ## Phases
 
-- [ ] **Phase 1: Infrastructure Foundation** - Backend rails, auth, schema, Inngest, SDK wiring, and CI — no user-facing surfaces
+- [x] **Phase 1: Infrastructure Foundation** - Backend rails, auth, schema, Inngest, SDK wiring, and CI — no user-facing surfaces (completed 2026-05-22)
 - [ ] **Phase 2: Foundation — Prove the Agent** - Onboarding, Conversation surface, agent runtime, workflow engine, and a running L2 workflow
 - [ ] **Phase 3: Ownership — The Portfolio** - My Workflows landing surface, Workflow Detail, Activity log, versioning, and portfolio ownership
 - [ ] **Phase 4: Polish — Effortless Daily Use** - Approval Inbox, full-fidelity inline approvals, complete Settings, mobile parity, and accessibility
@@ -73,7 +73,7 @@ Four phases ordered by moat depth: Phase 1 lays the infrastructure rails before 
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Infrastructure Foundation | 3/4 | In Progress|  |
+| 1. Infrastructure Foundation | 4/4 | Complete   | 2026-05-22 |
 | 2. Foundation — Prove the Agent | 0/TBD | Not started | - |
 | 3. Ownership — The Portfolio | 0/TBD | Not started | - |
 | 4. Polish — Effortless Daily Use | 0/TBD | Not started | - |
