@@ -2,15 +2,17 @@
  * app/app/settings/page.tsx
  * Settings page — Server Component.
  *
- * Renders the Connections section (SET-01, INTEG-06):
- *   - Shopify row: health badge (healthy/stale/needs_reconnect) + last_synced_at
- *   - Gmail row: health badge + last_synced_at
- *   - Reconnect button (re-initiates OAuth)
- *   - Disconnect button (opens confirm dialog, then calls disconnectIntegration)
+ * Renders Settings sections:
+ *   - Connections (SET-01, INTEG-06): Shopify + Gmail health badges
+ *   - Brand Voice (SET-02): markdown editor + preview + encrypted save + regenerate-with-confirm
+ *   - Memory (SET-04): categorized items with inline edit/add/soft-delete + undo toast
+ *   - Profile (SET-05): name, email, password, avatar [added in Task 3]
+ *   - Notifications (SET-08): badge explainer + coming-soon [added in Task 3]
  *
  * SECURITY:
  *   T-2-08-04: Reads integration data via withUserRls (cross-user protection)
  *   T-2-08-05: Disconnect requires confirm dialog (enforced in ConnectionRow client component)
+ *   T-4-03-01: getBrandVoice decrypts with legacy-plaintext fallback (A2)
  *
  * WCAG 2.1 AA:
  *   - Status badges have text labels (not color alone)
@@ -21,6 +23,9 @@ import { redirect } from "next/navigation";
 import { getOrCreateProfile } from "@/lib/auth/profile";
 import { getIntegrationHealth } from "@/lib/integrations/health";
 import { ConnectionsSection } from "@/app/app/settings/_connections";
+import { BrandVoiceSection } from "@/app/app/settings/_brand-voice";
+import { MemorySection } from "@/app/app/settings/_memory";
+import { getBrandVoice, getMemoryItems } from "@/app/app/settings/actions";
 
 export default async function SettingsPage() {
   // 1. Validate session (middleware already guards /app/*)
@@ -33,11 +38,15 @@ export default async function SettingsPage() {
 
   const userId = profile.user_id;
 
-  // 3. Load integration health for Shopify + Gmail (RLS via getIntegrationHealth)
-  const [shopifyHealth, gmailHealth] = await Promise.all([
+  // 3. Parallel data loads — integration health + brand voice + memory
+  const [shopifyHealth, gmailHealth, brandVoice, memoryItemsList] = await Promise.all([
     getIntegrationHealth(userId, "shopify"),
     getIntegrationHealth(userId, "gmail"),
+    getBrandVoice(userId),      // T-4-03-01: decrypt with legacy-plaintext fallback
+    getMemoryItems(userId),
   ]);
+
+  const initialMarkdown = brandVoice?.profile_markdown ?? "";
 
   return (
     <div className="h-full overflow-y-auto bg-[var(--bg)]">
@@ -58,10 +67,19 @@ export default async function SettingsPage() {
 
       {/* Content */}
       <div className="mx-auto max-w-[800px] px-10 py-8">
+        {/* SET-01: Connections */}
         <ConnectionsSection
           shopifyHealth={shopifyHealth}
           gmailHealth={gmailHealth}
         />
+
+        {/* SET-02: Brand Voice — markdown editor + encrypted save + regenerate-with-confirm */}
+        <div className="mt-8">
+          <BrandVoiceSection initialMarkdown={initialMarkdown} />
+        </div>
+
+        {/* SET-04: Memory — categorized items with inline edit/add/soft-delete + undo */}
+        <MemorySection items={memoryItemsList} />
       </div>
     </div>
   );
