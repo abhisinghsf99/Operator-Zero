@@ -43,6 +43,7 @@ import {
   workflowVersions,
   workflowRuns,
   approvals,
+  messages,
 } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import { writeActivity } from "@/lib/workflows/activity";
@@ -168,6 +169,14 @@ export const executeWorkflowRun = inngest.createFunction(
       const stepRunId = `execute-step-${i}-${workflowStep.id}`;
 
       // ── L1: Prepare action and hold for manual trigger ──────────────────────
+      // WR-05 v1 behavior: L1 is single-step-only in v1. On the first step, the
+      // run pauses at 'paused_manual' and the function returns. Re-triggering
+      // an L1 run is a v2 feature (requires a separate resume event + step entry
+      // that picks up from current_step_id). For v1, any L1 workflow saved via the
+      // UI should have exactly one step — the save UI validates this.
+      //
+      // This means multi-step L1 workflows silently drop steps 1+. This is
+      // documented here and enforced at save time (v2 will remove this constraint).
       if (workflow.automation_level === "L1") {
         await step.run(`mark-l1-pending-${i}-${workflowStep.id}`, async () => {
           await serviceDb
@@ -177,7 +186,7 @@ export const executeWorkflowRun = inngest.createFunction(
               and(eq(workflowRuns.id, run.id), eq(workflowRuns.user_id, userId))
             );
         });
-        // L1 completes here — re-triggered manually later
+        // L1 pauses here — a separate L1 resume event is needed for subsequent steps (v2).
         return { status: "paused_manual", runId: run.id };
       }
 
@@ -214,11 +223,39 @@ export const executeWorkflowRun = inngest.createFunction(
           }
         );
 
-        // Create the approval row
+        // Create the approval row + approval_card message (WR-06).
+        // For chat-originated runs (triggerSource === 'chat'), insert a message with
+        // inline_block_type='approval_card' tied to the thread so the inline UI renders.
         const approval = await step.run(
           `create-approval-${i}-${workflowStep.id}`,
           async () => {
             const proposedAction = stepResult.proposedAction ?? workflowStep.params;
+            const threadId =
+              (event as unknown as WorkflowRunRequestedEvent).data.threadId ?? null;
+
+            // Insert approval_card message first so we can link approval↔message
+            let approvalMessageId: string | null = null;
+            if (threadId) {
+              const [msgRow] = await serviceDb
+                .insert(messages)
+                .values({
+                  thread_id: threadId,
+                  user_id: userId,
+                  role: "assistant",
+                  content: `Awaiting your approval for: ${workflowStep.description ?? workflowStep.name}`,
+                  status: "complete",
+                  inline_block_type: "approval_card",
+                  // Payload will be updated with approval_id after insert
+                  inline_block_payload: {
+                    action_type: workflowStep.tool,
+                    summary: workflowStep.description ?? workflowStep.name,
+                    risk: "low",
+                  },
+                })
+                .returning();
+              approvalMessageId = msgRow?.id ?? null;
+            }
+
             const approvalId = await createApproval(userId, {
               workflow_run_id: run.id,
               step_id: workflowStep.id,
@@ -228,7 +265,30 @@ export const executeWorkflowRun = inngest.createFunction(
               preview: proposedAction as Record<string, unknown>,
               reasoning_summary: `Proposed: ${workflowStep.tool} on step ${workflowStep.name}`,
               proposed_action: proposedAction,
+              thread_id: threadId ?? undefined,
+              message_id: approvalMessageId ?? undefined,
             });
+
+            // Update the message payload with the real approval_id
+            if (approvalMessageId) {
+              await serviceDb
+                .update(messages)
+                .set({
+                  inline_block_payload: {
+                    approval_id: approvalId,
+                    action_type: workflowStep.tool,
+                    summary: workflowStep.description ?? workflowStep.name,
+                    risk: "low",
+                  },
+                })
+                .where(
+                  and(
+                    eq(messages.id, approvalMessageId),
+                    eq(messages.user_id, userId)
+                  )
+                );
+            }
+
             return { id: approvalId };
           }
         );
@@ -253,11 +313,12 @@ export const executeWorkflowRun = inngest.createFunction(
         );
 
         // CRITICAL: step.waitForEvent suspends the function (no compute during wait).
-        // CEL GOTCHA (Pitfall 1): `async` = the original triggering event (workflow.run_requested)
-        //                         `event` = the matched approval.resolved event
+        // CEL GOTCHA (Pitfall 1, IN-01 corrected comment):
+        //   `async` = the MATCHED/AWAITED event (approval.resolved)  ← the waited-for event
+        //   `event` = the ORIGINAL triggering event (workflow.run_requested)  ← the trigger
         // The `if` condition uses `async.data.approvalId` to match the AWAITED event's data.
-        // This is CORRECT — `async.data` refers to the approval.resolved event's payload.
-        // DO NOT use `event.data.approvalId` — that would reference the workflow.run_requested event.
+        // This is CORRECT per Inngest docs — `async` refers to the approval.resolved payload.
+        // DO NOT use `event.data.approvalId` — that references workflow.run_requested (wrong).
         const decision = await step.waitForEvent(
           `wait-approval-${i}`,
           {
@@ -297,32 +358,39 @@ export const executeWorkflowRun = inngest.createFunction(
           return { status: "expired", runId: run.id };
         }
 
-        // Decision received — check if approved or rejected
-        const decisionData = decision.data as { approvalId: string; decision: string };
+        // CR-03 + CR-04 FIX: Treat the event purely as a wakeup signal.
+        // Re-SELECT the approval row by (id, user_id) and branch on row.status.
+        // The event payload's 'decision' field is NOT trusted — only the DB row is.
+        // This defeats forged 'approval.resolved' events that carry decision:'approved'
+        // for rows the user never actually approved (T-2-07-02).
+        const approvalRow = await step.run(
+          `re-read-approval-${i}-${workflowStep.id}`,
+          async () => {
+            const [row] = await serviceDb
+              .select()
+              .from(approvals)
+              .where(
+                and(
+                  eq(approvals.id, approval.id),
+                  eq(approvals.user_id, userId)
+                )
+              )
+              .limit(1);
 
-        if (decisionData.decision === "rejected") {
+            if (!row) {
+              throw new Error(
+                `Approval ${approval.id} not found or not owned by user ${userId} (T-2-07-02)`
+              );
+            }
+
+            return row;
+          }
+        );
+
+        if (approvalRow.status === "rejected") {
           await step.run(
             `finalize-rejected-${i}-${workflowStep.id}`,
             async () => {
-              // AUTH RE-CHECK (T-2-07-02): re-lookup approval by id + user ownership
-              // The event alone does not bypass auth — we verify ownership here.
-              const [existingApproval] = await serviceDb
-                .select()
-                .from(approvals)
-                .where(
-                  and(
-                    eq(approvals.id, approval.id),
-                    eq(approvals.user_id, userId)
-                  )
-                )
-                .limit(1);
-
-              if (!existingApproval) {
-                throw new Error(
-                  `Approval ${approval.id} not found or not owned by user ${userId} (T-2-07-02)`
-                );
-              }
-
               await serviceDb
                 .update(workflowRuns)
                 .set({
@@ -357,36 +425,31 @@ export const executeWorkflowRun = inngest.createFunction(
           return { status: "failed", reason: "rejected", runId: run.id };
         }
 
-        // AUTH RE-CHECK (T-2-07-02): re-lookup approval by id + user ownership before executing
-        const approvalVerified = await step.run(
-          `verify-approval-ownership-${i}-${workflowStep.id}`,
-          async () => {
-            const [existingApproval] = await serviceDb
-              .select()
-              .from(approvals)
-              .where(
-                and(
-                  eq(approvals.id, approval.id),
-                  eq(approvals.user_id, userId)
-                )
-              )
-              .limit(1);
-
-            if (!existingApproval) {
-              throw new Error(
-                `Approval ${approval.id} not found or not owned by user ${userId} (T-2-07-02)`
-              );
+        // If the row is not 'approved' (e.g. still 'pending', 'expired', 'snoozed')
+        // do NOT execute — this prevents a forged/early wakeup from triggering the action.
+        if (approvalRow.status !== "approved") {
+          await step.run(
+            `finalize-not-approved-${i}-${workflowStep.id}`,
+            async () => {
+              await serviceDb
+                .update(workflowRuns)
+                .set({
+                  status: "failed",
+                  completed_at: new Date(),
+                  error_summary: `Approval not in approved state: ${approvalRow.status}`,
+                })
+                .where(
+                  and(
+                    eq(workflowRuns.id, run.id),
+                    eq(workflowRuns.user_id, userId)
+                  )
+                );
             }
-
-            return true;
-          }
-        );
-
-        if (!approvalVerified) {
-          return { status: "failed", reason: "auth_failure", runId: run.id };
+          );
+          return { status: "failed", reason: "not_approved", runId: run.id };
         }
 
-        // Execute the approved action — writeActivity BEFORE effect (WF-06)
+        // Row status is 'approved' — execute the approved action — writeActivity BEFORE effect (WF-06)
         await step.run(
           `execute-approved-${i}-${workflowStep.id}`,
           async () => {
