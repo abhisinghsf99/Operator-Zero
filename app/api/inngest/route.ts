@@ -15,8 +15,19 @@ import {
   shopifyPoll,
   shopifyWebhookProcess,
 } from "@/lib/inngest/functions/shopify-sync";
+import {
+  gmailInitialSyncFn,
+  gmailIncrementalPollFn,
+} from "@/lib/inngest/functions/gmail-sync";
 
 export const { GET, POST, PUT } = serve({
   client: inngest,
-  functions: [helloWorld, shopifyFullSync, shopifyPoll, shopifyWebhookProcess],
+  functions: [
+    helloWorld,
+    shopifyFullSync,
+    shopifyPoll,
+    shopifyWebhookProcess,
+    gmailInitialSyncFn,
+    gmailIncrementalPollFn,
+  ],
 });

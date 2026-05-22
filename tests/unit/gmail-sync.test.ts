@@ -41,10 +41,12 @@ vi.mock("@/lib/db/client", () => {
     insert: () => {
       const chain: Record<string, unknown> = {};
       chain.values = (val: Record<string, unknown>) => {
-        if ("gmail_thread_id" in val) {
-          gmailState.upsertedThreads.push(val);
-        } else if ("gmail_message_id" in val) {
+        // Check gmail_message_id FIRST — message rows have both gmail_message_id + gmail_thread_id
+        // Thread rows only have gmail_thread_id (no gmail_message_id)
+        if ("gmail_message_id" in val) {
           gmailState.upsertedMessages.push(val);
+        } else if ("gmail_thread_id" in val) {
+          gmailState.upsertedThreads.push(val);
         }
         chain._val = val;
         return chain;
@@ -210,10 +212,10 @@ describe("INTEG-05 — Gmail History API incremental cursor advance", () => {
     const { createGmailClient } = await import(
       "@/lib/integrations/gmail/client"
     );
-    const mockClient = await (createGmailClient as ReturnType<typeof vi.fn>)();
-    const historyListSpy = mockClient.users.history.list as ReturnType<
-      typeof vi.fn
-    >;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const mockClient = await (createGmailClient as (...args: any[]) => Promise<any>)("test-user-id");
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const historyListSpy = mockClient.users.history.list as (...args: any[]) => Promise<unknown>;
 
     await gmailIncrementalSync("test-user-id");
 
@@ -343,7 +345,8 @@ describe("INTEG-05 — Gmail History API incremental cursor advance", () => {
     const { createGmailClient } = await import(
       "@/lib/integrations/gmail/client"
     );
-    const mockClient = await (createGmailClient as ReturnType<typeof vi.fn>)();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const mockClient = await (createGmailClient as (...args: any[]) => Promise<any>)("test-user-id");
     mockClient.users.history.list = vi.fn().mockRejectedValue(
       Object.assign(new Error("Invalid historyId"), { code: 404 })
     );
