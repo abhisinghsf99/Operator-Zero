@@ -7,6 +7,8 @@ export default defineConfig({
   test: {
     environment: "node",
     globals: true,
+    // Exclude Playwright e2e tests — they use @playwright/test, not vitest
+    exclude: ["tests/e2e/**", "node_modules/**"],
     // Provide test-only env vars so DB clients can be imported in unit tests
     // without requiring a real Supabase connection.
     // These are NOT real credentials — they are plausible-format stubs.
