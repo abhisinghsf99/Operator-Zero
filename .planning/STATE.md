@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: "Completed 02-04: Gmail OAuth + sync + classification + Inngest functions"
-last_updated: "2026-05-22T08:29:08.064Z"
+stopped_at: "Completed 02-05: Shared agent runtime (prompt, memory, tools, cost-cap)"
+last_updated: "2026-05-22T08:46:12.451Z"
 last_activity: 2026-05-22
 progress:
   total_phases: 4
   completed_phases: 1
   total_plans: 12
-  completed_plans: 8
+  completed_plans: 9
   percent: 25
 ---
 
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-05-21)
 ## Current Position
 
 Phase: 02 (foundation-prove-the-agent) — EXECUTING
-Plan: 5 of 8
+Plan: 6 of 8
 Status: Ready to execute
 Last activity: 2026-05-22
 
-Progress: [███████░░░] 67%
+Progress: [████████░░] 75%
 
 ## Performance Metrics
 
@@ -56,6 +56,7 @@ Progress: [███████░░░] 67%
 | Phase 02-foundation-prove-the-agent P02 | 18 | 4 tasks | 37 files |
 | Phase 02-foundation-prove-the-agent P03 | 8 minutes | 4 tasks | 17 files |
 | Phase 02-foundation-prove-the-agent P04 | 67 | 3 tasks | 11 files |
+| Phase 02 P05 | 14 | 3 tasks | 13 files |
 
 ## Accumulated Context
 
@@ -83,6 +84,9 @@ Recent decisions affecting current work:
 - [Phase ?]: [02-04] Gmail OAuth uses same nonce-in-DB CSRF pattern as Shopify (nonce: prefix in access_token_encrypted)
 - [Phase ?]: [02-04] classifySupport uses claude-haiku-4-5 not Opus — fast-path YES/NO needs low latency
 - [Phase ?]: [02-04] historyId expiry triggers full re-sync fallback rather than erroring
+- [Phase ?]: [02-05] Anthropic.APIStatusError does not exist in SDK v0.97.1 — use Anthropic.APIError base class
+- [Phase ?]: [02-05] assemblePrompt is pure/snapshot-testable; buildSystemPrompt is the async pipeline
+- [Phase ?]: [02-05] dispatchTool does not check approvalRequired — workflow engine (02-07) enforces the gate
 
 ### Pending Todos
 
@@ -96,6 +100,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-05-22T08:29:08.060Z
-Stopped at: Completed 02-04: Gmail OAuth + sync + classification + Inngest functions
+Last session: 2026-05-22T08:46:12.448Z
+Stopped at: Completed 02-05: Shared agent runtime (prompt, memory, tools, cost-cap)
 Resume file: None

@@ -29,7 +29,7 @@
 - [ ] **AUTH-04**: User can view active sessions (device, location, last seen) and revoke any session
 - [ ] **AUTH-05**: User can "sign out all devices" with confirmation
 - [x] **AUTH-06**: Per-user rate limits on chat sends and concurrent workflow runs prevent runaway cost
-- [ ] **AUTH-07**: Per-user daily cost cap — soft-cap warns in chat, hard-cap disables write tools while chat continues in degraded mode
+- [x] **AUTH-07**: Per-user daily cost cap — soft-cap warns in chat, hard-cap disables write tools while chat continues in degraded mode
 
 ### Integrations (INTEG)
 
@@ -66,12 +66,12 @@
 
 ### Agent Runtime & Tools (AGENT)
 
-- [ ] **AGENT-01**: Runtime constructs prompts from system role + store context + brand voice + structured memory + semantic recall + tools, capped at a token budget
-- [ ] **AGENT-02**: v1 read tools (products, orders, inventory, pages, redirects, gmail threads, recall memory, search activity, brand voice) are available and always safe
-- [ ] **AGENT-03**: v1 write tools (descriptions, meta fields, image alt, status, price, inventory, redirects, page content, gmail draft/send) are gated by automation level
-- [ ] **AGENT-04**: Tool inputs are validated against Zod schemas; invalid input returns a correctable error to the model
+- [x] **AGENT-01**: Runtime constructs prompts from system role + store context + brand voice + structured memory + semantic recall + tools, capped at a token budget
+- [x] **AGENT-02**: v1 read tools (products, orders, inventory, pages, redirects, gmail threads, recall memory, search activity, brand voice) are available and always safe
+- [x] **AGENT-03**: v1 write tools (descriptions, meta fields, image alt, status, price, inventory, redirects, page content, gmail draft/send) are gated by automation level
+- [x] **AGENT-04**: Tool inputs are validated against Zod schemas; invalid input returns a correctable error to the model
 - [x] **AGENT-05**: Agent records durable memory items silently (record/update/soft-delete) with embeddings for semantic recall
-- [ ] **AGENT-06**: Agent errors are classified — transient → retry with backoff; auth → pause + reconnect; budget → degrade
+- [x] **AGENT-06**: Agent errors are classified — transient → retry with backoff; auth → pause + reconnect; budget → degrade
 
 ### Workflows & Engine (WF)
 
@@ -172,7 +172,7 @@ Validated by roadmapper 2026-05-21. Coverage confirmed 87/87 v1 requirements map
 | INFRA-01 … INFRA-08 | Phase 1 | Pending |
 | AUTH-01, AUTH-02, AUTH-03, AUTH-06 | Phase 1 | Pending |
 | INTEG-01 … INTEG-07 | Phase 2 | Pending |
-| AUTH-07 | Phase 2 | Pending |
+| AUTH-07 | Phase 2 | Complete |
 | ONBOARD-01 … ONBOARD-08 | Phase 2 | Pending |
 | CONV-01 … CONV-09 | Phase 2 | Pending |
 | AGENT-01 … AGENT-06 | Phase 2 | Pending |
