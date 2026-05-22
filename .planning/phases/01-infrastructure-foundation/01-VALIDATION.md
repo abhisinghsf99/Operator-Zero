@@ -41,10 +41,10 @@ created: 2026-05-21
 | Task ID | Plan | Wave | Requirement | Threat Ref | Secure Behavior | Test Type | Automated Command | File Exists | Status |
 |---------|------|------|-------------|------------|-----------------|-----------|-------------------|-------------|--------|
 | 1-01-01 | 01 | 1 | INFRA-* / AUTH-* | T-1-01 / — | (planner fills) | unit/e2e | `npx vitest run` | ❌ W0 | ⬜ pending |
-| 1-04-01 | 04 | 3 | AUTH-01, AUTH-03 | T-1-04-02 | Unauth /app/* redirects to /login; signup happy path reaches guarded /app/home | e2e | `npx playwright test tests/e2e/auth-skeleton.spec.ts` | ❌ W0 (playwright.config.ts) | ⬜ pending |
-| 1-04-02 | 04 | 3 | AUTH-01, AUTH-02, AUTH-03 | T-1-04-01 / -03 / -04 / -05 / -06 / -07 | getClaims() (not getSession()) session validation; safe OAuth callback exchange + next-param redirect; httpOnly cookie; RLS-enforced user_profiles round-trip | unit/e2e | `npx tsc --noEmit && npx vitest run tests/unit/middleware.test.ts` | ❌ W0 | ⬜ pending |
-| 1-04-03 | 04 | 3 | AUTH-03 | T-1-04-01 / -02 | Middleware redirects unauthenticated /app/* to /login; public paths pass through; claimed /app/home passes through | unit | `npx vitest run tests/unit/middleware.test.ts` | ❌ W0 | ⬜ pending |
-| 1-04-04 | 04 | 3 | AUTH-01, AUTH-02, AUTH-03 | T-1-04-03 / -04 / -05 | Live Google OAuth round-trip, single-row user_profiles write, cookie flags, open-redirect rejection | manual (human-verify) | manual-only (real Supabase + Google consent) | n/a | ⬜ pending |
+| 1-04-01 | 04 | 3 | AUTH-01, AUTH-03 | T-1-04-02 | Unauth /app/* redirects to /login; signup happy path reaches guarded /app/home | e2e | `npx playwright test tests/e2e/auth-skeleton.spec.ts` | ✅ playwright.config.ts + tests/e2e/auth-skeleton.spec.ts | ✅ green (unauth + open-redirect pass; signup skips without live Supabase) |
+| 1-04-02 | 04 | 3 | AUTH-01, AUTH-02, AUTH-03 | T-1-04-01 / -03 / -04 / -05 / -06 / -07 | getClaims() (not getSession()) session validation; safe OAuth callback exchange + next-param redirect; httpOnly cookie; RLS-enforced user_profiles round-trip | unit/e2e | `npx tsc --noEmit && npx vitest run tests/unit/middleware.test.ts` | ✅ lib/auth/{server,client,middleware,profile}.ts + app/{(auth),(app),auth/callback} | ✅ green (tsc clean; middleware unit 6/6 pass) |
+| 1-04-03 | 04 | 3 | AUTH-03 | T-1-04-01 / -02 | Middleware redirects unauthenticated /app/* to /login; public paths pass through; claimed /app/home passes through | unit | `npx vitest run tests/unit/middleware.test.ts` | ✅ tests/unit/middleware.test.ts | ✅ green (6/6 tests pass: no-claims redirect, public path passthrough, claims passthrough) |
+| 1-04-04 | 04 | 3 | AUTH-01, AUTH-02, AUTH-03 | T-1-04-03 / -04 / -05 | Live Google OAuth round-trip, single-row user_profiles write, cookie flags, open-redirect rejection | manual (human-verify) | manual-only (real Supabase + Google consent) | n/a | ⬜ pending (human checkpoint) |
 
 *Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*
 

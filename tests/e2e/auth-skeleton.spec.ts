@@ -48,9 +48,10 @@ test("unauth: /app/home redirects to /login without rendering protected content"
   const greeting = page.getByTestId("home-greeting");
   await expect(greeting).not.toBeVisible();
 
-  // The HTTP response chain should have included a redirect.
-  // Accept any redirect status (301, 302, 307, 308).
-  expect(response?.status()).not.toBe(200);
+  // Playwright follows redirects, so the final status is 200 (from the /login page).
+  // The URL assertion above (toHaveURL(/\/login/)) is the canonical proof of redirect.
+  // We additionally verify the final page loaded successfully.
+  expect(response?.status()).toBe(200);
 });
 
 // ─── Test: Signup happy path ──────────────────────────────────────────────────
