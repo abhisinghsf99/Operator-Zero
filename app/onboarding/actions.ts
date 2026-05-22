@@ -1,0 +1,304 @@
+"use server";
+
+/**
+ * app/onboarding/actions.ts
+ * Server Actions for the onboarding wizard.
+ *
+ * Exports:
+ *   saveOnboardingStep(step)         — persists user_profiles.onboarding_step
+ *   completeOnboarding()             — sets onboarding_completed_at; redirects to /app/chat
+ *   checkShopifyConnected()          — checks real integrations row (T-2-08-02)
+ *   skipGmailStep()                  — marks Gmail as explicitly skipped
+ *   saveBrandVoiceProfile(answers)   — saves brand_voice_profiles row (ONBOARD-03)
+ *   createStarterWorkflows(starters) — creates Draft L2 workflows (ONBOARD-05)
+ *
+ * SECURITY:
+ *   - user_id ALWAYS from getClaims().sub — never from client input (T-2-08-02)
+ *   - Shopify gate checks the real integrations table row, not a client flag
+ *   - All DB writes go through withUserRls (RLS enforced at DB layer)
+ *   - Zod validates all inputs before any DB access
+ *
+ * Exports:
+ *   saveOnboardingStep(step) — persists user_profiles.onboarding_step
+ *   completeOnboarding()     — sets onboarding_completed_at; redirects to /app/chat
+ *   checkShopifyConnected()  — checks real integrations row (T-2-08-02)
+ *   skipGmailStep()          — marks Gmail as explicitly skipped
+ *
+ * SECURITY:
+ *   - user_id ALWAYS from getClaims().sub — never from client input (T-2-08-02)
+ *   - Shopify gate checks the real integrations table row, not a client flag
+ *   - All DB writes go through withUserRls (RLS enforced at DB layer)
+ *   - Zod validates all inputs before any DB access
+ */
+import { createClient } from "@/lib/auth/server";
+import { withUserRls, userProfiles, integrations, workflows, brandVoiceProfiles } from "@/lib/db";
+import { redirect } from "next/navigation";
+import { z } from "zod";
+import { eq, and } from "drizzle-orm";
+import { revalidatePath } from "next/cache";
+import type { WorkflowSuggestion } from "@/app/onboarding/_steps/catalog-audit";
+
+// ─── Schemas ──────────────────────────────────────────────────────────────────
+
+/** Valid step values: 0 = not started, 1-5 = in progress */
+const stepSchema = z.number().int().min(0).max(5);
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+/**
+ * getValidatedClaims — extract + validate JWT claims.
+ * Returns error string if unauthenticated.
+ */
+async function getValidatedClaims() {
+  const supabase = await createClient();
+  const { data: claimsData } = await supabase.auth.getClaims();
+  const claims = claimsData?.claims ?? null;
+  if (!claims?.sub) {
+    return { claims: null, error: "Not authenticated." };
+  }
+  return { claims, error: null };
+}
+
+// ─── Actions ─────────────────────────────────────────────────────────────────
+
+/**
+ * saveOnboardingStep — persist the current onboarding step to user_profiles.
+ *
+ * Called from each step's "Next" button.
+ * Validates the step is in range [0, 5] before writing.
+ *
+ * @param step The step number to save (0-5)
+ * @returns void on success, { error } on validation/auth failure
+ */
+export async function saveOnboardingStep(
+  step: number
+): Promise<{ error: string } | void> {
+  // 1. Validate step input (Zod — T-2-08-02)
+  const parsed = stepSchema.safeParse(step);
+  if (!parsed.success) {
+    return { error: parsed.error.errors[0]?.message ?? "Invalid step." };
+  }
+
+  // 2. Get authenticated user claims
+  const { claims, error } = await getValidatedClaims();
+  if (error || !claims) {
+    return { error: error ?? "Not authenticated." };
+  }
+
+  // 3. Persist onboarding_step inside RLS-enforced transaction
+  await withUserRls(claims, async (tx) => {
+    await tx
+      .update(userProfiles)
+      .set({ onboarding_step: parsed.data })
+      .where(eq(userProfiles.user_id, claims.sub as string));
+  });
+}
+
+/**
+ * completeOnboarding — finalize onboarding by setting onboarding_completed_at.
+ *
+ * Sets onboarding_completed_at to now(), resets onboarding_step to 5 (done),
+ * then redirects to /app/chat with a welcome seed param.
+ *
+ * @returns { error } on auth failure; redirects to /app/chat on success
+ */
+export async function completeOnboarding(): Promise<{ error: string } | never> {
+  // 1. Get authenticated user claims
+  const { claims, error } = await getValidatedClaims();
+  if (error || !claims) {
+    return { error: error ?? "Not authenticated." };
+  }
+
+  // 2. Set onboarding_completed_at + final step inside RLS transaction
+  await withUserRls(claims, async (tx) => {
+    await tx
+      .update(userProfiles)
+      .set({
+        onboarding_completed_at: new Date(),
+        onboarding_step: 5,
+      })
+      .where(eq(userProfiles.user_id, claims.sub as string));
+  });
+
+  revalidatePath("/app");
+
+  // 3. Redirect to Conversation with a welcome seed (ONBOARD-08)
+  redirect("/app/chat?welcome=1");
+}
+
+/**
+ * checkShopifyConnected — verify Shopify integration exists with status='active'.
+ *
+ * Checks the REAL integrations table row — never trusts a client-supplied flag.
+ * user_id is always from getClaims().sub (T-2-08-02).
+ *
+ * @returns { connected: true } | { connected: false } | { error }
+ */
+export async function checkShopifyConnected(): Promise<
+  { connected: boolean } | { error: string }
+> {
+  // 1. Get authenticated user claims
+  const { claims, error } = await getValidatedClaims();
+  if (error || !claims) {
+    return { error: error ?? "Not authenticated." };
+  }
+
+  // 2. Query integrations table for active Shopify row
+  const result = await withUserRls(claims, async (tx) => {
+    return tx
+      .select({ status: integrations.status })
+      .from(integrations)
+      .where(
+        and(
+          eq(integrations.user_id, claims.sub as string),
+          eq(integrations.provider, "shopify")
+        )
+      )
+      .limit(1);
+  });
+
+  const row = result[0];
+  const connected = row?.status === "active";
+
+  return { connected };
+}
+
+/**
+ * skipGmailStep — explicitly record that the user skipped Gmail.
+ *
+ * Saves step=3 (post-Gmail step) so resume picks up at brand-voice.
+ * Gmail connection is optional per ONBOARD-02.
+ *
+ * @returns void on success, { error } on auth failure
+ */
+export async function skipGmailStep(): Promise<{ error: string } | void> {
+  // Advance to step 3 (skipping Gmail, moving to brand-voice)
+  return saveOnboardingStep(3);
+}
+
+// ─── Brand voice ──────────────────────────────────────────────────────────────
+
+/** Schema for brand voice answers from the wizard conversation */
+const brandVoiceAnswersSchema = z.record(z.string().min(1)).refine(
+  (answers) => Object.keys(answers).length >= 1,
+  { message: "At least one brand voice answer is required." }
+);
+
+/**
+ * saveBrandVoiceProfile — persist the brand voice profile from onboarding conversation.
+ *
+ * Builds a markdown profile from the Q&A answers and upserts brand_voice_profiles.
+ * Blocks entry to Conversation until saved (ONBOARD-03).
+ *
+ * @param answers Key-value pairs of question ID to answer text
+ * @returns void on success, { error } on failure
+ */
+export async function saveBrandVoiceProfile(
+  answers: Record<string, string>
+): Promise<{ error: string } | void> {
+  // 1. Validate inputs
+  const parsed = brandVoiceAnswersSchema.safeParse(answers);
+  if (!parsed.success) {
+    return { error: parsed.error.errors[0]?.message ?? "Invalid answers." };
+  }
+
+  // 2. Get authenticated user claims
+  const { claims, error } = await getValidatedClaims();
+  if (error || !claims) {
+    return { error: error ?? "Not authenticated." };
+  }
+
+  const userId = claims.sub as string;
+
+  // 3. Build a simple markdown profile from answers
+  const writingSample = answers["writing"] ?? "";
+  const customerDesc = answers["customer"] ?? "";
+  const avoidPhrases = answers["avoid"] ?? "";
+
+  const profileMarkdown = [
+    writingSample ? `# Writing sample\n\n${writingSample}` : null,
+    customerDesc ? `# Our customer\n\n${customerDesc}` : null,
+    avoidPhrases ? `# Phrases we avoid\n\n${avoidPhrases}` : null,
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+
+  // 4. Upsert brand_voice_profiles row
+  await withUserRls(claims, async (tx) => {
+    await tx
+      .insert(brandVoiceProfiles)
+      .values({
+        user_id: userId,
+        profile_markdown: profileMarkdown,
+      })
+      .onConflictDoUpdate({
+        target: brandVoiceProfiles.user_id,
+        set: {
+          profile_markdown: profileMarkdown,
+          updated_at: new Date(),
+        },
+      });
+  });
+
+  // 5. Advance onboarding step to 4 (catalog audit)
+  await saveOnboardingStep(4);
+}
+
+// ─── Starter workflows ────────────────────────────────────────────────────────
+
+const starterWorkflowsSchema = z
+  .array(
+    z.object({
+      name: z.string().min(1).max(200),
+      description: z.string().max(1000).optional(),
+      domain: z.enum(["catalog", "seo", "qa", "inventory", "content"]),
+      level: z.literal("L2"),
+    })
+  )
+  .min(1, "At least one workflow must be selected.");
+
+/**
+ * createStarterWorkflows — insert selected starters as Draft L2 workflows.
+ *
+ * Requirements: ONBOARD-05
+ * All workflows: status='draft', automation_level='L2', source='onboarding'
+ *
+ * @param starters Selected workflow suggestions from catalog audit
+ * @returns void on success, { error } on failure
+ */
+export async function createStarterWorkflows(
+  starters: WorkflowSuggestion[]
+): Promise<{ error: string } | void> {
+  // 1. Validate inputs
+  const parsed = starterWorkflowsSchema.safeParse(starters);
+  if (!parsed.success) {
+    return { error: parsed.error.errors[0]?.message ?? "Invalid workflow selection." };
+  }
+
+  // 2. Get authenticated user claims
+  const { claims, error } = await getValidatedClaims();
+  if (error || !claims) {
+    return { error: error ?? "Not authenticated." };
+  }
+
+  const userId = claims.sub as string;
+
+  // 3. Insert draft workflows with source='onboarding' (ONBOARD-05)
+  await withUserRls(claims, async (tx) => {
+    for (const starter of parsed.data) {
+      await tx.insert(workflows).values({
+        user_id: userId,
+        name: starter.name,
+        description: starter.description ?? null,
+        automation_level: "L2",
+        status: "draft",
+        trigger_type: "manual",
+        trigger_config: {},
+        source: "onboarding",
+      });
+    }
+  });
+
+  // 4. Advance onboarding step to 5 (done)
+  await saveOnboardingStep(5);
+}

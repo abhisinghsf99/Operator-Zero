@@ -151,4 +151,47 @@ describe("updateSession — route guard", () => {
     expect(response.status).toBe(200);
     expect(response.headers.get("Location")).toBeNull();
   });
+
+  // ─── Onboarding route guard (Phase 2 — T-2-08-01) ────────────────────────────
+
+  it("no claims + /onboarding -> redirects to /login (status 307)", async () => {
+    // T-2-08-01: unauthenticated /onboarding requires auth
+    mockGetClaims.mockResolvedValueOnce({ data: null, error: null });
+
+    const request = buildRequest("/onboarding");
+    const response = await updateSession(request);
+
+    expect(response.status).toBe(307);
+    const location = response.headers.get("Location");
+    expect(location).toMatch(/\/login$/);
+  });
+
+  it("no claims + /onboarding?step=2 -> redirects to /login (status 307)", async () => {
+    mockGetClaims.mockResolvedValueOnce({ data: null, error: null });
+
+    const request = buildRequest("/onboarding?step=2");
+    const response = await updateSession(request);
+
+    expect(response.status).toBe(307);
+    const location = response.headers.get("Location");
+    expect(location).toMatch(/\/login/);
+  });
+
+  it("claims present + /onboarding -> pass-through (authenticated users may onboard)", async () => {
+    mockGetClaims.mockResolvedValueOnce({
+      data: {
+        claims: FAKE_CLAIMS,
+        header: { alg: "RS256", typ: "JWT" },
+        signature: new Uint8Array(0),
+      },
+      error: null,
+    });
+
+    const request = buildRequest("/onboarding");
+    const response = await updateSession(request);
+
+    // Middleware allows authenticated /onboarding (page RSC handles completion check)
+    expect(response.status).toBe(200);
+    expect(response.headers.get("Location")).toBeNull();
+  });
 });
