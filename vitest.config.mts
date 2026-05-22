@@ -19,6 +19,14 @@ export default defineConfig({
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "."),
+      // Force CJS resolution for voyageai — its ESM build has a broken directory
+      // import in voyageai/dist/esm/api that Node ESM cannot resolve.
+      // The CJS build (dist/cjs/extended/index.js) works correctly.
+      // [Rule 3 - Blocking] auto-fix for test environment.
+      voyageai: path.resolve(
+        __dirname,
+        "node_modules/voyageai/dist/cjs/extended/index.js"
+      ),
     },
   },
 });
