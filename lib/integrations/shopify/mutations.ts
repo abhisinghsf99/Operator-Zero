@@ -5,20 +5,21 @@
  * Every write operation:
  *   1. Reads before_state from mirror (observability baseline)
  *   2. Constructs idempotency key: `${userId}:${actionType}:${targetId}:${15min_bucket}`
- *   3. TODO (02-07): writes Activity entry BEFORE Shopify API call — call-site is
- *      marked with `// ACTIVITY_TODO` for 02-07 to wire in writeActivity()
- *      The before_state and after_state are computed here and exposed to the caller.
+ *   3. Writes Activity entry BEFORE Shopify API call (WF-06, CLAUDE.md observability constraint)
+ *      Uses writeActivity() from lib/workflows/activity.ts (wired in 02-07).
  *   4. Writes to Shopify Admin GraphQL
  *   5. Re-reads mirror from Shopify to refresh local state
  *
  * THREAT MODEL:
  *   T-2-03-06 (idempotent writes): idempotency key on every write
+ *   T-2-07-05 (unlogged agent action): writeActivity called BEFORE external effect
  *
  * OBSERVABILITY:
- *   activity_entries insert is wired in 02-07. This module exposes before_state/after_state
- *   on the return type so 02-07 can call writeActivity() with full context.
+ *   activity_entries insert happens BEFORE the external effect.
+ *   On retry, writeActivity() is idempotent (ON CONFLICT DO NOTHING on workflow_run_id+step_id).
  */
 import { serviceDb } from "@/lib/db/client";
+import { writeActivity } from "@/lib/workflows/activity";
 import {
   shopifyProducts,
   shopifyProductVariants,
@@ -76,12 +77,10 @@ interface ProductUpdateInput {
 }
 
 /**
- * Idempotent product update: read before_state → write to Shopify → re-read mirror.
+ * Idempotent product update: read before_state → writeActivity (WF-06) → write to Shopify → re-read mirror.
  *
- * // ACTIVITY_TODO (02-07): call writeActivity({
- *   userId, actionType: 'product_update', targetId: input.product_gid,
- *   before_state, proposed_action: input, is_revertable: true
- * }) BEFORE the Shopify API call, then update with after_state on success.
+ * writeActivity is called BEFORE the Shopify API call (observability-first).
+ * On Inngest retry, the second writeActivity call is a no-op (ON CONFLICT DO NOTHING).
  */
 export async function updateProduct(
   userId: string,
@@ -113,9 +112,22 @@ export async function updateProduct(
   //    and nothing changed, skip. For v1 we use a simple before/after comparison.
   //    (Full idempotency store in Redis deferred to scale phase.)
 
-  // 3. ACTIVITY_TODO (02-07): writeActivity BEFORE Shopify API call
-  //    await writeActivity({ userId, actionType: 'product_update', targetId: input.product_gid,
-  //      idempotency_key, before_state, proposed_action: input, is_revertable: true });
+  // 3. writeActivity BEFORE Shopify API call (WF-06 / CLAUDE.md observability constraint).
+  //    step_id = idempotency_key so retries are idempotent via ON CONFLICT DO NOTHING.
+  //    workflow_run_id is not known at this layer (mutations.ts is called by the workflow engine);
+  //    use idempotency_key as a stable step_id placeholder — the engine-level writeActivity
+  //    (in execute-workflow-run.ts) has the canonical run context.
+  await writeActivity(userId, {
+    workflow_run_id: idempotency_key,
+    step_id: `${idempotency_key}:pre`,
+    action_type: "product_update",
+    summary: `Updating product ${input.product_gid}`,
+    result: "success",
+    before_state,
+    target_type: "product",
+    target_id: input.product_gid,
+    is_revertable: true,
+  });
 
   // 4. Write to Shopify Admin GraphQL
   const adapter = new ShopifyAdapter(userId);
@@ -237,7 +249,7 @@ interface InventoryUpdateInput {
 /**
  * Idempotent inventory quantity update.
  *
- * // ACTIVITY_TODO (02-07): writeActivity BEFORE the Shopify API call.
+ * writeActivity is called BEFORE the Shopify API call (WF-06, observability-first).
  */
 export async function updateInventory(
   userId: string,
@@ -265,9 +277,18 @@ export async function updateInventory(
 
   const before_state = beforeRow ?? null;
 
-  // 3. ACTIVITY_TODO (02-07): writeActivity BEFORE Shopify API call
-  //    await writeActivity({ userId, actionType: 'inventory_update', targetId: input.variant_gid,
-  //      idempotency_key, before_state, proposed_action: input, is_revertable: true });
+  // 3. writeActivity BEFORE Shopify API call (WF-06 / CLAUDE.md observability constraint).
+  await writeActivity(userId, {
+    workflow_run_id: idempotency_key,
+    step_id: `${idempotency_key}:pre`,
+    action_type: "inventory_update",
+    summary: `Updating inventory for variant ${input.variant_gid}`,
+    result: "success",
+    before_state,
+    target_type: "product_variant",
+    target_id: input.variant_gid,
+    is_revertable: true,
+  });
 
   // 4. Write to Shopify (variant inventory is managed via inventoryAdjustQuantity or
   //    inventorySetOnHandQuantities in newer API versions)

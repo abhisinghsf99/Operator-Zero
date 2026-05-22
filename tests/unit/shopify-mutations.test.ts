@@ -108,52 +108,212 @@ describe("INTEG-07 — pre-read → write → re-read pattern", () => {
     expect(true).toBe(true); // contract documented
   });
 
-  it("writes activity_entry BEFORE making the Shopify API call (ACTIVITY_TODO)", async () => {
-    // The ACTIVITY_TODO comment in mutations.ts marks the call-site for writeActivity().
-    // This test verifies the TODO is documented and the before_state is captured first.
-    // Actual activity writing is wired in Plan 02-07.
-    const { updateProduct } = await import("@/lib/integrations/shopify/mutations");
-
-    // Verify the function exists and accepts the right shape
-    expect(typeof updateProduct).toBe("function");
-
-    // The function signature: (userId, input, now?) => MutationResult
-    // before_state is read first, then ACTIVITY_TODO, then Shopify write
-    // This ordering is verified by reading the source
-    expect(true).toBe(true); // ordering documented via ACTIVITY_TODO comments
-  });
-
-  it("re-reads mirror after successful Shopify write to update local state", async () => {
-    const { updateProduct } = await import("@/lib/integrations/shopify/mutations");
-
-    // The pattern: write to Shopify, then query Shopify again, then UPSERT mirror.
-    // Verified by the structure of updateProduct() in mutations.ts.
-    expect(typeof updateProduct).toBe("function");
-    // Step 5 in updateProduct: re-reads via shopifyGraphQL + updates mirror via serviceDb UPSERT
-    expect(true).toBe(true);
-  });
-
   it("records after_state in MutationResult after successful write", async () => {
     const { buildIdempotencyKey } = await import("@/lib/integrations/shopify/mutations");
 
     // MutationResult.after_state is populated by re-reading the mirror after write
-    // The after_state is the final state of the record after re-read
     const key = buildIdempotencyKey("u1", "product_update", "gid://shopify/Product/99", new Date());
     expect(key).toBeDefined();
-    // Key format: userId:actionType:targetId:bucket
-    // Note: targetId contains "gid://shopify/..." which has extra colons,
-    // so we verify by prefix/suffix not by split count.
     expect(key.startsWith("u1:product_update:")).toBe(true);
     expect(key).toContain("gid://shopify/Product/99");
   });
+});
 
-  it("records error in activity_entry if Shopify API call fails (ACTIVITY_TODO)", async () => {
-    // When the Shopify API call throws, the error is surfaced to the caller.
-    // In 02-07, writeActivity() will be called with error status.
-    // For now, verify the function propagates errors correctly.
+// ─── WF-06: writeActivity call ORDER in Shopify mutations ────────────────────
+// OBSERVABILITY-FIRST: writeActivity is invoked BEFORE the Shopify API call.
+// This closes the 02-03 ACTIVITY_TODO and satisfies the CLAUDE.md constraint.
+//
+// Strategy: use module-level shared state (globalThis) to track call order
+// since vi.doMock factories run in the module scope, not the test scope.
+
+describe("WF-06 — writeActivity called BEFORE Shopify API call (observability-first)", () => {
+  it("updateProduct calls writeActivity BEFORE the Shopify GraphQL write", async () => {
+    vi.resetModules();
+
+    // Use module-level shared array — captured by mock factories
+    const callOrder: string[] = [];
+
+    // Shared GraphQL spy function (not arrow) — compatible as constructor impl
+    const graphQLSpy = async function (query: string) {
+      if (query.includes("mutation")) {
+        callOrder.push("shopifyWrite");
+        return {};
+      }
+      callOrder.push("mirrorReRead");
+      return { product: { id: "gid://shopify/Product/1", title: "New Title" } };
+    };
+
+    // Mock writeActivity module
+    vi.doMock("@/lib/workflows/activity", () => ({
+      writeActivity: async function () {
+        callOrder.push("writeActivity");
+      },
+    }));
+
+    // Mock ShopifyAdapter as a proper class
+    function MockShopifyAdapter() {}
+    MockShopifyAdapter.prototype.shopifyGraphQL = graphQLSpy;
+
+    vi.doMock("@/lib/integrations/shopify/client", () => ({
+      ShopifyAdapter: MockShopifyAdapter,
+    }));
+
+    // Mock serviceDb
+    let selectCallCount = 0;
+    const mockServiceDb = {
+      select: vi.fn().mockImplementation(() => ({
+        from: vi.fn().mockReturnValue({
+          where: vi.fn().mockReturnValue({
+            limit: vi.fn().mockImplementation(async () => {
+              selectCallCount++;
+              if (selectCallCount === 1) return [{ product_gid: "gid://shopify/Product/1", title: "Old Title" }];
+              return [{ product_gid: "gid://shopify/Product/1", title: "New Title" }];
+            }),
+          }),
+        }),
+      })),
+      insert: vi.fn().mockReturnValue({
+        values: vi.fn().mockReturnValue({
+          onConflictDoUpdate: vi.fn().mockResolvedValue([]),
+        }),
+      }),
+    };
+    vi.doMock("@/lib/db/client", () => ({ serviceDb: mockServiceDb }));
+    vi.doMock("@/lib/db/schema/shopify-mirror", () => ({
+      shopifyProducts: { name: "shopify_products" },
+      shopifyProductVariants: { name: "shopify_product_variants" },
+    }));
+
     const { updateProduct } = await import("@/lib/integrations/shopify/mutations");
-    expect(typeof updateProduct).toBe("function");
-    // Error propagation is handled by the function throwing — 02-07 wires activity
-    expect(true).toBe(true);
+
+    await updateProduct("user-1", {
+      product_gid: "gid://shopify/Product/1",
+      title: "New Title",
+    });
+
+    // CRITICAL ORDER: writeActivity must come before shopifyWrite
+    expect(callOrder).toContain("writeActivity");
+    expect(callOrder).toContain("shopifyWrite");
+    const writeActivityIdx = callOrder.indexOf("writeActivity");
+    const shopifyWriteIdx = callOrder.indexOf("shopifyWrite");
+    expect(writeActivityIdx).toBeLessThan(shopifyWriteIdx);
+  });
+
+  it("updateInventory calls writeActivity BEFORE the Shopify GraphQL write", async () => {
+    vi.resetModules();
+
+    const callOrder: string[] = [];
+
+    const inventoryGraphQLSpy = async function () {
+      callOrder.push("shopifyWrite");
+      return {};
+    };
+
+    vi.doMock("@/lib/workflows/activity", () => ({
+      writeActivity: async function () {
+        callOrder.push("writeActivity");
+      },
+    }));
+
+    function MockShopifyAdapterInventory() {}
+    MockShopifyAdapterInventory.prototype.shopifyGraphQL = inventoryGraphQLSpy;
+
+    vi.doMock("@/lib/integrations/shopify/client", () => ({
+      ShopifyAdapter: MockShopifyAdapterInventory,
+    }));
+
+    const mockServiceDb = {
+      select: vi.fn().mockImplementation(() => ({
+        from: vi.fn().mockReturnValue({
+          where: vi.fn().mockReturnValue({
+            limit: vi.fn().mockResolvedValue([{ variant_gid: "gid://shopify/ProductVariant/1", inventory_qty: 10 }]),
+          }),
+        }),
+      })),
+      update: vi.fn().mockReturnValue({
+        set: vi.fn().mockReturnValue({
+          where: vi.fn().mockResolvedValue([]),
+        }),
+      }),
+    };
+    vi.doMock("@/lib/db/client", () => ({ serviceDb: mockServiceDb }));
+    vi.doMock("@/lib/db/schema/shopify-mirror", () => ({
+      shopifyProducts: { name: "shopify_products" },
+      shopifyProductVariants: { name: "shopify_product_variants" },
+    }));
+
+    const { updateInventory } = await import("@/lib/integrations/shopify/mutations");
+
+    await updateInventory("user-1", {
+      variant_gid: "gid://shopify/ProductVariant/1",
+      inventory_qty: 15,
+    });
+
+    expect(callOrder).toContain("writeActivity");
+    expect(callOrder).toContain("shopifyWrite");
+    const writeActivityIdx = callOrder.indexOf("writeActivity");
+    const shopifyWriteIdx = callOrder.indexOf("shopifyWrite");
+    expect(writeActivityIdx).toBeLessThan(shopifyWriteIdx);
+  });
+
+  it("writeActivity receives before_state and action_type from updateProduct", async () => {
+    vi.resetModules();
+
+    let capturedUserId: string | null = null;
+    let capturedInput: Record<string, unknown> | null = null;
+
+    const mockBeforeRow = { product_gid: "gid://shopify/Product/42", title: "Old Title", user_id: "user-1" };
+
+    vi.doMock("@/lib/workflows/activity", () => ({
+      writeActivity: async function (userId: string, input: Record<string, unknown>) {
+        capturedUserId = userId;
+        capturedInput = input;
+      },
+    }));
+
+    let selectCallCount = 0;
+    const mockServiceDb = {
+      select: vi.fn().mockImplementation(() => ({
+        from: vi.fn().mockReturnValue({
+          where: vi.fn().mockReturnValue({
+            limit: vi.fn().mockImplementation(async () => {
+              selectCallCount++;
+              return selectCallCount === 1 ? [mockBeforeRow] : [{ ...mockBeforeRow, title: "New Title" }];
+            }),
+          }),
+        }),
+      })),
+      insert: vi.fn().mockReturnValue({
+        values: vi.fn().mockReturnValue({
+          onConflictDoUpdate: vi.fn().mockResolvedValue([]),
+        }),
+      }),
+    };
+    vi.doMock("@/lib/db/client", () => ({ serviceDb: mockServiceDb }));
+    vi.doMock("@/lib/db/schema/shopify-mirror", () => ({
+      shopifyProducts: { name: "shopify_products" },
+      shopifyProductVariants: { name: "shopify_product_variants" },
+    }));
+
+    function MockShopifyAdapterCapture() {}
+    MockShopifyAdapterCapture.prototype.shopifyGraphQL = async function (query: string) {
+      if (query.includes("mutation")) return {};
+      return { product: { id: "gid://shopify/Product/42", title: "New Title" } };
+    };
+    vi.doMock("@/lib/integrations/shopify/client", () => ({
+      ShopifyAdapter: MockShopifyAdapterCapture,
+    }));
+
+    const { updateProduct } = await import("@/lib/integrations/shopify/mutations");
+
+    await updateProduct("user-1", {
+      product_gid: "gid://shopify/Product/42",
+      title: "New Title",
+    });
+
+    expect(capturedUserId).toBe("user-1");
+    expect(capturedInput).not.toBeNull();
+    expect(capturedInput!["action_type"]).toBe("product_update");
+    expect(capturedInput!["before_state"]).toEqual(mockBeforeRow);
   });
 });
