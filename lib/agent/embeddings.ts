@@ -9,7 +9,20 @@
 //
 // [Rule 1 - Bug] RESEARCH.md pattern used result.embeddings![0] but the VoyageAI SDK v0.2.1
 // returns { data: [{ embedding: number[] }] } — fixed to use result.data?.[0]?.embedding.
-import { VoyageAIClient } from "voyageai";
+//
+// [Build fix] voyageai@0.2.1 ships a broken ESM build (dist/esm/extended/index.mjs uses
+// extensionless / directory relative imports that Node's ESM loader and Next's bundler
+// reject — ERR_UNSUPPORTED_DIR_IMPORT). Its CJS build is correct, so load that via
+// createRequire. The `import type` below is erased at compile time (no static import for
+// the bundler to follow); `voyageai` is also in next.config serverExternalPackages.
+// This module is server-only.
+import { createRequire } from "node:module";
+import type { VoyageAIClient as VoyageAIClientCtor } from "voyageai";
+
+const requireCjs = createRequire(import.meta.url);
+const { VoyageAIClient } = requireCjs("voyageai") as {
+  VoyageAIClient: typeof VoyageAIClientCtor;
+};
 
 const voyage = new VoyageAIClient({
   // Read at runtime (server-only). Will throw if key is missing in production.

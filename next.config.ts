@@ -2,7 +2,12 @@ import type { NextConfig } from "next";
 import { withSentryConfig } from "@sentry/nextjs";
 
 const nextConfig: NextConfig = {
-  /* config options here */
+  // voyageai@0.2.1 ships a broken ESM build: dist/esm/extended/index.mjs uses
+  // extensionless relative imports (../local, ./ExtendedClient) that Next's
+  // bundler cannot resolve. It is server-only (embeddings run in route handlers
+  // + Inngest, never client), so require it at runtime via its working CJS entry
+  // instead of bundling the broken ESM.
+  serverExternalPackages: ["voyageai"],
 };
 
 export default withSentryConfig(nextConfig, {
