@@ -19,6 +19,7 @@
     "@supabase/ssr": "0.10.3",
     "@supabase/supabase-js": "2.106.1",
     "@tailwindcss/postcss": "^4.3.0",
+    "@tanstack/react-virtual": "^3.13.25",
     "@upstash/ratelimit": "2.0.8",
     "@upstash/redis": "1.38.0",
     "@vercel/analytics": "2.0.1",
