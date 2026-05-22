@@ -7,6 +7,12 @@
  * Calls supabase.auth.signUp() and redirects to /app/home on success.
  * On failure, returns the error message to the form (no silent swallow).
  *
+ * EMAIL CONFIRMATION:
+ *   When the Supabase project requires email confirmation, signUp() returns
+ *   { data: { user, session: null }, error: null }. In that case we return a
+ *   user-facing "check your email" message instead of redirecting to /app/home
+ *   (which would result in a silent redirect loop back to /login with no feedback).
+ *
  * SECURITY:
  *   - Uses server-side createClient() — never exposes auth state to the browser.
  *   - Password is transmitted server-side only (Server Action POST body is not in the URL).
@@ -51,13 +57,23 @@ export async function signUp(
   const { email, password } = parsed.data;
 
   const supabase = await createClient();
-  const { error } = await supabase.auth.signUp({ email, password });
+  const { data, error } = await supabase.auth.signUp({ email, password });
 
   if (error) {
     return { error: error.message };
   }
 
-  // Success — redirect to the guarded home page.
+  // session is null when the Supabase project requires email confirmation.
+  // Redirecting to /app/home in this case would silently loop back to /login
+  // because the middleware finds no session. Show a user-facing message instead.
+  if (!data.session) {
+    return {
+      error:
+        "Account created — please check your email to confirm your address before signing in.",
+    };
+  }
+
+  // Session established (email confirmation disabled) — redirect to the guarded home page.
   // The Supabase session cookie is written by @supabase/ssr via the server client.
   redirect("/app/home");
 }
