@@ -31,7 +31,7 @@
  *   - Zod validates all inputs before any DB access
  */
 import { createClient } from "@/lib/auth/server";
-import { withUserRls, userProfiles, integrations, workflows, brandVoiceProfiles } from "@/lib/db";
+import { withUserRls, userProfiles, integrations, workflows, workflowVersions, brandVoiceProfiles } from "@/lib/db";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { eq, and } from "drizzle-orm";
@@ -283,19 +283,49 @@ export async function createStarterWorkflows(
 
   const userId = claims.sub as string;
 
-  // 3. Insert draft workflows with source='onboarding' (ONBOARD-05)
+  // 3. Insert draft workflows + initial version rows (ONBOARD-05).
+  // CR-02: Must also set current_version_id so workflows can execute.
   await withUserRls(claims, async (tx) => {
     for (const starter of parsed.data) {
-      await tx.insert(workflows).values({
-        user_id: userId,
-        name: starter.name,
-        description: starter.description ?? null,
-        automation_level: "L2",
-        status: "draft",
-        trigger_type: "manual",
-        trigger_config: {},
-        source: "onboarding",
-      });
+      // Insert workflow row and capture id
+      const [workflowRow] = await tx
+        .insert(workflows)
+        .values({
+          user_id: userId,
+          name: starter.name,
+          description: starter.description ?? null,
+          automation_level: "L2",
+          status: "draft",
+          trigger_type: "manual",
+          trigger_config: {},
+          source: "onboarding",
+        })
+        .returning();
+
+      if (!workflowRow?.id) continue;
+
+      // Insert initial version row
+      const [versionRow] = await tx
+        .insert(workflowVersions)
+        .values({
+          workflow_id: workflowRow.id,
+          version_number: 1,
+          definition: { steps: [], version: 1, source: "onboarding" },
+        })
+        .returning();
+
+      if (!versionRow?.id) continue;
+
+      // Set current_version_id (CR-02)
+      await tx
+        .update(workflows)
+        .set({ current_version_id: versionRow.id })
+        .where(
+          and(
+            eq(workflows.id, workflowRow.id),
+            eq(workflows.user_id, userId)
+          )
+        );
     }
   });
 

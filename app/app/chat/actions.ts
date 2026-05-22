@@ -256,6 +256,18 @@ export async function saveWorkflowFromPlan(
       return { error: "workflow plan payload is missing required fields" };
     }
 
+    // Map the proposal's trigger vocabulary to the workflow column vocabulary.
+    // propose_workflow_plan emits: manual | scheduled | webhook | ai_suggested
+    // workflows.trigger_type accepts: schedule | event | manual
+    const triggerTypeMap: Record<string, "schedule" | "event" | "manual"> = {
+      manual: "manual",
+      scheduled: "schedule",
+      webhook: "event",
+      ai_suggested: "manual",
+    };
+    const resolvedTriggerType: "schedule" | "event" | "manual" =
+      triggerTypeMap[plan.trigger_type ?? "manual"] ?? "manual";
+
     // 2. Insert workflow row (status='draft')
     const [workflowRow] = await withUserRls(
       claims as Record<string, unknown>,
@@ -268,7 +280,7 @@ export async function saveWorkflowFromPlan(
             description: plan.description ?? null,
             automation_level: (plan.automation_level as "L1" | "L2" | "L3") ?? "L2",
             status: "draft",
-            trigger_type: (plan.trigger_type as "schedule" | "event" | "manual") ?? "manual",
+            trigger_type: resolvedTriggerType,
           })
           .returning();
       }
@@ -279,7 +291,9 @@ export async function saveWorkflowFromPlan(
       return { error: "failed to create workflow" };
     }
 
-    // 3. Insert initial workflow version with step definition
+    // 3. Insert initial workflow version + update current_version_id atomically.
+    // CR-02: workflows.current_version_id MUST be set after inserting the version row,
+    // otherwise executeWorkflowRun throws "Workflow has no current_version_id".
     const definition = {
       steps: plan.steps ?? [],
       version: 1,
@@ -287,7 +301,7 @@ export async function saveWorkflowFromPlan(
     };
 
     await withUserRls(claims as Record<string, unknown>, async (tx) => {
-      return tx
+      const [versionRow] = await tx
         .insert(workflowVersions)
         .values({
           workflow_id: workflowId,
@@ -295,6 +309,23 @@ export async function saveWorkflowFromPlan(
           definition,
         })
         .returning();
+
+      if (!versionRow?.id) {
+        throw new Error("failed to create workflow version");
+      }
+
+      // Set current_version_id on the workflow row (scoped by user_id for safety)
+      await tx
+        .update(workflows)
+        .set({ current_version_id: versionRow.id })
+        .where(
+          and(
+            eq(workflows.id, workflowId),
+            eq(workflows.user_id, userId)
+          )
+        );
+
+      return versionRow;
     });
 
     return { workflowId };
