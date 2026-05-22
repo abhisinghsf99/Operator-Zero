@@ -188,3 +188,32 @@ Task 4 is a `type="checkpoint:human-verify"` requiring:
 4. Open-redirect probe in real browser (http://localhost:3000/auth/callback?next=https://evil.example)
 
 See checkpoint return message for exact verification steps.
+
+## Task 4 Result: APPROVED (with post-checkpoint fixes)
+
+Human verification surfaced two real bugs and one gap, all fixed before approval:
+
+1. **DB connection broken** (`fix 199fb6d`) — `lib/db/client.ts` used Supabase API
+   keys as the Postgres password + a hardcoded region. Replaced with a single
+   `DATABASE_URL` (transaction-pooler URI, `prepare:false`). Requires
+   `DATABASE_URL` in env (added to `.env.local.example`).
+2. **RLS silently bypassed** (`fix 199fb6d`) — a raw Drizzle connection runs as the
+   `postgres` role (BYPASSRLS); the "RLS-enforced" web path drove around RLS. Added
+   `withUserRls(claims, tx)` (sets `request.jwt.claims` + `role authenticated` so
+   `auth.uid()` resolves and policies enforce). `profile.ts` now uses it; `serviceDb`
+   stays the BYPASSRLS agent-tier client.
+3. **Routing** (`fix 047db46`) — page lived at `app/(app)/home` → URL `/home` (route
+   group), but everything targets `/app/home` and the `/app/*` guard didn't cover
+   `/home` (AUTH-03 violation). Moved `(app)` → literal `app/` so URL is `/app/home`.
+4. **Sign-out added** (`feat`) — no sign-out affordance existed (verification needs
+   it). Added `signOut` Server Action + button in the `/app` shell header.
+5. **Sentry client nav hook** (`fix`) — added `onRouterTransitionStart` export (build
+   ACTION REQUIRED).
+
+Verified in browser: signup/login → `/app/home` welcome box, single non-duplicating
+`user_profiles` row, sign-out → `/login`, unauth `/app/home` → `/login`, Google OAuth
+round-trip, open-redirect rejected.
+
+Known follow-up (non-blocking): client-side Sentry DSN is read from
+`NEXT_PUBLIC_SENTRY_DSN ?? SENTRY_DSN`, but only `SENTRY_DSN` was provisioned — add
+`NEXT_PUBLIC_SENTRY_DSN` (DSNs are safe to expose) to enable browser error capture.
