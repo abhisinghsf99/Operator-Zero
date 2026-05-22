@@ -116,7 +116,29 @@ Plans:
   4. All surfaces meet WCAG 2.1 AA — full keyboard navigation, screen-reader labels, focus indicators, color contrast, and reduced-motion support
   5. App shell loads under 1.5 seconds (p50), surface navigation under 300 milliseconds, My Workflows under 500 milliseconds — performance targets from PRD §5.4.2 are met
 
-**Plans**: TBD
+**Plans**: 6 plans (5 waves)
+Plans:
+**Wave 1**
+
+- [ ] 04-01-PLAN.md — Foundation: user_sessions + user_exports schema, migration 0006 + perf indexes (BLOCKING push), axe-core + mobile project, reduced-motion, Wave-0 test scaffolds (wave 1)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [ ] 04-02-PLAN.md — Approvals slice: Inbox (list + detail) + full-fidelity inline cards + snooze/edit/bulk/revert actions + reject→memory + drift handling + Realtime sync + sidebar badge (wave 2)
+- [ ] 04-03-PLAN.md — Settings slice A: Brand Voice (encrypt + regenerate-confirm) + Memory CRUD (soft-delete + undo) + Profile + Notifications placeholder (wave 2)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
+- [ ] 04-04-PLAN.md — Settings slice B: Autonomy thresholds + one-directional override gate (execute-workflow-run) + Sessions list/revoke/sign-out-everywhere + session registry + cancel-deletion-on-signin (wave 3)
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
+- [ ] 04-05-PLAN.md — Account lifecycle: durable Export job (signed URL) + Delete/purge job (lock-now/sleep-7d/cancelOn) + Danger Zone section (wave 4)
+
+**Wave 5** *(blocked on Wave 4 completion)*
+
+- [ ] 04-06-PLAN.md — Mobile parity (drill-down, no read-only stripping) + WCAG 2.1 AA (axe + keyboard + reduced-motion) + Performance targets (wave 5)
+
 **UI hint**: yes
 
 ## Progress
@@ -126,4 +148,4 @@ Plans:
 | 1. Infrastructure Foundation | 4/4 | Complete   | 2026-05-22 |
 | 2. Foundation — Prove the Agent | 8/8 | Complete   | 2026-05-22 |
 | 3. Ownership — The Portfolio | 4/4 | Complete   | 2026-05-22 |
-| 4. Polish — Effortless Daily Use | 0/TBD | Not started | - |
+| 4. Polish — Effortless Daily Use | 0/6 | Not started | - |
