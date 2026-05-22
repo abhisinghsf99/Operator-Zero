@@ -139,7 +139,10 @@ export function RecentActivityStrip({ stats, userId }: RecentActivityStripProps)
       // Activity channel: INSERT on activity_entries for this user
       // Channel name: activity:<userId> (matches migration 0005 RLS policy)
       activityChannel = supabase
-        .channel(`activity:${userId}`)
+        // WR-02: private channel engages migration 0005's realtime.messages RLS
+        // policy (split_part(topic,':',2)::uuid = auth.uid()). Without this the
+        // topic-name authorization is never evaluated.
+        .channel(`activity:${userId}`, { config: { private: true } })
         .on(
           "postgres_changes",
           {
@@ -212,7 +215,9 @@ export function RecentActivityStrip({ stats, userId }: RecentActivityStripProps)
 
       // Approvals channel: UPDATE on approvals for this user (pending count changes)
       approvalsChannel = supabase
-        .channel(`approvals-strip:${userId}`)
+        // WR-02: private channel — paired with the realtime.messages RLS policy
+        // for approvals-strip:<userId> added in migration 0005.
+        .channel(`approvals-strip:${userId}`, { config: { private: true } })
         .on(
           "postgres_changes",
           {

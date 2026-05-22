@@ -63,6 +63,21 @@ CREATE POLICY "authn can receive own runs channel"
     )
   );
 
+-- ── approvals-strip:<userId> — user can receive their own approvals channel ────
+-- WR-02: the recent-activity strip subscribes to a PRIVATE approvals-strip
+-- channel for live pending-approvals count updates. A private channel without
+-- a matching realtime.messages policy is denied entirely, so this policy must
+-- exist. Direct UUID equality check, mirroring the activity:<userId> policy.
+DROP POLICY IF EXISTS "authn can receive own approvals strip channel" ON "realtime"."messages";
+CREATE POLICY "authn can receive own approvals strip channel"
+  ON "realtime"."messages"
+  FOR SELECT
+  TO authenticated
+  USING (
+    realtime.topic() ~ '^approvals-strip:[0-9a-fA-F-]{36}$'
+    AND (split_part(realtime.topic(), ':', 2))::uuid = (SELECT auth.uid())
+  );
+
 -- Any topic matching neither pattern, or not owned by the requester, is denied
 -- by default (no permissive policy grants it). Public channels (private:false)
 -- bypass realtime.messages RLS and are unaffected.
