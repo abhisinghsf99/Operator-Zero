@@ -64,11 +64,13 @@ describe("updateSession — route guard", () => {
     vi.clearAllMocks();
   });
 
-  it("no claims + /app/home -> redirects to /login (status 307)", async () => {
+  it("no claims + /app/settings -> redirects to /login (status 307)", async () => {
     // Arrange: getClaims returns null data (no session).
     mockGetClaims.mockResolvedValueOnce({ data: null, error: null });
 
-    const request = buildRequest("/app/home");
+    // NOTE: /app/home now redirects to /app/workflows (D-16) before the auth guard.
+    // Use /app/settings to test the Guard 1 (unauthenticated /app/* → /login) path.
+    const request = buildRequest("/app/settings");
     const response = await updateSession(request);
 
     // Assert: the response is a redirect.
@@ -90,7 +92,7 @@ describe("updateSession — route guard", () => {
     expect(location).toMatch(/\/login$/);
   });
 
-  it("claims present + /app/home -> pass-through (not a redirect)", async () => {
+  it("claims present + /app/settings -> pass-through (not a redirect)", async () => {
     // Arrange: getClaims returns valid claims.
     mockGetClaims.mockResolvedValueOnce({
       data: {
@@ -101,7 +103,9 @@ describe("updateSession — route guard", () => {
       error: null,
     });
 
-    const request = buildRequest("/app/home");
+    // NOTE: /app/home now redirects to /app/workflows (D-16). Use /app/settings
+    // to test that authenticated /app/* requests pass through without redirect.
+    const request = buildRequest("/app/settings");
     const response = await updateSession(request);
 
     // Assert: not a redirect — should be 200 (NextResponse.next() default).
@@ -150,6 +154,48 @@ describe("updateSession — route guard", () => {
     // Middleware does not redirect away from /login — that's the login page's job.
     expect(response.status).toBe(200);
     expect(response.headers.get("Location")).toBeNull();
+  });
+
+  // ─── D-16: Default landing redirect (Phase 3) ────────────────────────────────
+
+  it("D-16: /app redirects to /app/workflows (307) — no claims", async () => {
+    mockGetClaims.mockResolvedValueOnce({ data: null, error: null });
+
+    const request = buildRequest("/app");
+    const response = await updateSession(request);
+
+    expect(response.status).toBe(307);
+    const location = response.headers.get("Location");
+    expect(location).toMatch(/\/app\/workflows$/);
+  });
+
+  it("D-16: /app/ (trailing slash) redirects to /app/workflows (307) — no claims", async () => {
+    mockGetClaims.mockResolvedValueOnce({ data: null, error: null });
+
+    const request = buildRequest("/app/");
+    const response = await updateSession(request);
+
+    expect(response.status).toBe(307);
+    const location = response.headers.get("Location");
+    expect(location).toMatch(/\/app\/workflows$/);
+  });
+
+  it("D-16: /app/home redirects to /app/workflows (307) — with claims", async () => {
+    mockGetClaims.mockResolvedValueOnce({
+      data: {
+        claims: FAKE_CLAIMS,
+        header: { alg: "RS256", typ: "JWT" },
+        signature: new Uint8Array(0),
+      },
+      error: null,
+    });
+
+    const request = buildRequest("/app/home");
+    const response = await updateSession(request);
+
+    expect(response.status).toBe(307);
+    const location = response.headers.get("Location");
+    expect(location).toMatch(/\/app\/workflows$/);
   });
 
   // ─── Onboarding route guard (Phase 2 — T-2-08-01) ────────────────────────────

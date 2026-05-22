@@ -34,7 +34,7 @@ export interface WorkflowDefinition {
   steps?: unknown[];
   entry_step?: string;
   name?: string;
-  description?: string;
+  description?: string | null;
   automation_level?: "L1" | "L2" | "L3";
   trigger_type?: string;
   trigger_config?: Record<string, unknown>;

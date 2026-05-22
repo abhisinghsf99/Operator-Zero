@@ -89,6 +89,13 @@ export async function updateSession(request: NextRequest): Promise<NextResponse>
   const isAppRoute = pathname.startsWith("/app");
   const isOnboardingRoute = pathname.startsWith("/onboarding");
 
+  // D-16: Default landing redirect — bare /app, /app/, /app/home → /app/workflows
+  // This runs BEFORE the auth guard so authenticated AND unauthenticated requests
+  // both get redirected (unauthenticated will then be caught by Guard 1 at /app/workflows).
+  if (pathname === "/app" || pathname === "/app/" || pathname === "/app/home") {
+    return NextResponse.redirect(new URL("/app/workflows", request.url), { status: 307 });
+  }
+
   // Guard 1: Unauthenticated requests to /app/* → /login (T-1-04-02)
   if (!claims && isAppRoute) {
     const loginUrl = request.nextUrl.clone();

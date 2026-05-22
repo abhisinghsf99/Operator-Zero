@@ -11,9 +11,13 @@
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-// ─── Mocks ────────────────────────────────────────────────────────────────────
+// ─── Mocks (hoisted so vi.mock factories can reference them) ──────────────────
 
-const mockInngestSend = vi.fn().mockResolvedValue(undefined);
+const { mockInngestSend, mockGetClaims, mockWithUserRlsImpl } = vi.hoisted(() => ({
+  mockInngestSend: vi.fn().mockResolvedValue(undefined),
+  mockGetClaims: vi.fn(),
+  mockWithUserRlsImpl: vi.fn(),
+}));
 
 vi.mock("@/lib/inngest/client", () => ({
   inngest: {
@@ -21,7 +25,6 @@ vi.mock("@/lib/inngest/client", () => ({
   },
 }));
 
-const mockGetClaims = vi.fn();
 vi.mock("@/lib/auth/server", () => ({
   createClient: vi.fn(() => ({
     auth: {
@@ -31,7 +34,6 @@ vi.mock("@/lib/auth/server", () => ({
 }));
 
 // Control withUserRls behavior
-const mockWithUserRlsImpl = vi.fn();
 vi.mock("@/lib/db/client", () => ({
   withUserRls: vi.fn((claims: unknown, fn: (tx: unknown) => Promise<unknown>) => mockWithUserRlsImpl(claims, fn)),
 }));
@@ -45,8 +47,8 @@ import { runNow } from "@/lib/actions/workflows";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-const FAKE_USER_ID = "user-00000000-0000-0000-0000-000000000001";
-const FAKE_WORKFLOW_ID = "wf-00000000-0000-0000-0000-000000000001";
+const FAKE_USER_ID = "00000000-0000-0000-0000-000000000001";
+const FAKE_WORKFLOW_ID = "00000000-0000-0000-0000-000000000002";
 
 const FAKE_CLAIMS = {
   sub: FAKE_USER_ID,
@@ -116,7 +118,7 @@ describe("runNow Server Action", () => {
     expect(result).toMatchObject({ success: true });
 
     expect(mockInngestSend).toHaveBeenCalledOnce();
-    const sentEvent = mockInngestSend.mock.calls[0][0];
+    const sentEvent = mockInngestSend.mock.calls[0]![0];
     expect(sentEvent.name).toBe("workflow.run_requested");
     expect(sentEvent.data.userId).toBe(FAKE_USER_ID);
     expect(sentEvent.data.workflowId).toBe(FAKE_WORKFLOW_ID);
@@ -133,13 +135,13 @@ describe("runNow Server Action", () => {
     expect(mockInngestSend).not.toHaveBeenCalled();
   });
 
-  it("returns {error: 'Not authenticated'} when no claims", async () => {
+  it("returns {error: 'Not authenticated'} when no claims (valid UUID, no session)", async () => {
     mockGetClaims.mockResolvedValue({ data: null, error: null });
 
     const result = await runNow(FAKE_WORKFLOW_ID);
 
     expect("error" in result).toBe(true);
-    expect((result as { error: string }).error).toMatch(/auth/i);
+    expect((result as { error: string }).error).toMatch(/Not authenticated/i);
     expect(mockInngestSend).not.toHaveBeenCalled();
   });
 
