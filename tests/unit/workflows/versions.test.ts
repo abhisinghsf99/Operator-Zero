@@ -22,24 +22,24 @@ const mockExecute = vi.fn();
 /**
  * Build a minimal fake Drizzle tx that:
  *   - select().from().where().limit() → returns provided data
- *   - insert().values().returning() → returns provided data
+ *   - execute() → first call is the atomic INSERT ... SELECT ... RETURNING
+ *     (returns the inserted [{ id, version_number }]); subsequent execute() calls
+ *     (the retention prune DELETE) resolve to an empty array.
  *   - update().set().where() → resolves ok
- *   - execute() → resolves ok
+ *
+ * WR-08: createWorkflowVersion now inserts via a single INSERT ... SELECT
+ * statement through tx.execute() (computing version_number inline), so the
+ * tx.insert() builder is no longer used.
  */
 function buildMockTx({
   workflow = { id: "wf-001", current_version_id: "ver-000", user_id: "user-001" },
   currentVersion = { id: "ver-000", definition: { steps: [] }, schema_version: 1 },
-  maxVersionNumber = 3,
   insertedVersion = { id: "ver-new", version_number: 4 },
 }: {
   workflow?: Record<string, unknown>;
   currentVersion?: Record<string, unknown>;
-  maxVersionNumber?: number | null;
   insertedVersion?: Record<string, unknown>;
 } = {}) {
-  // Track all versions inserted (for prune verification)
-  const insertedVersions: Array<Record<string, unknown>> = [];
-
   const tx = {
     select: vi.fn().mockReturnValue({
       from: vi.fn().mockReturnValue({
@@ -52,22 +52,17 @@ function buildMockTx({
         }),
       }),
     }),
-    insert: vi.fn().mockReturnValue({
-      values: vi.fn().mockImplementation((vals: Record<string, unknown>) => {
-        insertedVersions.push(vals);
-        return {
-          returning: vi.fn().mockResolvedValue([insertedVersion]),
-        };
-      }),
-    }),
+    insert: vi.fn(),
     update: vi.fn().mockReturnValue({
       set: vi.fn().mockReturnValue({
         where: vi.fn().mockResolvedValue([]),
       }),
     }),
-    execute: mockExecute.mockResolvedValue([{ max: maxVersionNumber }]),
+    // First execute() = atomic INSERT ... RETURNING; later execute() = prune DELETE
+    execute: mockExecute
+      .mockResolvedValueOnce([insertedVersion])
+      .mockResolvedValue([]),
     transaction: vi.fn(),
-    _insertedVersions: insertedVersions,
   };
   return tx;
 }
@@ -82,8 +77,10 @@ describe("createWorkflowVersion — version increment", () => {
     vi.clearAllMocks();
   });
 
-  it("returns newVersionNumber = MAX + 1 (= 4 when MAX is 3)", async () => {
-    const mockTx = buildMockTx({ maxVersionNumber: 3, insertedVersion: { id: "ver-4", version_number: 4 } });
+  it("returns the version_number from the atomic INSERT ... RETURNING (= 4)", async () => {
+    // WR-08: version_number is computed inside the INSERT statement and surfaced
+    // via RETURNING; the helper no longer derives it from a separate MAX read.
+    const mockTx = buildMockTx({ insertedVersion: { id: "ver-4", version_number: 4 } });
     // Wrap in a db mock that calls the transaction callback
     const mockDb = {
       transaction: vi.fn().mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => fn(mockTx)),
@@ -100,8 +97,8 @@ describe("createWorkflowVersion — version increment", () => {
     expect(result.newVersionId).toBe("ver-4");
   });
 
-  it("returns newVersionNumber = 1 when no prior versions exist (MAX is null)", async () => {
-    const mockTx = buildMockTx({ maxVersionNumber: null, insertedVersion: { id: "ver-1", version_number: 1 } });
+  it("returns version_number = 1 for the first version (RETURNING surfaces 1)", async () => {
+    const mockTx = buildMockTx({ insertedVersion: { id: "ver-1", version_number: 1 } });
     const mockDb = {
       transaction: vi.fn().mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => fn(mockTx)),
     };
@@ -145,7 +142,6 @@ describe("createWorkflowVersion — restore creates forward version", () => {
   it("restore: calling with old definition creates a new row (old rows unchanged)", async () => {
     const oldDefinition = { steps: [{ id: "step-1", type: "action" }] };
     const mockTx = buildMockTx({
-      maxVersionNumber: 5,
       insertedVersion: { id: "ver-6", version_number: 6 },
       currentVersion: { id: "ver-005", definition: { steps: [] }, schema_version: 1 },
     });
@@ -166,10 +162,10 @@ describe("createWorkflowVersion — restore creates forward version", () => {
     expect(result.newVersionNumber).toBe(6);
     expect(result.newVersionId).toBe("ver-6");
 
-    // Insert was called once (new version only) — old rows untouched
-    expect(mockTx.insert).toHaveBeenCalledTimes(1);
-
-    // Update was called once to set current_version_id
+    // WR-08: new version inserted via the atomic INSERT ... SELECT (execute),
+    // plus the retention prune DELETE — old rows are never UPDATEd, only the
+    // workflow row's current_version_id is updated once.
+    expect(mockTx.execute).toHaveBeenCalled();
     expect(mockTx.update).toHaveBeenCalledTimes(1);
   });
 });
@@ -177,7 +173,6 @@ describe("createWorkflowVersion — restore creates forward version", () => {
 describe("createWorkflowVersion — 10-version retention prune", () => {
   it("calls execute() to prune old versions beyond 10", async () => {
     const mockTx = buildMockTx({
-      maxVersionNumber: 10,
       insertedVersion: { id: "ver-11", version_number: 11 },
     });
     const mockDb = {
@@ -186,8 +181,9 @@ describe("createWorkflowVersion — 10-version retention prune", () => {
 
     await createWorkflowVersion(mockDb as never, "user-001", "wf-001", { name: "v11" });
 
-    // execute() is called for two things: MAX query + prune DELETE
-    // The prune DELETE is the second call
+    // WR-08: execute() runs the atomic INSERT ... RETURNING and the retention
+    // prune DELETE. (mockExecute is module-shared across describe blocks, so we
+    // assert it was invoked rather than a brittle absolute count.)
     expect(mockTx.execute).toHaveBeenCalled();
   });
 });

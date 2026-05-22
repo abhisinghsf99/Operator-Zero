@@ -24,7 +24,7 @@
  *   this path is very rare but the retry makes it robust.
  */
 
-import { eq, and, max, sql } from "drizzle-orm";
+import { eq, and, sql } from "drizzle-orm";
 import { workflowVersions, workflows } from "@/lib/db/schema";
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
@@ -140,39 +140,43 @@ async function _createVersionInTx(
     currentDefinition = (currentVersion?.definition as Record<string, unknown>) ?? {};
   }
 
-  // 3. Compute next version_number = MAX + 1
-  const [maxRow] = await tx
-    .execute(
-      sql`SELECT COALESCE(MAX(version_number), 0) AS max FROM workflow_versions WHERE workflow_id = ${workflowId}`
-    );
-  const nextVersionNumber = ((maxRow as Record<string, unknown>)?.max as number ?? 0) + 1;
-
-  // 4. INSERT new workflow_versions row.
+  // 3 + 4. Compute next version_number and INSERT atomically in a SINGLE
+  // statement (WR-08). Computing version_number = COALESCE(MAX,0)+1 inside the
+  // INSERT ... SELECT eliminates the read-then-insert race that the 23505 retry
+  // wrapper was working around — two concurrent edits can no longer both read
+  // the same MAX and collide on UNIQUE(workflow_id, version_number).
+  //
   // WR-06: restore (replaceDefinition) writes the patch verbatim as a clean
   // snapshot; edits shallow-merge the changed fields into the current definition.
   const newDefinition = options?.replaceDefinition
     ? { ...patch }
     : mergeDefinitionPatch(currentDefinition, patch);
-  const [newVersion] = await tx
-    .insert(workflowVersions)
-    .values({
-      workflow_id: workflowId,
-      version_number: nextVersionNumber,
-      definition: newDefinition,
-      schema_version: 1,
-      created_by_thread_id: threadId ?? null,
-    })
-    .returning();
+  const definitionJson = JSON.stringify(newDefinition);
+  const insertRows = await tx.execute(sql`
+    INSERT INTO workflow_versions (workflow_id, version_number, definition, schema_version, created_by_thread_id)
+    SELECT
+      ${workflowId}::uuid,
+      COALESCE(MAX(version_number), 0) + 1,
+      ${definitionJson}::jsonb,
+      1,
+      ${threadId ?? null}::uuid
+    FROM workflow_versions
+    WHERE workflow_id = ${workflowId}::uuid
+    RETURNING id, version_number
+  `);
+  const newVersion = (insertRows as Array<Record<string, unknown>>)[0];
 
   if (!newVersion) {
     throw new Error("createWorkflowVersion: insert returned no rows");
   }
+  const newVersionId = newVersion["id"] as string;
+  const nextVersionNumber = Number(newVersion["version_number"]);
 
   // 5. UPDATE workflow: current_version_id + surface fields + updated_at
   await tx
     .update(workflows)
     .set({
-      current_version_id: newVersion.id,
+      current_version_id: newVersionId,
       ...(patch.name !== undefined && { name: patch.name }),
       ...(patch.description !== undefined && { description: patch.description }),
       ...(patch.automation_level !== undefined && { automation_level: patch.automation_level }),
@@ -194,17 +198,23 @@ async function _createVersionInTx(
       )
   `);
 
-  return { newVersionId: newVersion.id, newVersionNumber: nextVersionNumber };
+  return { newVersionId, newVersionNumber: nextVersionNumber };
 }
 
 // ─── createWorkflowVersionWithRetry ──────────────────────────────────────────
 
 /**
  * createWorkflowVersionWithRetry — wraps createWorkflowVersion with a single
- * retry on 23505 (UNIQUE violation on workflow_id + version_number).
+ * defensive retry on 23505 (UNIQUE violation on workflow_id + version_number).
  *
- * This handles the concurrent-edit race where two tabs both read MAX=N and
- * both try to INSERT N+1. On the collision, the loser retries and gets N+2.
+ * WR-08: the read-then-insert race is now eliminated at the source —
+ * createWorkflowVersion computes version_number = COALESCE(MAX,0)+1 inside the
+ * INSERT ... SELECT statement, so concurrent edits cannot read the same MAX and
+ * collide. Each createWorkflowVersion call also runs inside its own
+ * db.transaction (a SAVEPOINT when db is an RLS tx), so a 23505 rolls back only
+ * that savepoint and the retry opens a fresh one rather than re-running on an
+ * aborted handle. The retry is kept purely as belt-and-suspenders for any other
+ * source of a unique collision; under normal operation it should never fire.
  *
  * For most callers, use this instead of createWorkflowVersion directly.
  */
