@@ -50,7 +50,9 @@ describe("encryptToken / decryptToken", () => {
     const encrypted = await encryptToken(plaintext);
     // Flip the last byte of the base64 payload
     const buf = Buffer.from(encrypted, "base64");
-    buf[buf.length - 1] ^= 0xff;
+    const lastIdx = buf.length - 1;
+    // noUncheckedIndexedAccess: guard before writing
+    if (lastIdx >= 0) buf[lastIdx] = (buf[lastIdx] ?? 0) ^ 0xff;
     const tampered = buf.toString("base64");
     await expect(decryptToken(tampered)).rejects.toThrow();
   });
