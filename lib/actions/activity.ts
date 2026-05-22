@@ -185,7 +185,13 @@ export async function revertActivity(activityId: string): Promise<RevertActivity
 // ─── bulkRevertActivity ───────────────────────────────────────────────────────
 
 export type BulkRevertActivityResult =
-  | { reverted: string[]; blocked: Array<{ id: string; reason: string }> }
+  | {
+      /** IDs that WERE reverted (empty on dry run — nothing is written). */
+      reverted: string[];
+      /** IDs that COULD be reverted (populated on dry run for the confirm UI). */
+      revertable: string[];
+      blocked: Array<{ id: string; reason: string }>;
+    }
   | { error: string };
 
 /**
@@ -281,10 +287,13 @@ export async function bulkRevertActivity(
         }
       }
 
-      // dryRun: return classification without writing
+      // dryRun: return classification without writing.
+      // CR-02: return the revertable IDs so the confirm modal can count + enable
+      // its Confirm button. `reverted` stays empty — nothing was written.
       if (dryRun) {
         return {
           reverted: [] as string[],
+          revertable: revertable.map((e: typeof entries[0]) => e.id),
           blocked,
         };
       }
@@ -330,8 +339,10 @@ export async function bulkRevertActivity(
         }
       });
 
+      const revertableIds = revertable.map((e: typeof entries[0]) => e.id);
       return {
-        reverted: revertable.map((e: typeof entries[0]) => e.id),
+        reverted: revertableIds,
+        revertable: revertableIds,
         blocked,
       };
     });

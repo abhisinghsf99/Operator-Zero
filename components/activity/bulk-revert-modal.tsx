@@ -46,7 +46,8 @@ interface BulkRevertModalProps {
 }
 
 interface ClassificationState {
-  reverted: string[];
+  /** IDs that CAN be reverted (from the dry-run) — drives the confirm count. */
+  revertable: string[];
   blocked: Array<{ id: string; reason: string }>;
 }
 
@@ -90,7 +91,8 @@ export function BulkRevertModal({
       }
 
       setClassification({
-        reverted: result.reverted,
+        // CR-02: count revertable entries (dry run never reverts anything)
+        revertable: result.revertable,
         blocked: result.blocked,
       });
     })();
@@ -98,7 +100,7 @@ export function BulkRevertModal({
 
   // Execute revert (dryRun=false)
   function handleConfirm() {
-    if (!classification || classification.reverted.length === 0) return;
+    if (!classification || classification.revertable.length === 0) return;
 
     startTransition(async () => {
       setExecuteError(null);
@@ -122,10 +124,10 @@ export function BulkRevertModal({
 
   const allBlocked =
     classification !== null &&
-    classification.reverted.length === 0 &&
+    classification.revertable.length === 0 &&
     classification.blocked.length > 0;
 
-  const revertableCount = classification?.reverted?.length ?? 0;
+  const revertableCount = classification?.revertable?.length ?? 0;
   const blockedCount = classification?.blocked?.length ?? 0;
 
   return (
