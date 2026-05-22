@@ -17,7 +17,7 @@
  */
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
-import { verifyShopifyWebhook } from "@/lib/integrations/shopify/webhooks";
+import { verifyShopifyWebhookDetailed } from "@/lib/integrations/shopify/webhooks";
 import { inngest } from "@/lib/inngest/client";
 
 export async function POST(request: NextRequest) {
@@ -25,14 +25,32 @@ export async function POST(request: NextRequest) {
   const rawBodyBuffer = Buffer.from(await request.arrayBuffer());
 
   // ── HMAC verification (T-2-03-04) — BEFORE any processing ───────────────
+  // WR-08: use detailed result to distinguish misconfiguration (500) from attack (401).
   const hmacHeader = request.headers.get("x-shopify-hmac-sha256");
-  const isValid = verifyShopifyWebhook(rawBodyBuffer, hmacHeader);
+  const verifyResult = verifyShopifyWebhookDetailed(rawBodyBuffer, hmacHeader);
 
-  if (!isValid) {
+  if (!verifyResult.valid) {
+    if (verifyResult.reason === "secret_not_configured") {
+      // Misconfiguration — log as error and return 500 so operators see it clearly
+      console.error(
+        JSON.stringify({
+          level: "error",
+          event: "shopify.webhook.secret_not_configured",
+          message: "SHOPIFY_CLIENT_SECRET is not set — cannot verify webhook HMAC",
+          timestamp: new Date().toISOString(),
+        })
+      );
+      return NextResponse.json(
+        { error: "Webhook verification misconfigured." },
+        { status: 500 }
+      );
+    }
+    // HMAC mismatch or missing header — log as warn and return 401 (attack path)
     console.log(
       JSON.stringify({
         level: "warn",
         event: "shopify.webhook.hmac_invalid",
+        reason: verifyResult.reason,
         timestamp: new Date().toISOString(),
       })
     );

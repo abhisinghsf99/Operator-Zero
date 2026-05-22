@@ -85,6 +85,54 @@ describe("INTEG-03 — verifyShopifyWebhook (T-2-03-04)", () => {
   });
 });
 
+// ─── WR-08: verifyShopifyWebhookDetailed distinguishes error reasons ──────────
+
+describe("WR-08 — verifyShopifyWebhookDetailed distinguishes misconfiguration from attack", () => {
+  const SECRET = "detailed-test-secret";
+
+  beforeEach(() => {
+    vi.stubEnv("SHOPIFY_CLIENT_SECRET", SECRET);
+  });
+
+  it("returns { valid: true } for a correct HMAC", async () => {
+    const mod = await import("@/lib/integrations/shopify/webhooks");
+    const body = '{"id": 99}';
+    const hmac = computeWebhookHmac(body, SECRET);
+    const result = mod.verifyShopifyWebhookDetailed(body, hmac);
+    expect(result.valid).toBe(true);
+  });
+
+  it("returns { valid: false, reason: 'hmac_mismatch' } for wrong HMAC", async () => {
+    const mod = await import("@/lib/integrations/shopify/webhooks");
+    const body = '{"id": 99}';
+    const result = mod.verifyShopifyWebhookDetailed(body, "wronghmac==");
+    expect(result.valid).toBe(false);
+    if (!result.valid) {
+      expect(result.reason).toBe("hmac_mismatch");
+    }
+  });
+
+  it("returns { valid: false, reason: 'missing_hmac' } for null header", async () => {
+    const mod = await import("@/lib/integrations/shopify/webhooks");
+    const result = mod.verifyShopifyWebhookDetailed('{}', null);
+    expect(result.valid).toBe(false);
+    if (!result.valid) {
+      expect(result.reason).toBe("missing_hmac");
+    }
+  });
+
+  it("WR-08: returns { valid: false, reason: 'secret_not_configured' } when env var is missing", async () => {
+    vi.stubEnv("SHOPIFY_CLIENT_SECRET", "");
+    const mod = await import("@/lib/integrations/shopify/webhooks");
+    const result = mod.verifyShopifyWebhookDetailed('{}', "somehmac==");
+    expect(result.valid).toBe(false);
+    if (!result.valid) {
+      // This is a misconfiguration, NOT an attack — must be distinguishable
+      expect(result.reason).toBe("secret_not_configured");
+    }
+  });
+});
+
 // ─── Webhook route handler ────────────────────────────────────────────────────
 
 describe("INTEG-03 — Shopify webhook route handler", () => {

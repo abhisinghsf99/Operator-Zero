@@ -13,6 +13,11 @@
  */
 import crypto from "crypto";
 
+/** Result type that distinguishes the reason for verification failure (WR-08). */
+export type WebhookVerifyResult =
+  | { valid: true }
+  | { valid: false; reason: "hmac_mismatch" | "missing_hmac" | "secret_not_configured" };
+
 /**
  * Verifies the Shopify webhook HMAC using SHOPIFY_CLIENT_SECRET.
  *
@@ -20,9 +25,12 @@ import crypto from "crypto";
  * using the app's client secret. The base64-encoded digest is sent in
  * X-Shopify-Hmac-Sha256 header.
  *
+ * WR-08: Distinguishes "secret not configured" (misconfiguration) from
+ * "HMAC mismatch" (potential attack) so operators can alert on the former.
+ *
  * @param rawBody - Raw request body as Buffer or string (must NOT be parsed)
  * @param hmacHeader - Value of X-Shopify-Hmac-Sha256 header
- * @returns true if valid, false if invalid or if header/secret is absent
+ * @returns WebhookVerifyResult — { valid: true } or { valid: false, reason }
  *
  * SECURITY: uses crypto.timingSafeEqual to prevent timing-based HMAC oracle attacks.
  */
@@ -30,10 +38,22 @@ export function verifyShopifyWebhook(
   rawBody: Buffer | string,
   hmacHeader: string | null | undefined
 ): boolean {
-  if (!hmacHeader) return false;
+  const result = verifyShopifyWebhookDetailed(rawBody, hmacHeader);
+  return result.valid;
+}
+
+/**
+ * Like verifyShopifyWebhook but returns a structured result with a failure reason.
+ * Use this in route handlers to distinguish misconfiguration from attacks.
+ */
+export function verifyShopifyWebhookDetailed(
+  rawBody: Buffer | string,
+  hmacHeader: string | null | undefined
+): WebhookVerifyResult {
+  if (!hmacHeader) return { valid: false, reason: "missing_hmac" };
 
   const secret = process.env["SHOPIFY_CLIENT_SECRET"];
-  if (!secret) return false;
+  if (!secret) return { valid: false, reason: "secret_not_configured" };
 
   const body = typeof rawBody === "string" ? Buffer.from(rawBody, "utf8") : rawBody;
   const computed = crypto
@@ -50,11 +70,12 @@ export function verifyShopifyWebhook(
       // Different lengths — still do a dummy comparison to avoid timing leak
       // (comparing against itself to normalize time)
       crypto.timingSafeEqual(computedBuf, computedBuf);
-      return false;
+      return { valid: false, reason: "hmac_mismatch" };
     }
 
-    return crypto.timingSafeEqual(computedBuf, receivedBuf);
+    const match = crypto.timingSafeEqual(computedBuf, receivedBuf);
+    return match ? { valid: true } : { valid: false, reason: "hmac_mismatch" };
   } catch {
-    return false;
+    return { valid: false, reason: "hmac_mismatch" };
   }
 }
