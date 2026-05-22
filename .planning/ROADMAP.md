@@ -63,7 +63,7 @@ Plans:
 **Wave 4** *(blocked on Wave 3 completion)*
 
 - [ ] 02-06-PLAN.md — Conversation surface: SSE streaming + visualizer + threads + degradation (wave 4)
-- [ ] 02-07-PLAN.md — Workflow engine: durable L1/L2/L3 + L2 pause/resume keystone + Activity (wave 4)
+- [x] 02-07-PLAN.md — Workflow engine: durable L1/L2/L3 + L2 pause/resume keystone + Activity (wave 4)
 
 **Wave 5** *(blocked on Wave 4 completion)*
 
@@ -110,6 +110,6 @@ Plans:
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Infrastructure Foundation | 4/4 | Complete   | 2026-05-22 |
-| 2. Foundation — Prove the Agent | 5/8 | In Progress|  |
+| 2. Foundation — Prove the Agent | 6/8 | In Progress|  |
 | 3. Ownership — The Portfolio | 0/TBD | Not started | - |
 | 4. Polish — Effortless Daily Use | 0/TBD | Not started | - |

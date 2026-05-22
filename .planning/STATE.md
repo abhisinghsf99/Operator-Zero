@@ -4,13 +4,13 @@ milestone: v1.0
 milestone_name: milestone
 status: executing
 stopped_at: "Completed 02-05: Shared agent runtime (prompt, memory, tools, cost-cap)"
-last_updated: "2026-05-22T08:46:12.451Z"
+last_updated: "2026-05-22T09:06:15.990Z"
 last_activity: 2026-05-22
 progress:
   total_phases: 4
   completed_phases: 1
   total_plans: 12
-  completed_plans: 9
+  completed_plans: 10
   percent: 25
 ---
 
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-05-21)
 ## Current Position
 
 Phase: 02 (foundation-prove-the-agent) — EXECUTING
-Plan: 6 of 8
+Plan: 7 of 8
 Status: Ready to execute
 Last activity: 2026-05-22
 
-Progress: [████████░░] 75%
+Progress: [████████░░] 83%
 
 ## Performance Metrics
 
@@ -57,6 +57,7 @@ Progress: [████████░░] 75%
 | Phase 02-foundation-prove-the-agent P03 | 8 minutes | 4 tasks | 17 files |
 | Phase 02-foundation-prove-the-agent P04 | 67 | 3 tasks | 11 files |
 | Phase 02 P05 | 14 | 3 tasks | 13 files |
+| Phase 02-foundation-prove-the-agent P07 | 13 minutes | 3 tasks | 10 files |
 
 ## Accumulated Context
 
@@ -87,6 +88,8 @@ Recent decisions affecting current work:
 - [Phase ?]: [02-05] Anthropic.APIStatusError does not exist in SDK v0.97.1 — use Anthropic.APIError base class
 - [Phase ?]: [02-05] assemblePrompt is pure/snapshot-testable; buildSystemPrompt is the async pipeline
 - [Phase ?]: [02-05] dispatchTool does not check approvalRequired — workflow engine (02-07) enforces the gate
+- [Phase ?]: [02-07] CEL if: async.data.approvalId NOT event.data — async=awaited event, event=original trigger (Pitfall 1)
+- [Phase ?]: [02-07] Module-level _testState bypasses vi.doMock closure isolation for cross-boundary tracking in Vitest
 
 ### Pending Todos
 
@@ -100,6 +103,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-05-22T08:46:12.448Z
+Last session: 2026-05-22T09:06:15.986Z
 Stopped at: Completed 02-05: Shared agent runtime (prompt, memory, tools, cost-cap)
 Resume file: None

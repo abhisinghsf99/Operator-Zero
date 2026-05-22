@@ -76,11 +76,11 @@
 ### Workflows & Engine (WF)
 
 - [x] **WF-01**: A workflow has name, description, trigger (schedule/event/manual), steps, automation level, status, and source attribution
-- [ ] **WF-02**: The Workflow Engine executes multi-step runs durably via Inngest and resumes from the last checkpoint on failure
-- [ ] **WF-03**: L1 (manual) workflows prepare an action and wait for the user to trigger it — no approval entry
-- [ ] **WF-04**: L2 (approval-gated) workflows pause at execution boundaries, create an approval, and resume on approve/reject
-- [ ] **WF-05**: L3 (autonomous) workflows execute without approval and log everything to Activity
-- [ ] **WF-06**: Every agent action writes an Activity entry within 5s of execution
+- [x] **WF-02**: The Workflow Engine executes multi-step runs durably via Inngest and resumes from the last checkpoint on failure
+- [x] **WF-03**: L1 (manual) workflows prepare an action and wait for the user to trigger it — no approval entry
+- [x] **WF-04**: L2 (approval-gated) workflows pause at execution boundaries, create an approval, and resume on approve/reject
+- [x] **WF-05**: L3 (autonomous) workflows execute without approval and log everything to Activity
+- [x] **WF-06**: Every agent action writes an Activity entry within 5s of execution
 - [ ] **WF-07**: My Workflows shows all workflows grouped by status (Scheduled / Triggered / Manual / Paused / Drafts) with a recent-activity strip
 - [ ] **WF-08**: User can change a workflow's automation level inline (L1/L2/L3) with immediate save; switching to L3 shows a one-time confirmation
 - [ ] **WF-09**: User can pause/resume a workflow without deleting it (history + config retained)
