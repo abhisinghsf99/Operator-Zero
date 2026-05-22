@@ -88,11 +88,12 @@ describe("hello-world durable function", () => {
     expect(callOrder).toEqual(["checkpoint-1", "checkpoint-2"]);
   });
 
-  it("serve route exports maxDuration = 60", async () => {
-    // Import the serve route module and assert maxDuration is 60.
+  it("serve route exports maxDuration = 300", async () => {
+    // Import the serve route module and assert maxDuration is 300.
+    // Phase 2 (02-03): bumped from 60 to 300 for long-running Shopify sync functions.
     // Uses dynamic import so this test remains side-effect free.
     const routeModule = await import("@/app/api/inngest/route");
-    expect((routeModule as Record<string, unknown>).maxDuration).toBe(60);
+    expect((routeModule as Record<string, unknown>).maxDuration).toBe(300);
   });
 
   it("serve route exports GET, POST, PUT handlers", async () => {
