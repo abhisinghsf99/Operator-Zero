@@ -16,11 +16,13 @@ export default defineConfig({
   schema: "./lib/db/schema",
   out: "./drizzle",
   dialect: "postgresql",
-  // dbCredentials not required for `generate` (only for push/pull/migrate)
-  // For live DB operations use Supabase CLI, not drizzle-kit
+  // dbCredentials: drizzle-kit generate does not connect to the DB — this field is
+  // required by the config schema but unused for generate. Use DATABASE_URL directly
+  // so the right region/host is always used. Falls back to an explicit placeholder
+  // (localhost) that communicates intent rather than deriving a potentially wrong
+  // AWS region from NEXT_PUBLIC_SUPABASE_URL.
+  // For live DB operations use Supabase CLI, not drizzle-kit.
   dbCredentials: {
-    url: process.env["NEXT_PUBLIC_SUPABASE_URL"]
-      ? `postgresql://postgres.${process.env["NEXT_PUBLIC_SUPABASE_URL"].replace("https://", "").replace(".supabase.co", "")}:placeholder@aws-0-us-east-1.pooler.supabase.com:6543/postgres`
-      : "postgresql://placeholder:placeholder@localhost:5432/placeholder",
+    url: process.env["DATABASE_URL"] ?? "postgresql://placeholder:placeholder@localhost:5432/placeholder",
   },
 });
