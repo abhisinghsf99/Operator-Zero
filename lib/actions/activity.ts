@@ -28,7 +28,7 @@ import { createClient } from "@/lib/auth/server";
 import { withUserRls } from "@/lib/db/client";
 import { activityEntries, shopifyProducts, threads } from "@/lib/db/schema";
 import { canRevert, REVERT_REASON_LABELS, executeRevertEffect } from "@/lib/workflows/revert";
-import { writeActivity } from "@/lib/workflows/activity";
+import { writeActivityTx } from "@/lib/workflows/activity";
 import { revalidatePath } from "next/cache";
 
 // ─── Input schemas ────────────────────────────────────────────────────────────
@@ -139,8 +139,11 @@ export async function revertActivity(activityId: string): Promise<RevertActivity
         throw new Error(REVERT_REASON_LABELS[check.reason!]);
       }
 
-      // 6. Observability-first: write revert_* entry BEFORE external effect (WF-06)
-      await writeActivity(userId, {
+      // 6. Observability-first: write revert_* entry BEFORE external effect (WF-06).
+      // CR-01: write on the SAME RLS tx handle so the log row shares the
+      // commit/rollback boundary — if the external effect or the reverted_at
+      // update below throws, both roll back together (D-08 atomicity).
+      await writeActivityTx(tx, userId, {
         workflow_run_id: entry.workflow_run_id ?? null,
         step_id: `revert:${activityId}`,
         action_type: `revert_${entry.action_type}`,
@@ -286,11 +289,15 @@ export async function bulkRevertActivity(
         };
       }
 
-      // Execute: atomically revert all revertable entries inside one transaction
+      // Execute: atomically revert all revertable entries inside one transaction.
+      // CR-01: the revert_* log write, the external effect, and the reverted_at
+      // update all run on innerTx — a mid-batch failure rolls back the WHOLE
+      // batch (no orphaned revert_* rows), honoring the D-08 all-or-none contract.
       await tx.transaction(async (innerTx: typeof tx) => {
         for (const entry of revertable) {
-          // Observability-first: write revert entry BEFORE external effect (WF-06)
-          await writeActivity(userId, {
+          // Observability-first: write revert entry BEFORE external effect (WF-06),
+          // on the SAME innerTx handle so it shares the batch commit/rollback boundary.
+          await writeActivityTx(innerTx, userId, {
             workflow_run_id: entry.workflow_run_id ?? null,
             step_id: `revert:${entry.id}`,
             action_type: `revert_${entry.action_type}`,

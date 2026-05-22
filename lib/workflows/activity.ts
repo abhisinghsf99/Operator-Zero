@@ -81,7 +81,26 @@ export async function writeActivity(
   userId: string,
   input: WriteActivityInput
 ): Promise<void> {
-  await serviceDb
+  await buildActivityInsert(serviceDb, userId, input);
+}
+
+/**
+ * Drizzle handle that exposes the .insert() builder used by buildActivityInsert.
+ * Both serviceDb and an RLS transaction handle (from withUserRls) satisfy this.
+ */
+type ActivityInsertDb = Pick<typeof serviceDb, "insert">;
+
+/**
+ * buildActivityInsert — shared insert builder for writeActivity / writeActivityTx.
+ * Keeps the column mapping + ON CONFLICT DO NOTHING idempotency in one place so
+ * the service-role and RLS-transaction paths can never drift.
+ */
+async function buildActivityInsert(
+  db: ActivityInsertDb,
+  userId: string,
+  input: WriteActivityInput
+): Promise<void> {
+  await db
     .insert(activityEntries)
     .values({
       user_id: userId,
@@ -102,4 +121,30 @@ export async function writeActivity(
       agent_context: input.agent_context ?? null,
     })
     .onConflictDoNothing();
+}
+
+/**
+ * writeActivityTx — RLS-transaction variant of writeActivity (CR-01).
+ *
+ * Inserts the activity row on the SAME transaction handle passed by the caller
+ * (the RLS tx from withUserRls) so the write shares the commit/rollback
+ * boundary of the surrounding transaction. This is required for the D-08
+ * "atomic all-or-none" revert guarantee: the revert_* log row and the
+ * reverted_at update must commit or roll back together.
+ *
+ * Unlike writeActivity (which uses serviceDb and auto-commits independently),
+ * this does NOT bypass RLS — the caller's tx already has RLS enforced and the
+ * row's user_id is checked against the policy. Callers MUST still pass an
+ * explicit user_id matching the authenticated subject.
+ *
+ * @param tx     — RLS-scoped Drizzle transaction handle (from withUserRls)
+ * @param userId — authenticated user UUID (must match RLS subject)
+ * @param input  — activity entry fields
+ */
+export async function writeActivityTx(
+  tx: ActivityInsertDb,
+  userId: string,
+  input: WriteActivityInput
+): Promise<void> {
+  await buildActivityInsert(tx, userId, input);
 }
