@@ -16,9 +16,9 @@
 - [x] **INFRA-02**: Drizzle schema + forward-only migrations for initial tables (users, user_profiles, integrations)
 - [x] **INFRA-03**: RLS policies enforce per-user row access on every user-data table (defense-in-depth with explicit query filters)
 - [x] **INFRA-04**: Integration tokens are encrypted at rest (libsodium, key from Supabase secret); plaintext never hits the DB
-- [ ] **INFRA-05**: Inngest configured with local dev server and deploys with the app; a durable hello-world function fires and checkpoints
-- [ ] **INFRA-06**: Anthropic SDK + Voyage embeddings wired and callable from the agent tier
-- [ ] **INFRA-07**: Integration adapter interface defined with skeleton Shopify + Gmail clients (no real ops yet)
+- [x] **INFRA-05**: Inngest configured with local dev server and deploys with the app; a durable hello-world function fires and checkpoints
+- [x] **INFRA-06**: Anthropic SDK + Voyage embeddings wired and callable from the agent tier
+- [x] **INFRA-07**: Integration adapter interface defined with skeleton Shopify + Gmail clients (no real ops yet)
 - [x] **INFRA-08**: Sentry (client + server) and Axiom log aggregation capture errors and structured logs
 
 ### Authentication & Platform (AUTH)
@@ -28,7 +28,7 @@
 - [ ] **AUTH-03**: Session persists via httpOnly cookie with 30-day rolling refresh; middleware guards `/app/*` routes
 - [ ] **AUTH-04**: User can view active sessions (device, location, last seen) and revoke any session
 - [ ] **AUTH-05**: User can "sign out all devices" with confirmation
-- [ ] **AUTH-06**: Per-user rate limits on chat sends and concurrent workflow runs prevent runaway cost
+- [x] **AUTH-06**: Per-user rate limits on chat sends and concurrent workflow runs prevent runaway cost
 - [ ] **AUTH-07**: Per-user daily cost cap — soft-cap warns in chat, hard-cap disables write tools while chat continues in degraded mode
 
 ### Integrations (INTEG)
