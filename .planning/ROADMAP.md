@@ -87,10 +87,19 @@ Plans:
 
 **Plans**: 4 plans (3 waves)
 Plans:
+**Wave 1**
+
 - [ ] 03-01-PLAN.md — Foundation: migration 0005 + version/revert/grouping libs + Server Actions + D-16 redirect + Wave 0 tests (wave 1)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
 - [ ] 03-02-PLAN.md — My Workflows surface: grouped portfolio + live strip + inline level/pause + search + New Workflow (wave 2)
 - [ ] 03-04-PLAN.md — Activity log: virtualized timeline + AND filters + before/after diff + single/atomic-bulk revert + Save as Workflow (wave 2)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
 - [ ] 03-03-PLAN.md — Workflow Detail: inline edit + schedule picker + version history/restore + Run Now + Open in Chat (wave 3)
+
 **UI hint**: yes
 
 ### Phase 4: Polish — Effortless Daily Use
