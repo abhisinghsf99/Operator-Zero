@@ -13,3 +13,6 @@ Sentry.init({
   // Debug mode only in development
   debug: false,
 });
+
+// Required by @sentry/nextjs to instrument client-side router navigations.
+export const onRouterTransitionStart = Sentry.captureRouterTransitionStart;
