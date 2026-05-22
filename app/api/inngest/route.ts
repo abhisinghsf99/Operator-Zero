@@ -19,6 +19,7 @@ import {
   gmailInitialSyncFn,
   gmailIncrementalPollFn,
 } from "@/lib/inngest/functions/gmail-sync";
+import { executeWorkflowRun } from "@/lib/inngest/functions/execute-workflow-run";
 
 export const { GET, POST, PUT } = serve({
   client: inngest,
@@ -29,5 +30,6 @@ export const { GET, POST, PUT } = serve({
     shopifyWebhookProcess,
     gmailInitialSyncFn,
     gmailIncrementalPollFn,
+    executeWorkflowRun,
   ],
 });
