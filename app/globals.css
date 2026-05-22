@@ -1,19 +1,256 @@
 @import "tailwindcss";
 
+/* ─────────── Design Tokens — from Operator Zero Design Files/index.html ─────────── */
+
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  /* Paper / warm neutral palette */
+  --bg:           oklch(98.5% 0.005 80);
+  --bg-elevated:  oklch(99.5% 0.003 80);
+  --bg-subtle:    oklch(96.5% 0.008 80);
+  --bg-deeper:    oklch(94% 0.012 80);
+  --bg-inset:     oklch(91% 0.014 80);
+
+  --border:           oklch(90% 0.014 80);
+  --border-strong:    oklch(82% 0.018 80);
+  --border-hairline:  oklch(93% 0.012 80);
+
+  --text:            oklch(22% 0.008 60);
+  --text-secondary:  oklch(44% 0.012 60);
+  --text-tertiary:   oklch(58% 0.010 60);
+  --text-faint:      oklch(70% 0.008 60);
+
+  /* Surface accents — muted, library-tone */
+  --acc-workflow:     oklch(46% 0.13 282);
+  --acc-workflow-bg:  oklch(96% 0.020 282);
+  --acc-workflow-ink: oklch(28% 0.10 282);
+
+  --acc-chat:         oklch(44% 0.10 162);
+  --acc-chat-bg:      oklch(95.5% 0.018 162);
+  --acc-chat-ink:     oklch(26% 0.07 162);
+
+  --acc-approval:     oklch(54% 0.13 62);
+  --acc-approval-bg:  oklch(95.5% 0.035 70);
+  --acc-approval-ink: oklch(32% 0.09 55);
+
+  --acc-experiment:     oklch(56% 0.14 8);
+  --acc-experiment-bg:  oklch(95.5% 0.028 8);
+  --acc-experiment-ink: oklch(30% 0.10 8);
+
+  --acc-activity:     oklch(45% 0.008 60);
+  --acc-activity-bg:  oklch(95% 0.005 60);
+  --acc-activity-ink: oklch(28% 0.012 60);
+
+  --success:  oklch(48% 0.13 150);
+  --warning:  oklch(62% 0.15 70);
+  --danger:   oklch(54% 0.19 28);
+
+  /* Typography */
+  --font-sans:  "Geist", ui-sans-serif, system-ui, sans-serif;
+  --font-serif: "Instrument Serif", ui-serif, Georgia, serif;
+  --font-mono:  "Geist Mono", ui-monospace, "SF Mono", Menlo, monospace;
+
+  /* Radii */
+  --r-xs:   4px;
+  --r-sm:   6px;
+  --r-md:   10px;
+  --r-lg:   14px;
+  --r-xl:   20px;
+  --r-pill: 999px;
+
+  /* Shadows */
+  --shadow-sm: 0 1px 2px oklch(20% 0.01 60 / 0.04), 0 0 0 0.5px oklch(20% 0.01 60 / 0.04);
+  --shadow-md: 0 4px 16px -4px oklch(20% 0.01 60 / 0.08), 0 0 0 0.5px oklch(20% 0.01 60 / 0.06);
+  --shadow-lg: 0 20px 50px -20px oklch(20% 0.01 60 / 0.18), 0 0 0 0.5px oklch(20% 0.01 60 / 0.08);
+
+  /* Density (default = regular) */
+  --density-row:  46px;
+  --density-pad:  16px;
+  --density-gap:  12px;
+  --density-text: 14px;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+/* Density tweaks */
+[data-density="compact"] {
+  --density-row:  38px;
+  --density-pad:  12px;
+  --density-gap:  8px;
+  --density-text: 13px;
+}
+[data-density="comfortable"] {
+  --density-row:  54px;
+  --density-pad:  20px;
+  --density-gap:  14px;
+  --density-text: 14.5px;
+}
+
+/* Dark theme */
+[data-theme="dark"] {
+  --bg:           oklch(18% 0.008 80);
+  --bg-elevated:  oklch(22% 0.010 80);
+  --bg-subtle:    oklch(24% 0.012 80);
+  --bg-deeper:    oklch(28% 0.014 80);
+  --bg-inset:     oklch(15% 0.008 80);
+
+  --border:           oklch(32% 0.014 80);
+  --border-strong:    oklch(42% 0.018 80);
+  --border-hairline:  oklch(28% 0.012 80);
+
+  --text:            oklch(95% 0.008 80);
+  --text-secondary:  oklch(72% 0.010 80);
+  --text-tertiary:   oklch(58% 0.010 80);
+  --text-faint:      oklch(42% 0.008 80);
+
+  --acc-workflow:     oklch(72% 0.13 282);
+  --acc-workflow-bg:  oklch(28% 0.05 282);
+  --acc-workflow-ink: oklch(82% 0.12 282);
+
+  --acc-chat:         oklch(68% 0.12 162);
+  --acc-chat-bg:      oklch(26% 0.04 162);
+  --acc-chat-ink:     oklch(80% 0.11 162);
+
+  --acc-approval:     oklch(74% 0.15 70);
+  --acc-approval-bg:  oklch(30% 0.06 65);
+  --acc-approval-ink: oklch(82% 0.13 65);
+
+  --acc-experiment:     oklch(74% 0.15 8);
+  --acc-experiment-bg:  oklch(28% 0.06 8);
+  --acc-experiment-ink: oklch(82% 0.13 8);
+
+  --acc-activity:     oklch(65% 0.008 60);
+  --acc-activity-bg:  oklch(26% 0.008 60);
+  --acc-activity-ink: oklch(85% 0.012 60);
+
+  --success:  oklch(70% 0.15 150);
+  --warning:  oklch(78% 0.16 70);
+  --danger:   oklch(70% 0.18 28);
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4), 0 0 0 0.5px rgba(255, 255, 255, 0.06);
+  --shadow-md: 0 4px 16px -4px rgba(0, 0, 0, 0.5), 0 0 0 0.5px rgba(255, 255, 255, 0.06);
+  --shadow-lg: 0 20px 50px -20px rgba(0, 0, 0, 0.7), 0 0 0 0.5px rgba(255, 255, 255, 0.08);
+}
+
+/* ─────────── Tailwind v4 @theme inline — maps CSS vars to Tailwind utilities ─────────── */
+@theme inline {
+  /* Background colours */
+  --color-bg:           var(--bg);
+  --color-bg-elevated:  var(--bg-elevated);
+  --color-bg-subtle:    var(--bg-subtle);
+  --color-bg-deeper:    var(--bg-deeper);
+  --color-bg-inset:     var(--bg-inset);
+
+  /* Borders */
+  --color-border:           var(--border);
+  --color-border-strong:    var(--border-strong);
+  --color-border-hairline:  var(--border-hairline);
+
+  /* Text */
+  --color-text:           var(--text);
+  --color-text-secondary: var(--text-secondary);
+  --color-text-tertiary:  var(--text-tertiary);
+  --color-text-faint:     var(--text-faint);
+
+  /* Accent: Workflow */
+  --color-acc-workflow:     var(--acc-workflow);
+  --color-acc-workflow-bg:  var(--acc-workflow-bg);
+  --color-acc-workflow-ink: var(--acc-workflow-ink);
+
+  /* Accent: Chat */
+  --color-acc-chat:         var(--acc-chat);
+  --color-acc-chat-bg:      var(--acc-chat-bg);
+  --color-acc-chat-ink:     var(--acc-chat-ink);
+
+  /* Accent: Approval */
+  --color-acc-approval:     var(--acc-approval);
+  --color-acc-approval-bg:  var(--acc-approval-bg);
+  --color-acc-approval-ink: var(--acc-approval-ink);
+
+  /* Accent: Experiment */
+  --color-acc-experiment:     var(--acc-experiment);
+  --color-acc-experiment-bg:  var(--acc-experiment-bg);
+  --color-acc-experiment-ink: var(--acc-experiment-ink);
+
+  /* Accent: Activity */
+  --color-acc-activity:     var(--acc-activity);
+  --color-acc-activity-bg:  var(--acc-activity-bg);
+  --color-acc-activity-ink: var(--acc-activity-ink);
+
+  /* Semantic colours */
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-danger:  var(--danger);
+
+  /* Typography */
+  --font-sans:  var(--font-sans);
+  --font-serif: var(--font-serif);
+  --font-mono:  var(--font-mono);
+
+  /* Radii */
+  --radius-xs:   var(--r-xs);
+  --radius-sm:   var(--r-sm);
+  --radius-md:   var(--r-md);
+  --radius-lg:   var(--r-lg);
+  --radius-xl:   var(--r-xl);
+  --radius-pill: var(--r-pill);
+}
+
+/* ─────────── Base styles ─────────── */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+  padding: 0;
 }
 
 body {
-  color: var(--foreground);
-  background: var(--background);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  font-feature-settings: "ss01", "cv11";
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+::selection {
+  background: var(--acc-workflow-bg);
+  color: var(--acc-workflow-ink);
+}
+
+button {
+  font-family: inherit;
+}
+
+input,
+textarea {
+  font-family: inherit;
+  color: inherit;
+}
+
+a {
+  color: inherit;
+}
+
+/* Serif display helper */
+.display {
+  font-family: var(--font-serif);
+  font-weight: 400;
+  letter-spacing: -0.01em;
+}
+
+/* Reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }
