@@ -11,9 +11,9 @@
  *
  * SECURITY — T-1-04-04 (Open Redirect):
  *   The `next` parameter is user-controlled and MUST be validated before redirect.
- *   We accept ONLY same-origin relative paths (starting with "/" but NOT "//").
- *   Absolute URLs (http://, https://, //) are silently replaced with /app/home.
- *   This closes the open-redirect attack vector.
+ *   We accept ONLY same-origin relative paths (starting with "/" but not "//" or "/\").
+ *   Absolute URLs, protocol-relative URLs, and backslash-prefixed paths are silently
+ *   replaced with /app/home. This closes the open-redirect attack vector.
  *
  * SECURITY — T-1-04-03 (OAuth CSRF):
  *   Supabase's PKCE flow (exchangeCodeForSession) handles state verification internally.
@@ -32,6 +32,9 @@ const DEFAULT_NEXT = "/app/home";
  * Rules:
  *   - Must start with "/" to be a relative path.
  *   - Must NOT start with "//" (protocol-relative URL — still an open redirect).
+ *   - Must NOT start with "/\" or its percent-encoded forms ("/%5C", "/%5c") —
+ *     the WHATWG URL parser normalises "/\host" to "//host", which some HTTP
+ *     clients re-interpret as a protocol-relative URL in Location headers.
  *   - Must NOT contain a protocol scheme (http:, https:, etc.).
  *   - Falls back to DEFAULT_NEXT for any invalid value.
  *
@@ -48,6 +51,16 @@ export function validateNextParam(next: string | null): string {
 
   // Reject protocol-relative URLs (// prefix) — these navigate off-origin.
   if (next.startsWith("//")) {
+    return DEFAULT_NEXT;
+  }
+
+  // Reject backslash-prefixed paths: /\host normalises to //host in the WHATWG
+  // URL parser, which some HTTP clients treat as protocol-relative in Location headers.
+  // Also reject percent-encoded variants (/%5C and /%5c).
+  if (
+    next.startsWith("/\\") ||
+    next.toLowerCase().startsWith("/%5c")
+  ) {
     return DEFAULT_NEXT;
   }
 
