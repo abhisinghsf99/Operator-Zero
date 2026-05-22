@@ -8,8 +8,9 @@
  * CRITICAL IMPLEMENTATION NOTES:
  *
  * 1. CEL ASYNC/EVENT INVERSION (Pitfall 1, T-2-07-01):
- *    In step.waitForEvent, the `if` uses `async` (the original triggering event)
- *    NOT `event` (the matched awaited event). Correct form:
+ *    In step.waitForEvent, the `if` MUST use `async` (the matched/awaited event,
+ *    i.e. approval.resolved) NOT `event` (the original triggering event,
+ *    i.e. workflow.run_requested). Correct form:
  *      if: `async.data.approvalId == "${approval.id}"`
  *    Using `event.data.approvalId` here is a SILENT wrong-resume bug.
  *
