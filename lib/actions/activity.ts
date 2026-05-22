@@ -29,6 +29,7 @@ import { withUserRls } from "@/lib/db/client";
 import { activityEntries, shopifyProducts, threads } from "@/lib/db/schema";
 import { canRevert, REVERT_REASON_LABELS, executeRevertEffect } from "@/lib/workflows/revert";
 import { writeActivityTx } from "@/lib/workflows/activity";
+import { toClientError } from "@/lib/errors";
 import { revalidatePath } from "next/cache";
 
 // ─── Input schemas ────────────────────────────────────────────────────────────
@@ -178,7 +179,7 @@ export async function revertActivity(activityId: string): Promise<RevertActivity
     revalidatePath("/app/activity");
     return { success: true };
   } catch (err) {
-    return { error: String(err) };
+    return { error: toClientError(err, "revertActivity") };
   }
 }
 
@@ -350,7 +351,7 @@ export async function bulkRevertActivity(
     revalidatePath("/app/activity");
     return result as BulkRevertActivityResult;
   } catch (err) {
-    return { error: String(err) };
+    return { error: toClientError(err, "bulkRevertActivity") };
   }
 }
 
@@ -432,6 +433,6 @@ export async function saveAsWorkflow(
 
     return { success: true, threadId };
   } catch (err) {
-    return { error: String(err) };
+    return { error: toClientError(err, "saveAsWorkflow") };
   }
 }

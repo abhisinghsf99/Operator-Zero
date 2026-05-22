@@ -28,6 +28,7 @@ import { withUserRls } from "@/lib/db/client";
 import { inngest } from "@/lib/inngest/client";
 import { workflows, workflowVersions } from "@/lib/db/schema";
 import { createWorkflowVersionWithRetry } from "@/lib/workflows/versions";
+import { toClientError } from "@/lib/errors";
 import { revalidatePath } from "next/cache";
 
 // ─── Input schemas ────────────────────────────────────────────────────────────
@@ -112,7 +113,7 @@ export async function editWorkflow(
     revalidatePath(`/app/workflows/${workflowId}`);
     return { success: true };
   } catch (err) {
-    return { error: String(err) };
+    return { error: toClientError(err, "editWorkflow") };
   }
 }
 
@@ -173,7 +174,7 @@ export async function togglePause(workflowId: string): Promise<TogglePauseResult
     revalidatePath(`/app/workflows/${workflowId}`);
     return { success: true };
   } catch (err) {
-    return { error: String(err) };
+    return { error: toClientError(err, "togglePause") };
   }
 }
 
@@ -257,7 +258,7 @@ export async function restoreVersion(
     revalidatePath(`/app/workflows/${workflowId}`);
     return { success: true };
   } catch (err) {
-    return { error: String(err) };
+    return { error: toClientError(err, "restoreVersion") };
   }
 }
 
@@ -321,6 +322,6 @@ export async function runNow(workflowId: string): Promise<RunNowResult> {
     revalidatePath(`/app/workflows/${workflowId}`);
     return { success: true, runTriggered: true };
   } catch (err) {
-    return { error: String(err) };
+    return { error: toClientError(err, "runNow") };
   }
 }

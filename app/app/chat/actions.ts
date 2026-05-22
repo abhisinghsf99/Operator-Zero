@@ -29,6 +29,7 @@ import {
 } from "@/lib/db";
 import { eq, desc, isNull, and } from "drizzle-orm";
 import { z } from "zod";
+import { toClientError } from "@/lib/errors";
 
 // ─── Input schemas ─────────────────────────────────────────────────────────────
 
@@ -102,7 +103,7 @@ export async function createThread(
 
     return { threadId: row?.id ?? "" };
   } catch (err) {
-    return { error: String(err) };
+    return { error: toClientError(err, "createThread") };
   }
 }
 
@@ -157,7 +158,7 @@ export async function openWorkflowInChat(
 
     return { threadId: row?.id ?? "" };
   } catch (err) {
-    return { error: String(err) };
+    return { error: toClientError(err, "openWorkflowInChat") };
   }
 }
 
@@ -192,7 +193,7 @@ export async function renameThread(
 
     return { ok: true };
   } catch (err) {
-    return { error: String(err) };
+    return { error: toClientError(err, "renameThread") };
   }
 }
 
@@ -236,7 +237,7 @@ export async function listThreads(): Promise<
 
     return { threads: rows };
   } catch (err) {
-    return { error: String(err) };
+    return { error: toClientError(err, "listThreads") };
   }
 }
 
@@ -385,6 +386,6 @@ export async function saveWorkflowFromPlan(
 
     return { workflowId };
   } catch (err) {
-    return { error: String(err) };
+    return { error: toClientError(err, "saveWorkflowFromPlan") };
   }
 }
