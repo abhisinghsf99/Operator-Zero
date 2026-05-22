@@ -1224,7 +1224,7 @@ export async function editWorkflow(
 
 ---
 
-## Open Questions
+## Open Questions (RESOLVED)
 
 1. **Realtime authorization for user-scoped channels (activity:userId, runs:workflowId)**
    - What we know: Migration 0004 added policies for `thread:<uuid>` and `approval:<uuid>`. Phase 2 components use those channels successfully.
