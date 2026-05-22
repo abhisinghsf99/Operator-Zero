@@ -28,6 +28,7 @@ import {
   brandVoiceProfiles,
   shopifyProducts,
   shopifySyncState,
+  integrations,
 } from "@/lib/db/schema";
 import { eq, and, isNull, desc } from "drizzle-orm";
 import { recallMemory } from "./memory";
@@ -301,6 +302,23 @@ async function loadStoreContext(userId: string): Promise<StoreContextData | null
 
   if (!syncRows[0]) return null;
 
+  // IN-02 FIX: Load the real shop domain from integrations.provider_account_id
+  // instead of hardcoding "connected-store.myshopify.com". If the integration
+  // row is missing, omit the domain line from the prompt rather than misleading
+  // the agent with an incorrect placeholder.
+  const integrationRows = await serviceDb
+    .select({ provider_account_id: integrations.provider_account_id })
+    .from(integrations)
+    .where(
+      and(
+        eq(integrations.user_id, userId),
+        eq(integrations.provider, "shopify")
+      )
+    )
+    .limit(1);
+
+  const shopDomain = integrationRows[0]?.provider_account_id ?? null;
+
   // Count products in mirror
   const products = await serviceDb
     .select({ product_gid: shopifyProducts.product_gid })
@@ -308,14 +326,8 @@ async function loadStoreContext(userId: string): Promise<StoreContextData | null
     .where(eq(shopifyProducts.user_id, userId))
     .limit(1000);
 
-  // Extract shop domain from integrations via sync state
-  // The sync_state table doesn't store the domain directly; we use the products table
-  // as a proxy — if products exist, the shop is connected. The actual domain
-  // comes from the integrations table but that's loaded by the Shopify adapter.
-  // For the prompt context we only need count + domain from a connected integration.
-  // Use a sensible fallback for now; runtime.ts wires in the actual shop domain.
   return {
-    shopDomain: "connected-store.myshopify.com",
+    shopDomain: shopDomain ?? "",  // empty string means prompt section omits the domain line
     productCount: products.length,
   };
 }
