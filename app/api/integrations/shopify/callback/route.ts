@@ -30,8 +30,9 @@ import {
 import { encryptToken } from "@/lib/integrations/crypto";
 import { serviceDb } from "@/lib/db/client";
 import { integrations, userProfiles } from "@/lib/db/schema";
-import { eq, and } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { inngest } from "@/lib/inngest/client";
+import { getOAuthNonce, clearOAuthNonce } from "@/lib/integrations/oauth-nonce";
 
 export async function GET(request: NextRequest) {
   const origin = request.nextUrl.origin;
@@ -78,28 +79,17 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  const [existingRow] = await serviceDb
-    .select({
-      access_token_encrypted: integrations.access_token_encrypted,
-      status: integrations.status,
-    })
-    .from(integrations)
-    .where(
-      and(
-        eq(integrations.user_id, userId),
-        eq(integrations.provider, "shopify")
-      )
-    )
-    .limit(1);
+  // CR-07 FIX: Read nonce from Redis (not from access_token_encrypted) so we
+  // don't require destroying a live token during connect initiation.
+  const storedNonce = await getOAuthNonce(userId, "shopify");
 
-  if (!existingRow || !existingRow.access_token_encrypted.startsWith("nonce:")) {
+  if (!storedNonce) {
     return NextResponse.json(
       { error: "No pending OAuth session found. Please restart the connect flow." },
       { status: 400 }
     );
   }
 
-  const storedNonce = existingRow.access_token_encrypted.slice("nonce:".length);
   if (state !== storedNonce) {
     console.log(
       JSON.stringify({
@@ -247,6 +237,9 @@ export async function GET(request: NextRequest) {
     .update(userProfiles)
     .set({ shopify_shop: shop, updated_at: new Date() })
     .where(eq(userProfiles.user_id, userId));
+
+  // Clear the OAuth nonce now that exchange succeeded
+  await clearOAuthNonce(userId, "shopify");
 
   // ── Fire shopify.connected event to trigger full background sync ──────────
   await inngest.send({

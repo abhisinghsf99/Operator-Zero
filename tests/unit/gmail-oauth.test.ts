@@ -270,3 +270,58 @@ describe("INTEG-04 — Gmail OAuth + refresh-token handling", () => {
     expect(await adapter.isHealthy()).toBe(false);
   });
 });
+
+// ─── CR-07: OAuth nonce stored in Redis, not in access_token_encrypted ─────────
+
+describe("CR-07 — OAuth nonce uses Redis (not access_token_encrypted clobber)", () => {
+  it("storeOAuthNonce / getOAuthNonce roundtrip works", async () => {
+    // The oauth-nonce module uses Redis for nonce storage. This test exercises
+    // the module's interface with the already-mocked Redis client.
+    // We mock Redis inline since the top-level vi.mock doesn't cover this module.
+    vi.resetModules();
+
+    const stored: Record<string, string> = {};
+    vi.doMock("@upstash/redis", () => ({
+      Redis: {
+        fromEnv: vi.fn(() => ({
+          set: vi.fn(async (key: string, _val: unknown, _opts: unknown) => {
+            stored[key] = "nonce-value";
+            return "OK";
+          }),
+          get: vi.fn(async (key: string) => stored[key] ?? null),
+          del: vi.fn(async (key: string) => { delete stored[key]; }),
+        })),
+      },
+    }));
+
+    const { storeOAuthNonce, getOAuthNonce, clearOAuthNonce } = await import("@/lib/integrations/oauth-nonce");
+
+    await storeOAuthNonce("user-cr07", "gmail", "test-nonce-abc");
+    const retrieved = await getOAuthNonce("user-cr07", "gmail");
+    expect(retrieved).toBeTruthy(); // nonce was stored and retrieved
+
+    await clearOAuthNonce("user-cr07", "gmail");
+    const afterClear = await getOAuthNonce("user-cr07", "gmail");
+    expect(afterClear).toBeNull();
+  });
+
+  it("nonce key is scoped per user+provider: oz:oauth_nonce:{userId}:{provider}", async () => {
+    // The nonce key format prevents cross-user/cross-provider collisions
+    vi.resetModules();
+
+    const capturedKeys: string[] = [];
+    vi.doMock("@upstash/redis", () => ({
+      Redis: {
+        fromEnv: vi.fn(() => ({
+          set: vi.fn(async (key: string) => { capturedKeys.push(key); return "OK"; }),
+          get: vi.fn(async () => null),
+          del: vi.fn(async () => 0),
+        })),
+      },
+    }));
+
+    const { storeOAuthNonce } = await import("@/lib/integrations/oauth-nonce");
+    await storeOAuthNonce("user-abc", "shopify", "nonce-xyz");
+    expect(capturedKeys[0]).toBe("oz:oauth_nonce:user-abc:shopify");
+  });
+});

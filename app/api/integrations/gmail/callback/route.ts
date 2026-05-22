@@ -19,9 +19,7 @@ import { createClient } from "@/lib/auth/server";
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { exchangeGmailCode } from "@/lib/integrations/gmail/client";
-import { serviceDb } from "@/lib/db/client";
-import { integrations } from "@/lib/db/schema";
-import { and, eq } from "drizzle-orm";
+import { getOAuthNonce, clearOAuthNonce } from "@/lib/integrations/oauth-nonce";
 
 export async function GET(request: NextRequest) {
   const origin = request.nextUrl.origin;
@@ -65,20 +63,11 @@ export async function GET(request: NextRequest) {
   }
 
   // ── State nonce verification (T-2-04-01) — BEFORE any DB write ──────────
-  const [existingRow] = await serviceDb
-    .select({
-      access_token_encrypted: integrations.access_token_encrypted,
-    })
-    .from(integrations)
-    .where(
-      and(
-        eq(integrations.user_id, userId),
-        eq(integrations.provider, "gmail")
-      )
-    )
-    .limit(1);
+  // CR-07 FIX: Read nonce from Redis (not from access_token_encrypted) so we
+  // don't require destroying a live token during connect initiation.
+  const storedNonce = await getOAuthNonce(userId, "gmail");
 
-  if (!existingRow || !existingRow.access_token_encrypted.startsWith("nonce:")) {
+  if (!storedNonce) {
     return NextResponse.json(
       {
         error:
@@ -88,7 +77,6 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  const storedNonce = existingRow.access_token_encrypted.slice("nonce:".length);
   if (state !== storedNonce) {
     console.log(
       JSON.stringify({
@@ -108,6 +96,8 @@ export async function GET(request: NextRequest) {
   try {
     const redirectUri = `${origin}/api/integrations/gmail/callback`;
     await exchangeGmailCode(userId, code, redirectUri);
+    // Clear the nonce after successful exchange
+    await clearOAuthNonce(userId, "gmail");
   } catch (err) {
     console.log(
       JSON.stringify({

@@ -17,8 +17,7 @@ import { createClient } from "@/lib/auth/server";
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { buildGmailAuthUrl } from "@/lib/integrations/gmail/client";
-import { serviceDb } from "@/lib/db/client";
-import { integrations } from "@/lib/db/schema";
+import { storeOAuthNonce } from "@/lib/integrations/oauth-nonce";
 import crypto from "crypto";
 
 /** Generate a cryptographically random nonce (32 hex bytes = 64 chars). */
@@ -39,29 +38,11 @@ export async function GET(request: NextRequest) {
   const userId = claims.sub as string;
 
   // ── Nonce generation + storage (T-2-04-01) ────────────────────────────────
+  // CR-07 FIX: Store the nonce in Redis (TTL=10min) rather than clobbering
+  // access_token_encrypted. Clobbering destroys a live token when a user
+  // restarts/abandons the connect flow.
   const nonce = generateNonce();
-
-  // Store nonce as a pending integration row.
-  // access_token_encrypted stores `nonce:<value>` as placeholder — replaced on successful callback.
-  await serviceDb
-    .insert(integrations)
-    .values({
-      user_id: userId,
-      provider: "gmail",
-      provider_account_id: null,
-      status: "pending",
-      access_token_encrypted: `nonce:${nonce}`,
-      scopes: [],
-      last_error: null,
-    })
-    .onConflictDoUpdate({
-      target: [integrations.user_id, integrations.provider],
-      set: {
-        status: "pending",
-        access_token_encrypted: `nonce:${nonce}`,
-        last_error: null,
-      },
-    });
+  await storeOAuthNonce(userId, "gmail", nonce);
 
   // ── Build Google OAuth consent URL ────────────────────────────────────────
   const redirectUri = `${origin}/api/integrations/gmail/callback`;

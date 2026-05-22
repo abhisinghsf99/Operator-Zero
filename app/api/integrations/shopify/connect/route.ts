@@ -17,8 +17,7 @@ import { createClient } from "@/lib/auth/server";
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { sanitizeShopDomain } from "@/lib/integrations/shopify/client";
-import { serviceDb } from "@/lib/db/client";
-import { integrations } from "@/lib/db/schema";
+import { storeOAuthNonce } from "@/lib/integrations/oauth-nonce";
 import crypto from "crypto";
 
 /** Generate a cryptographically random nonce (32 hex bytes = 64 chars). */
@@ -49,31 +48,10 @@ export async function GET(request: NextRequest) {
   }
 
   // ── Nonce generation + storage (T-2-03-01) ────────────────────────────────
+  // CR-07 FIX: Store nonce in Redis (TTL=10min) rather than clobbering
+  // access_token_encrypted, which destroys a live token on reconnect.
   const nonce = generateNonce();
-
-  // Store nonce as a pending integration row.
-  // access_token_encrypted stores `nonce:<value>` as placeholder — replaced on successful callback.
-  // status='pending' is a sentinel — callback upgrades to 'active'.
-  await serviceDb
-    .insert(integrations)
-    .values({
-      user_id: userId,
-      provider: "shopify",
-      provider_account_id: shop,
-      status: "pending",
-      access_token_encrypted: `nonce:${nonce}`,
-      scopes: [],
-      last_error: null,
-    })
-    .onConflictDoUpdate({
-      target: [integrations.user_id, integrations.provider],
-      set: {
-        provider_account_id: shop,
-        status: "pending",
-        access_token_encrypted: `nonce:${nonce}`,
-        last_error: null,
-      },
-    });
+  await storeOAuthNonce(userId, "shopify", nonce);
 
   // ── Build Shopify OAuth authorize URL ────────────────────────────────────
   const redirectUri = `${origin}/api/integrations/shopify/callback`;
