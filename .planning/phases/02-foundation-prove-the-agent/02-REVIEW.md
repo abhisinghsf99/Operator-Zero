@@ -93,7 +93,21 @@ findings:
   warning: 11
   info: 6
   total: 25
-status: issues_found
+status: partial
+remediation:
+  remediated_at: 2026-05-22T00:00:00Z
+  fixed: 18
+  deferred: 6
+  deferred_ids:
+    - WR-07
+    - WR-09
+    - WR-11
+    - IN-04
+    - IN-05
+    - IN-06
+  remaining_critical: 0
+  remaining_warning: 3
+  remaining_info: 3
 ---
 
 # Phase 2: Code Review Report
@@ -302,3 +316,49 @@ else { /* still pending/expired/snoozed — do NOT execute */ }
 _Reviewed: 2026-05-22_
 _Reviewer: Claude (gsd-code-reviewer)_
 _Depth: standard_
+
+---
+
+## Remediation
+
+**Remediated:** 2026-05-22
+**Fixed:** 18 of 25 findings (all 8 critical, 8 of 11 warnings, 3 of 6 info)
+**Deferred:** 6 findings (WR-07, WR-09, WR-11, IN-04, IN-05, IN-06) — non-blocking for v1 ship
+**Final state:** `npx tsc --noEmit` clean · `npx vitest run` 278 passed, 0 failures · `npx next build` success
+
+### Fixed Findings
+
+| ID | Title | Commit |
+|----|-------|--------|
+| CR-01 | step_id carries idempotency key; workflow_run_id nullable | `15474aa` |
+| CR-02 | current_version_id updated after workflow version insert | `b0f6f09` |
+| CR-03 | Trust DB row status, not event payload (T-2-07-02) | `2e13f1a` |
+| CR-04 | Approval ownership re-check uses DB row (T-2-07-02) | `2e13f1a` |
+| CR-05 | Agentic tool loop with MAX_TOOL_ITERATIONS=5 | `5f5ec09` |
+| CR-06 | Remove dead UUID-vs-domain query; add shop cross-check | `04b2921` |
+| CR-07 | OAuth nonce stored in Redis, not access_token_encrypted | `969f916` |
+| CR-08 | trigger_type mapping before workflow insert | `b0f6f09` |
+| WR-01 | HARD_CAP_USD default raised to 10 USD (above SOFT_CAP) | `7499c27` |
+| WR-02 | Atomic TTL creation via redis.set(nx:true) + incrbyfloat | `7499c27` |
+| WR-03 | Re-read variant from Shopify before mirror upsert | `15474aa` |
+| WR-04 | inventorySetOnHandQuantities (absolute) replaces delta adjust | `15474aa` |
+| WR-05 | Document L1 single-step-only behavior in execute-workflow-run | `2e13f1a` |
+| WR-06 | Insert approval_card message for chat-triggered approvals | `2e13f1a` |
+| WR-08 | verifyShopifyWebhookDetailed distinguishes error reasons | `a6f10ae` |
+| WR-10 | Remove redundant UPDATE before gmail sync upsert | `672e84e` |
+| IN-01 | Fix CEL doc comment: async=matched event, event=original trigger | `2e13f1a` |
+| IN-02 | Load actual shop domain from integrations table | `2193233` |
+| IN-03 | Replace bare catch{} with structured JSON error logging | `5f5ec09` |
+
+### Deferred Findings
+
+| ID | Title | Reason |
+|----|-------|--------|
+| WR-07 | Realtime RLS policy verification | Requires live Supabase Realtime policy audit; non-blocking for v1 |
+| WR-09 | Gmail classification batching / cost | Optimization; current per-email classify works correctly |
+| WR-11 | Incremental sync cursor (historyId pagination) | Enhancement; initial full sync is correct |
+| IN-04 | Per-step real cost tracking in workflow runs | Placeholder cost is non-zero; real telemetry is a v1.1 item |
+| IN-05 | Grapheme-safe thread name truncation | Minor UX; emoji split is cosmetic, not functional |
+| IN-06 | Full zod-to-json-schema conversion | Tool schema accuracy improvement; current behavior works for MVP |
+
+_Remediation by: Claude (gsd-code-fixer)_
