@@ -534,6 +534,7 @@ export interface PendingApproval {
   created_at: Date;
   workflow_run_id: string | null;
   thread_id: string | null;
+  estimated_review_seconds: number | null;
 }
 
 /**

@@ -10,6 +10,7 @@ import {
   Settings,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { ApprovalsBadgeSync } from "@/app/app/approvals/_realtime-sync";
 
 const NAV_ITEMS = [
   {
@@ -59,16 +60,25 @@ type NavAccent = "chat" | "workflow" | "approval" | "activity";
 function NavLink({
   item,
   isActive,
+  pendingCount,
+  userId,
 }: {
   item: (typeof NAV_ITEMS)[number];
   isActive: boolean;
+  pendingCount?: number;
+  userId?: string;
 }) {
   const accent = item.accent as NavAccent;
+  const showBadge = item.id === "approvals" && pendingCount !== undefined && pendingCount > 0 && userId;
 
   return (
     <Link
       href={item.href}
-      aria-label={item.ariaLabel}
+      aria-label={
+        showBadge
+          ? `${item.ariaLabel} (${pendingCount} pending)`
+          : item.ariaLabel
+      }
       aria-current={isActive ? "page" : undefined}
       className={cn(
         // Base
@@ -97,11 +107,22 @@ function NavLink({
         className="shrink-0"
       />
       <span className="flex-1 truncate">{item.label}</span>
+      {/* Pending approvals badge with Realtime sync (APRV-05) */}
+      {showBadge && userId && (
+        <ApprovalsBadgeSync userId={userId} initialCount={pendingCount} />
+      )}
     </Link>
   );
 }
 
-export function Sidebar() {
+interface SidebarProps {
+  /** Pending approvals count for the badge (APRV-05). Fetched server-side by layout. */
+  pendingApprovalsCount?: number;
+  /** Authenticated user ID — required for Realtime badge sync. */
+  userId?: string;
+}
+
+export function Sidebar({ pendingApprovalsCount, userId }: SidebarProps) {
   const pathname = usePathname();
 
   return (
@@ -139,6 +160,8 @@ export function Sidebar() {
             key={item.id}
             item={item}
             isActive={pathname === item.href || pathname.startsWith(item.href + "/")}
+            pendingCount={item.id === "approvals" ? pendingApprovalsCount : undefined}
+            userId={userId}
           />
         ))}
       </nav>
