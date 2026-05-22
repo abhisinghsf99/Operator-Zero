@@ -25,7 +25,7 @@
  *   the confirm dialog is a client-side UX gate only.
  */
 
-import { useTransition } from "react";
+import { useEffect, useRef, useTransition } from "react";
 import { toast } from "sonner";
 import { runNow } from "@/lib/actions/workflows";
 import {
@@ -77,6 +77,9 @@ export function RunNowDialog({
 }: RunNowDialogProps) {
   const [isPending, startTransition] = useTransition();
   const needsConfirm = requiresConfirmDialog(automationLevel);
+  // WR-03: guard so the L1 auto-run fires exactly once per open (StrictMode
+  // double-mount + parent re-renders must not trigger duplicate runNow calls).
+  const hasFiredRef = useRef(false);
 
   async function executeRun() {
     startTransition(async () => {
@@ -103,13 +106,25 @@ export function RunNowDialog({
     });
   }
 
-  // L1 manual: no dialog — if the button was clicked, run immediately
-  // (Parent sets open=true; we execute and close without showing the dialog UI)
-  if (!needsConfirm) {
-    // Execute immediately when open becomes true
-    if (open && !isPending) {
+  // WR-03: L1 manual workflows run instantly with no dialog. Trigger the run
+  // from an effect (not the render body) so it cannot fire on every re-render.
+  // Reset the once-guard when the dialog closes so a subsequent open re-runs.
+  useEffect(() => {
+    if (needsConfirm) return;
+    if (open && !hasFiredRef.current) {
+      hasFiredRef.current = true;
       void executeRun();
     }
+    if (!open) {
+      hasFiredRef.current = false;
+    }
+    // executeRun is stable enough for this once-per-open trigger; keying on
+    // open + needsConfirm is the intended dependency set.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, needsConfirm]);
+
+  // L1 manual: no dialog UI is rendered — execution is handled by the effect above
+  if (!needsConfirm) {
     return null;
   }
 
