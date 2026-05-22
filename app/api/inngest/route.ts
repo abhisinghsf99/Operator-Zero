@@ -20,6 +20,7 @@ import {
   gmailIncrementalPollFn,
 } from "@/lib/inngest/functions/gmail-sync";
 import { executeWorkflowRun } from "@/lib/inngest/functions/execute-workflow-run";
+import { catalogAudit } from "@/lib/inngest/functions/catalog-audit";
 
 export const { GET, POST, PUT } = serve({
   client: inngest,
@@ -31,5 +32,6 @@ export const { GET, POST, PUT } = serve({
     gmailInitialSyncFn,
     gmailIncrementalPollFn,
     executeWorkflowRun,
+    catalogAudit,
   ],
 });
