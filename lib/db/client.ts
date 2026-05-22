@@ -41,8 +41,11 @@ import * as schema from "./schema";
  * It looks like:
  *   postgresql://postgres.<ref>:<DB_PASSWORD>@aws-<n>-<region>.pooler.supabase.com:6543/postgres
  *
- * Resolved lazily (at first client use), so unit tests that only import schema
- * files don't require DB env to be present.
+ * Called at module load time — DATABASE_URL must be present whenever this
+ * module is imported. The postgres.js driver itself is lazy: it does NOT
+ * open a TCP connection until the first query executes.
+ *
+ * For unit tests: provide a stub DATABASE_URL in vitest.config.mts env.
  */
 function getConnectionString(): string {
   const url = process.env["DATABASE_URL"];
