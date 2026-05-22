@@ -2,12 +2,12 @@
  * app/app/settings/page.tsx
  * Settings page — Server Component.
  *
- * Renders Settings sections:
+ * Renders five Settings sections:
  *   - Connections (SET-01, INTEG-06): Shopify + Gmail health badges
  *   - Brand Voice (SET-02): markdown editor + preview + encrypted save + regenerate-with-confirm
  *   - Memory (SET-04): categorized items with inline edit/add/soft-delete + undo toast
- *   - Profile (SET-05): name, email, password, avatar [added in Task 3]
- *   - Notifications (SET-08): badge explainer + coming-soon [added in Task 3]
+ *   - Profile (SET-05): name, email, password, avatar
+ *   - Notifications (SET-08): badge explainer + coming-soon placeholder (no functional toggles)
  *
  * SECURITY:
  *   T-2-08-04: Reads integration data via withUserRls (cross-user protection)
@@ -25,6 +25,8 @@ import { getIntegrationHealth } from "@/lib/integrations/health";
 import { ConnectionsSection } from "@/app/app/settings/_connections";
 import { BrandVoiceSection } from "@/app/app/settings/_brand-voice";
 import { MemorySection } from "@/app/app/settings/_memory";
+import { ProfileSection } from "@/app/app/settings/_profile";
+import { NotificationsSection } from "@/app/app/settings/_notifications";
 import { getBrandVoice, getMemoryItems } from "@/app/app/settings/actions";
 
 export default async function SettingsPage() {
@@ -80,6 +82,12 @@ export default async function SettingsPage() {
 
         {/* SET-04: Memory — categorized items with inline edit/add/soft-delete + undo */}
         <MemorySection items={memoryItemsList} />
+
+        {/* SET-05: Profile — name, email, password, avatar */}
+        <ProfileSection profile={profile} />
+
+        {/* SET-08: Notifications — badge explainer + coming-soon placeholder (no functional toggles) */}
+        <NotificationsSection />
       </div>
     </div>
   );
