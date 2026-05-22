@@ -27,34 +27,49 @@ import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import * as schema from "./schema";
 
-// ─── Validate required env vars at import time ────────────────────────────────
-// Both vars must be present; fail loudly rather than silently connect to the wrong DB.
+/**
+ * Resolve and validate required DB env vars.
+ * Called lazily when clients are first used (not at module import time)
+ * so that unit tests importing schema files don't fail if DB env isn't set.
+ */
+function resolveDbConfig(): {
+  projectRef: string;
+  publishableKey: string;
+  serviceRoleKey: string;
+} {
+  const supabaseUrl = process.env["NEXT_PUBLIC_SUPABASE_URL"];
+  const publishableKey = process.env["NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY"];
+  const serviceRoleKey = process.env["SUPABASE_SERVICE_ROLE_KEY"];
 
-const supabaseUrl = process.env["NEXT_PUBLIC_SUPABASE_URL"];
-const publishableKey = process.env["NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY"];
-const serviceRoleKey = process.env["SUPABASE_SERVICE_ROLE_KEY"];
+  if (!supabaseUrl) {
+    throw new Error(
+      "NEXT_PUBLIC_SUPABASE_URL is not set. Add it to .env.local and Vercel environment variables."
+    );
+  }
+  if (!publishableKey) {
+    throw new Error(
+      "NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY is not set. Add it to .env.local and Vercel environment variables."
+    );
+  }
+  if (!serviceRoleKey) {
+    throw new Error(
+      "SUPABASE_SERVICE_ROLE_KEY is not set. Add it to .env.local and Vercel environment variables. " +
+        "This must NEVER have a NEXT_PUBLIC_ prefix."
+    );
+  }
 
-if (!supabaseUrl) {
-  throw new Error(
-    "NEXT_PUBLIC_SUPABASE_URL is not set. Add it to .env.local and Vercel environment variables."
-  );
+  const projectRef = supabaseUrl
+    .replace("https://", "")
+    .replace(".supabase.co", "");
+
+  return { projectRef, publishableKey, serviceRoleKey };
 }
 
-if (!publishableKey) {
-  throw new Error(
-    "NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY is not set. Add it to .env.local and Vercel environment variables."
-  );
-}
+// ─── Lazy client construction ─────────────────────────────────────────────────
+// Clients are constructed on first import — env validation happens then.
+// This allows schema test files to import schema/* without needing DB env vars.
 
-if (!serviceRoleKey) {
-  throw new Error(
-    "SUPABASE_SERVICE_ROLE_KEY is not set. Add it to .env.local and Vercel environment variables. " +
-      "This must NEVER have a NEXT_PUBLIC_ prefix."
-  );
-}
-
-// Extract project ref from URL: https://<ref>.supabase.co
-const projectRef = supabaseUrl.replace("https://", "").replace(".supabase.co", "");
+const { projectRef, publishableKey, serviceRoleKey } = resolveDbConfig();
 
 /**
  * Connection string for the RLS-enforced client.
@@ -70,9 +85,6 @@ const rlsConnectionString =
 /**
  * Connection string for the service-role client.
  * Service role bypasses RLS. Code MUST filter by user_id explicitly.
- *
- * Uses direct connection (port 5432) for agent-tier Inngest functions
- * which need consistent session state and lower latency than the pooler.
  */
 const serviceConnectionString =
   `postgresql://postgres.${projectRef}:${serviceRoleKey}` +
