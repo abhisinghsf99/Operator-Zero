@@ -82,15 +82,29 @@ function mergeDefinitionPatch(
  * @param threadId   - Optional: the chat thread that produced this version
  * @returns newVersionId + newVersionNumber of the created version
  */
+/**
+ * Options controlling how the patch is applied to produce the new definition.
+ *
+ * replaceDefinition (WR-06 / D-04): when true, the new version's definition IS
+ * the patch verbatim (a clean snapshot) rather than a shallow merge into the
+ * current definition. Restore uses this so a restored version does not carry
+ * stale keys forward from the current definition (which would make restore
+ * produce `current ∪ old` instead of an exact snapshot of `old`).
+ */
+export interface CreateVersionOptions {
+  replaceDefinition?: boolean;
+}
+
 export async function createWorkflowVersion(
   db: DrizzleTx,
   userId: string,
   workflowId: string,
   patch: Partial<WorkflowDefinition>,
-  threadId?: string
+  threadId?: string,
+  options?: CreateVersionOptions
 ): Promise<{ newVersionId: string; newVersionNumber: number }> {
   return db.transaction(async (tx: DrizzleTx) => {
-    return _createVersionInTx(tx, userId, workflowId, patch, threadId);
+    return _createVersionInTx(tx, userId, workflowId, patch, threadId, options);
   });
 }
 
@@ -99,7 +113,8 @@ async function _createVersionInTx(
   userId: string,
   workflowId: string,
   patch: Partial<WorkflowDefinition>,
-  threadId?: string
+  threadId?: string,
+  options?: CreateVersionOptions
 ): Promise<{ newVersionId: string; newVersionNumber: number }> {
   // 1. Ownership check: load current workflow
   const [current] = await tx
@@ -132,13 +147,18 @@ async function _createVersionInTx(
     );
   const nextVersionNumber = ((maxRow as Record<string, unknown>)?.max as number ?? 0) + 1;
 
-  // 4. INSERT new workflow_versions row
+  // 4. INSERT new workflow_versions row.
+  // WR-06: restore (replaceDefinition) writes the patch verbatim as a clean
+  // snapshot; edits shallow-merge the changed fields into the current definition.
+  const newDefinition = options?.replaceDefinition
+    ? { ...patch }
+    : mergeDefinitionPatch(currentDefinition, patch);
   const [newVersion] = await tx
     .insert(workflowVersions)
     .values({
       workflow_id: workflowId,
       version_number: nextVersionNumber,
-      definition: mergeDefinitionPatch(currentDefinition, patch),
+      definition: newDefinition,
       schema_version: 1,
       created_by_thread_id: threadId ?? null,
     })
@@ -193,16 +213,17 @@ export async function createWorkflowVersionWithRetry(
   userId: string,
   workflowId: string,
   patch: Partial<WorkflowDefinition>,
-  threadId?: string
+  threadId?: string,
+  options?: CreateVersionOptions
 ): Promise<{ newVersionId: string; newVersionNumber: number }> {
   try {
-    return await createWorkflowVersion(db, userId, workflowId, patch, threadId);
+    return await createWorkflowVersion(db, userId, workflowId, patch, threadId, options);
   } catch (err) {
     // 23505 = unique_violation — retry once with fresh MAX read
     const errCode = (err as { code?: string })?.code;
     const errMsg = String(err);
     if (errCode === "23505" || errMsg.includes("workflow_versions_workflow_version_unique")) {
-      return createWorkflowVersion(db, userId, workflowId, patch, threadId);
+      return createWorkflowVersion(db, userId, workflowId, patch, threadId, options);
     }
     throw err;
   }
