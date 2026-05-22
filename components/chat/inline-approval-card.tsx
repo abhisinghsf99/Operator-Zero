@@ -130,41 +130,54 @@ export function InlineApprovalCard({
   const [error, setError] = useState<string | null>(null);
 
   // ── Realtime subscription (Pitfall 5: private channel required) ───────────
+  // T-2-07-04: the `approval:<id>` channel is private. setAuth() attaches the
+  // user JWT so Realtime enforces the realtime.messages ownership policy from
+  // migration 0004 (only the approval's owner may receive on this topic).
   useEffect(() => {
     if (status !== "pending") return; // Already resolved — no need to subscribe
 
     const supabase = createBrowserClient();
+    let channel: ReturnType<typeof supabase.channel> | null = null;
+    let cancelled = false;
 
-    // Private channel: the user's JWT is attached to the WebSocket connection.
-    // { private: true } ensures the subscription is scoped to the authenticated user
-    // and only rows matching auth.uid() = user_id are delivered (T-2-07-04).
-    const channel = supabase.channel(`approval:${approvalId}`, {
-      config: { private: true },
-    });
+    void (async () => {
+      // Required for { private: true }: scope the socket to the user JWT so the
+      // server-side realtime.messages authorization policy can verify ownership.
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      await supabase.realtime.setAuth(session?.access_token ?? null);
+      if (cancelled) return;
 
-    channel
-      .on(
-        "postgres_changes",
-        {
-          event: "UPDATE",
-          schema: "public",
-          table: "approvals",
-          filter: `id=eq.${approvalId}`,
-        },
-        (payload) => {
-          const newStatus = payload.new?.status as ApprovalStatus | undefined;
-          if (
-            newStatus &&
-            ["approved", "rejected", "expired", "snoozed"].includes(newStatus)
-          ) {
-            setStatus(newStatus);
+      channel = supabase.channel(`approval:${approvalId}`, {
+        config: { private: true },
+      });
+
+      channel
+        .on(
+          "postgres_changes",
+          {
+            event: "UPDATE",
+            schema: "public",
+            table: "approvals",
+            filter: `id=eq.${approvalId}`,
+          },
+          (payload) => {
+            const newStatus = payload.new?.status as ApprovalStatus | undefined;
+            if (
+              newStatus &&
+              ["approved", "rejected", "expired", "snoozed"].includes(newStatus)
+            ) {
+              setStatus(newStatus);
+            }
           }
-        }
-      )
-      .subscribe();
+        )
+        .subscribe();
+    })();
 
     return () => {
-      void supabase.removeChannel(channel);
+      cancelled = true;
+      if (channel) void supabase.removeChannel(channel);
     };
   }, [approvalId, status]);
 

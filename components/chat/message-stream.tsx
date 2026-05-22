@@ -74,19 +74,32 @@ export function ChatThreadView({ threadId }: ChatThreadViewProps) {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages.length, isStreaming]);
 
-  // Supabase Realtime subscription for live status updates (T-2-06-05)
-  // Uses { private: true } with the user JWT to prevent cross-user leakage
+  // Supabase Realtime subscription for live thread updates (T-2-06-05).
+  // The `thread:<id>` channel is private; setAuth() attaches the user JWT so
+  // Realtime enforces the realtime.messages ownership policy from migration 0004
+  // (only the thread's owner may join/receive on this topic). Without setAuth a
+  // private channel cannot be authorized server-side.
   useEffect(() => {
     const supabase = createBrowserClient();
-    // Note: In production this would subscribe to messages changes for this thread.
-    // The channel is set to private: true with the user's JWT.
-    const channel = supabase.channel(`thread:${threadId}`, {
-      config: { private: true },
-    });
+    let channel: ReturnType<typeof supabase.channel> | null = null;
+    let cancelled = false;
 
-    channel.subscribe();
+    void (async () => {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      await supabase.realtime.setAuth(session?.access_token ?? null);
+      if (cancelled) return;
+
+      channel = supabase.channel(`thread:${threadId}`, {
+        config: { private: true },
+      });
+      channel.subscribe();
+    })();
+
     return () => {
-      void supabase.removeChannel(channel);
+      cancelled = true;
+      if (channel) void supabase.removeChannel(channel);
     };
   }, [threadId]);
 
