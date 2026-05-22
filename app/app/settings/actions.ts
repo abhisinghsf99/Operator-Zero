@@ -2,26 +2,42 @@
 
 /**
  * app/app/settings/actions.ts
- * Server Actions for the Settings/Connections page.
+ * Server Actions for the Settings surface.
  *
  * Exports:
- *   disconnectIntegration(provider) — delete integration + clear mirror data (T-2-08-05)
+ *   disconnectIntegration(provider)   — delete integration + clear mirror data (T-2-08-05)
+ *   saveBrandVoice(markdown)          — encrypt + persist brand voice (SET-02, T-4-03-01)
+ *   getBrandVoice(userId)             — decrypt with legacy-plaintext fallback (SET-02, A2)
+ *   regenerateBrandVoice()            — return AI-generated draft only, no DB write (SET-02, T-4-03-04)
+ *   addMemoryItem(content, category)  — store new memory item (SET-04)
+ *   editMemoryItem(id, content)       — update memory item content (SET-04)
+ *   deleteMemoryItem(id)              — soft-delete memory item (SET-04)
+ *   undoDeleteMemoryItem(id)          — restore soft-deleted item (SET-04)
+ *   getMemoryItems(userId)            — list all non-deleted items for user (SET-04)
+ *   updateProfile(data)               — update display_name / avatar_url (SET-05)
+ *   updateEmail(email)                — update auth email via supabase.auth.updateUser (SET-05)
+ *   updatePassword(password)          — update auth password via supabase.auth.updateUser (SET-05)
  *
  * SECURITY:
- *   - user_id ALWAYS from getClaims().sub — never from client input
- *   - disconnectIntegration re-checks ownership before deleting (T-2-08-05)
- *   - All DB operations go through withUserRls (RLS enforced)
- *   - Zod validates the provider input
- *   - Disconnect is destructive — requires confirm dialog in UI (T-2-08-05)
+ *   - user_id ALWAYS from getClaims().sub — never from client input (T-4-03-02)
+ *   - Brand voice encrypted at rest via encryptToken (libsodium) — T-4-03-01
+ *   - regenerateBrandVoice returns draft only — no silent overwrite — T-4-03-04
+ *   - Memory CRUD delegated to lib/agent/memory.ts with ownership bound to userId — T-4-03-02
+ *   - Memory category restricted to allowed enum — T-4-03-05
+ *   - Zod validates all inputs
+ *   - revalidatePath("/app/settings") after every mutation
  *
- * THREAT MODEL:
- *   T-2-08-04: Settings reads via withUserRls (cross-user protection)
- *   T-2-08-05: Disconnect re-checks ownership + confirm dialog enforced in UI
+ * THREAT MODEL (Phase 4):
+ *   T-4-03-01: brand_voice_profiles at rest — encryptToken before write; try-catch decrypt
+ *   T-4-03-02: cross-tenant write — getValidatedClaims; userId from claims.sub only
+ *   T-4-03-03: XSS via markdown — react-markdown without rehype-raw in UI (enforced in component)
+ *   T-4-03-04: silent overwrite — regenerateBrandVoice returns draft only
+ *   T-4-03-05: memory category injection — category restricted to enum in Zod
  */
 import { createClient } from "@/lib/auth/server";
 import { withUserRls, integrations } from "@/lib/db";
 import { serviceDb } from "@/lib/db/client";
-import { eq, and } from "drizzle-orm";
+import { eq, and, isNull } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import {
@@ -34,11 +50,62 @@ import {
   gmailThreads,
   gmailMessages,
   gmailSyncState,
+  brandVoiceProfiles,
+  brandVoiceSamples,
+  memoryItems,
+  userProfiles,
 } from "@/lib/db/schema";
+import { encryptToken, decryptToken } from "@/lib/integrations/crypto";
+import {
+  storeMemoryItem,
+  updateMemoryItem,
+  softDeleteMemoryItem,
+} from "@/lib/agent/memory";
+import Anthropic from "@anthropic-ai/sdk";
 
 // ─── Schemas ──────────────────────────────────────────────────────────────────
 
 const providerSchema = z.enum(["shopify", "gmail"]);
+
+const BrandVoiceSchema = z.object({
+  markdown: z.string().max(20000, "Brand voice must be 20,000 characters or less."),
+});
+
+// T-4-03-05: category restricted to allowed enum — prevents injection
+const MemoryCategorySchema = z.enum([
+  "brand",
+  "catalog",
+  "policy",
+  "preference",
+  "decision_history",
+]);
+
+const AddMemoryItemSchema = z.object({
+  content: z.string().min(1).max(5000),
+  category: MemoryCategorySchema,
+});
+
+const EditMemoryItemSchema = z.object({
+  id: z.string().uuid("Invalid memory item ID"),
+  content: z.string().min(1).max(5000),
+});
+
+const DeleteMemoryItemSchema = z.object({
+  id: z.string().uuid("Invalid memory item ID"),
+});
+
+const UpdateProfileSchema = z.object({
+  displayName: z.string().max(100).optional(),
+  avatarUrl: z.string().url("Invalid avatar URL").optional(),
+});
+
+const UpdateEmailSchema = z.object({
+  email: z.string().email("Invalid email address"),
+});
+
+const UpdatePasswordSchema = z.object({
+  password: z.string().min(8, "Password must be at least 8 characters."),
+});
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -138,4 +205,423 @@ async function clearGmailMirror(userId: string): Promise<void> {
   ]);
   // Threads contain messages — delete threads after messages
   await serviceDb.delete(gmailThreads).where(eq(gmailThreads.user_id, userId));
+}
+
+// ─── Brand Voice ─────────────────────────────────────────────────────────────
+
+/**
+ * saveBrandVoice — encrypt markdown and persist to brand_voice_profiles.
+ *
+ * Security: encryptToken (libsodium XSalsa20-Poly1305) before DB write — T-4-03-01.
+ * The plaintext markdown NEVER reaches the database column.
+ *
+ * @param markdown - the raw markdown string to save
+ * @returns void on success, { error } on auth/validation failure
+ */
+export async function saveBrandVoice(
+  markdown: string
+): Promise<{ error: string } | void> {
+  // 1. Validate input
+  const parsed = BrandVoiceSchema.safeParse({ markdown });
+  if (!parsed.success) {
+    return { error: parsed.error.errors[0]?.message ?? "Invalid input." };
+  }
+
+  // 2. Get authenticated user claims (T-4-03-02)
+  const { claims, error } = await getValidatedClaims();
+  if (error || !claims) {
+    return { error: error ?? "Not authenticated." };
+  }
+  const userId = claims.sub as string;
+
+  // 3. Encrypt before storing (T-4-03-01 — plaintext never persisted)
+  const encrypted = await encryptToken(parsed.data.markdown);
+
+  // 4. Upsert via serviceDb with explicit user_id filter
+  await serviceDb
+    .update(brandVoiceProfiles)
+    .set({ profile_markdown: encrypted, updated_at: new Date() })
+    .where(eq(brandVoiceProfiles.user_id, userId));
+
+  revalidatePath("/app/settings");
+}
+
+/**
+ * getBrandVoice — load and decrypt brand voice markdown for a user.
+ *
+ * Legacy plaintext tolerance (A2 / Pitfall 6):
+ *   Onboarding writes profile_markdown as plaintext (no encryptToken).
+ *   This read path wraps decryptToken in try-catch and falls back to the
+ *   raw stored value when decryption fails — ensuring existing rows still render.
+ *
+ * @param userId - the authenticated user's UUID
+ * @returns the decrypted (or raw legacy) markdown string, or null if no row exists
+ */
+export async function getBrandVoice(
+  userId: string
+): Promise<{ profile_markdown: string; tone_tags: string[] | null; forbidden_phrases: string[] | null } | null> {
+  const [row] = await serviceDb
+    .select()
+    .from(brandVoiceProfiles)
+    .where(eq(brandVoiceProfiles.user_id, userId))
+    .limit(1);
+
+  if (!row) return null;
+
+  // A2 / Pitfall 6: try decryptToken; fall back to raw value for legacy plaintext rows
+  let decrypted: string;
+  try {
+    decrypted = await decryptToken(row.profile_markdown);
+  } catch {
+    // Legacy plaintext written by onboarding — return raw value
+    decrypted = row.profile_markdown;
+  }
+
+  return {
+    ...row,
+    profile_markdown: decrypted,
+  };
+}
+
+/**
+ * regenerateBrandVoice — generate an AI draft from brand_voice_samples.
+ *
+ * CRITICAL (T-4-03-04, SET-02): Returns { draft } ONLY. Does NOT write to the DB.
+ * The client must explicitly call saveBrandVoice() to persist the regenerated draft.
+ * This enforces the confirm-before-replace pattern — no silent overwrite.
+ *
+ * @returns { draft: string } — the AI-generated draft markdown
+ */
+export async function regenerateBrandVoice(): Promise<
+  { draft: string } | { error: string }
+> {
+  // 1. Get authenticated user claims
+  const { claims, error } = await getValidatedClaims();
+  if (error || !claims) {
+    return { error: error ?? "Not authenticated." };
+  }
+  const userId = claims.sub as string;
+
+  // 2. Load brand voice samples for this user
+  const samples = await serviceDb
+    .select({ sample_text: brandVoiceSamples.sample_text, source: brandVoiceSamples.source })
+    .from(brandVoiceSamples)
+    .where(eq(brandVoiceSamples.user_id, userId))
+    .limit(10);
+
+  const samplesText =
+    samples.length > 0
+      ? samples.map((s, i) => `Sample ${i + 1}:\n${s.sample_text}`).join("\n\n")
+      : "(No samples available — generate based on a generic ecommerce brand voice.)";
+
+  // 3. Call Claude to produce a draft markdown (no DB write — T-4-03-04)
+  const client = new Anthropic();
+  const message = await client.messages.create({
+    model: "claude-opus-4-5",
+    max_tokens: 1024,
+    messages: [
+      {
+        role: "user",
+        content: `You are helping a Shopify store owner define their brand voice profile. Based on the following writing samples, produce a brand voice profile in markdown format. The profile should cover: tone, vocabulary preferences, phrases to avoid, and example sentences that embody the voice. Keep it concise and actionable — this document will be read by an AI agent before every content-generating task.\n\nSamples:\n${samplesText}\n\nReturn only the markdown — no preamble, no code fences.`,
+      },
+    ],
+  });
+
+  const textContent = message.content.find((c) => c.type === "text");
+  if (!textContent || textContent.type !== "text") {
+    return { error: "Failed to generate brand voice draft. Please try again." };
+  }
+
+  // T-4-03-04: return draft only — caller must explicitly save
+  return { draft: textContent.text };
+}
+
+// ─── Memory CRUD ─────────────────────────────────────────────────────────────
+
+/**
+ * addMemoryItem — store a new memory item for the authenticated user.
+ *
+ * Delegates to storeMemoryItem (embeddings + DB insert).
+ * Category restricted to allowed enum (T-4-03-05).
+ *
+ * @param content  - the memory content text
+ * @param category - 'brand' | 'catalog' | 'policy' | 'preference' | 'decision_history'
+ */
+export async function addMemoryItem(
+  content: string,
+  category: string
+): Promise<{ id: string } | { error: string }> {
+  // 1. Validate inputs (T-4-03-05: category enum enforced)
+  const parsed = AddMemoryItemSchema.safeParse({ content, category });
+  if (!parsed.success) {
+    return { error: parsed.error.errors[0]?.message ?? "Invalid input." };
+  }
+
+  // 2. Get authenticated user (T-4-03-02)
+  const { claims, error } = await getValidatedClaims();
+  if (error || !claims) {
+    return { error: error ?? "Not authenticated." };
+  }
+  const userId = claims.sub as string;
+
+  // 3. Delegate to lib/agent/memory.ts (embeds + inserts)
+  const result = await storeMemoryItem(userId, parsed.data.content, parsed.data.category);
+
+  revalidatePath("/app/settings");
+  return result;
+}
+
+/**
+ * editMemoryItem — update the content of an existing memory item.
+ *
+ * Ownership bound to authenticated user's userId — T-4-03-02.
+ * Re-embeds the new content via updateMemoryItem.
+ *
+ * @param id      - the memory item UUID
+ * @param content - the new content string
+ */
+export async function editMemoryItem(
+  id: string,
+  content: string
+): Promise<{ error: string } | void> {
+  // 1. Validate inputs
+  const parsed = EditMemoryItemSchema.safeParse({ id, content });
+  if (!parsed.success) {
+    return { error: parsed.error.errors[0]?.message ?? "Invalid input." };
+  }
+
+  // 2. Get authenticated user (T-4-03-02)
+  const { claims, error } = await getValidatedClaims();
+  if (error || !claims) {
+    return { error: error ?? "Not authenticated." };
+  }
+  const userId = claims.sub as string;
+
+  // 3. Delegate to lib/agent/memory.ts (ownership scoped by userId)
+  await updateMemoryItem(userId, parsed.data.id, parsed.data.content);
+
+  revalidatePath("/app/settings");
+}
+
+/**
+ * deleteMemoryItem — soft-delete a memory item (sets soft_deleted_at).
+ *
+ * The item is NOT hard-deleted. A Sonner undo toast in the UI allows reversal
+ * within 24h (undoDeleteMemoryItem). recallMemory already excludes soft-deleted rows.
+ *
+ * Ownership bound to authenticated user's userId — T-4-03-02.
+ *
+ * @param id - the memory item UUID
+ */
+export async function deleteMemoryItem(
+  id: string
+): Promise<{ error: string } | void> {
+  // 1. Validate input
+  const parsed = DeleteMemoryItemSchema.safeParse({ id });
+  if (!parsed.success) {
+    return { error: parsed.error.errors[0]?.message ?? "Invalid input." };
+  }
+
+  // 2. Get authenticated user (T-4-03-02)
+  const { claims, error } = await getValidatedClaims();
+  if (error || !claims) {
+    return { error: error ?? "Not authenticated." };
+  }
+  const userId = claims.sub as string;
+
+  // 3. Soft-delete (sets soft_deleted_at, does NOT hard-delete)
+  await softDeleteMemoryItem(userId, parsed.data.id);
+
+  revalidatePath("/app/settings");
+}
+
+/**
+ * undoDeleteMemoryItem — restore a soft-deleted memory item within the 24h undo window.
+ *
+ * Clears soft_deleted_at so the item reappears in recall results.
+ * Ownership bound to authenticated user's userId — T-4-03-02.
+ *
+ * @param id - the memory item UUID to restore
+ */
+export async function undoDeleteMemoryItem(
+  id: string
+): Promise<{ error: string } | void> {
+  // 1. Validate input
+  const parsed = DeleteMemoryItemSchema.safeParse({ id });
+  if (!parsed.success) {
+    return { error: parsed.error.errors[0]?.message ?? "Invalid input." };
+  }
+
+  // 2. Get authenticated user (T-4-03-02)
+  const { claims, error } = await getValidatedClaims();
+  if (error || !claims) {
+    return { error: error ?? "Not authenticated." };
+  }
+  const userId = claims.sub as string;
+
+  // 3. Clear soft_deleted_at — restores item for recall
+  await serviceDb
+    .update(memoryItems)
+    .set({ soft_deleted_at: null, updated_at: new Date() })
+    .where(and(eq(memoryItems.id, parsed.data.id), eq(memoryItems.user_id, userId)));
+
+  revalidatePath("/app/settings");
+}
+
+/**
+ * getMemoryItems — list all non-deleted memory items for a user, grouped by category.
+ *
+ * Excludes soft-deleted rows (soft_deleted_at IS NULL filter).
+ * Uses serviceDb with explicit user_id filter (T-4-03-02: serviceDb bypasses RLS).
+ *
+ * @param userId - the authenticated user's UUID
+ */
+export async function getMemoryItems(userId: string): Promise<Array<{
+  id: string;
+  category: string;
+  content: string;
+  source_type: string | null;
+  created_at: Date;
+  updated_at: Date;
+}>> {
+  return serviceDb
+    .select({
+      id: memoryItems.id,
+      category: memoryItems.category,
+      content: memoryItems.content,
+      source_type: memoryItems.source_type,
+      created_at: memoryItems.created_at,
+      updated_at: memoryItems.updated_at,
+    })
+    .from(memoryItems)
+    .where(
+      and(
+        eq(memoryItems.user_id, userId),
+        isNull(memoryItems.soft_deleted_at)
+      )
+    )
+    .orderBy(memoryItems.category, memoryItems.created_at);
+}
+
+// ─── Profile ──────────────────────────────────────────────────────────────────
+
+/**
+ * updateProfile — update display_name and/or avatar_url in user_profiles.
+ *
+ * At least one field must be provided.
+ * Ownership bound to authenticated user's userId — T-4-03-02.
+ *
+ * @param data - { displayName?, avatarUrl? }
+ */
+export async function updateProfile(data: {
+  displayName?: string;
+  avatarUrl?: string;
+}): Promise<{ error: string } | void> {
+  // 1. Validate inputs
+  const parsed = UpdateProfileSchema.safeParse(data);
+  if (!parsed.success) {
+    return { error: parsed.error.errors[0]?.message ?? "Invalid input." };
+  }
+
+  if (!parsed.data.displayName && !parsed.data.avatarUrl) {
+    return { error: "At least one field must be provided." };
+  }
+
+  // 2. Get authenticated user (T-4-03-02)
+  const { claims, error } = await getValidatedClaims();
+  if (error || !claims) {
+    return { error: error ?? "Not authenticated." };
+  }
+  const userId = claims.sub as string;
+
+  // 3. Build update set
+  const updateSet: Partial<{ display_name: string; avatar_url: string; updated_at: Date }> = {
+    updated_at: new Date(),
+  };
+  if (parsed.data.displayName !== undefined) {
+    updateSet.display_name = parsed.data.displayName;
+  }
+  if (parsed.data.avatarUrl !== undefined) {
+    updateSet.avatar_url = parsed.data.avatarUrl;
+  }
+
+  // 4. Update user_profiles row
+  await serviceDb
+    .update(userProfiles)
+    .set(updateSet)
+    .where(eq(userProfiles.user_id, userId));
+
+  revalidatePath("/app/settings");
+}
+
+/**
+ * updateEmail — change the user's email via Supabase Auth.
+ *
+ * Uses supabase.auth.updateUser({ email }) — sends a confirmation email.
+ * Ownership is implicit: operates on the authenticated session's user.
+ *
+ * @param email - the new email address
+ */
+export async function updateEmail(
+  email: string
+): Promise<{ error: string } | void> {
+  // 1. Validate input
+  const parsed = UpdateEmailSchema.safeParse({ email });
+  if (!parsed.success) {
+    return { error: parsed.error.errors[0]?.message ?? "Invalid email." };
+  }
+
+  // 2. Get authenticated user
+  const { claims, error } = await getValidatedClaims();
+  if (error || !claims) {
+    return { error: error ?? "Not authenticated." };
+  }
+
+  // 3. Update via Supabase Auth (sends confirmation email)
+  const supabase = await createClient();
+  const { error: authError } = await supabase.auth.updateUser({
+    email: parsed.data.email,
+  });
+
+  if (authError) {
+    return { error: authError.message };
+  }
+
+  revalidatePath("/app/settings");
+}
+
+/**
+ * updatePassword — change the user's password via Supabase Auth.
+ *
+ * Uses supabase.auth.updateUser({ password }).
+ * Ownership is implicit: operates on the authenticated session's user.
+ *
+ * @param password - the new password (min 8 chars)
+ */
+export async function updatePassword(
+  password: string
+): Promise<{ error: string } | void> {
+  // 1. Validate input
+  const parsed = UpdatePasswordSchema.safeParse({ password });
+  if (!parsed.success) {
+    return { error: parsed.error.errors[0]?.message ?? "Invalid password." };
+  }
+
+  // 2. Get authenticated user
+  const { claims, error } = await getValidatedClaims();
+  if (error || !claims) {
+    return { error: error ?? "Not authenticated." };
+  }
+
+  // 3. Update via Supabase Auth
+  const supabase = await createClient();
+  const { error: authError } = await supabase.auth.updateUser({
+    password: parsed.data.password,
+  });
+
+  if (authError) {
+    return { error: authError.message };
+  }
+
+  revalidatePath("/app/settings");
 }
