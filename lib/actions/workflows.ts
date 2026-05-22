@@ -5,7 +5,7 @@
  * Server Actions for workflow management.
  *
  * editWorkflow   — update workflow fields → createWorkflowVersion (D-03: every edit = new version)
- * togglePause    — flip status active↔paused → createWorkflowVersion (D-03)
+ * togglePause    — flip status active↔paused (direct UPDATE; NOT versioned — see below)
  * restoreVersion — restore a prior version → createWorkflowVersion with old definition (forward-only, D-04)
  * runNow         — verify ownership → inngest.send('workflow.run_requested') (WF-13, D-05)
  *
@@ -123,7 +123,12 @@ export type TogglePauseResult = { success: true } | { error: string };
 /**
  * togglePause — flip a workflow between active and paused status.
  *
- * D-03: status toggle creates a new version (all edits are versioned).
+ * WR-05 / D-03: status is intentionally NOT versioned. D-03 scopes "every edit
+ * creates a new version" to the WorkflowDefinition fields (name, description,
+ * schedule, level) — `status` is a runtime/operational flag, not part of
+ * WorkflowDefinition, and createWorkflowVersion does not persist it. Pause/resume
+ * is therefore a direct UPDATE with no version bump. Do not "fix" this by calling
+ * createWorkflowVersion — versioning status would snapshot duplicate definitions.
  *
  * @param workflowId — UUID of the workflow
  */
@@ -143,7 +148,7 @@ export async function togglePause(workflowId: string): Promise<TogglePauseResult
 
   try {
     await withUserRls(claims, async (tx) => {
-      // Load current status (ownership is verified inside createWorkflowVersion)
+      // Load current status (ownership verified via the user_id filter + RLS)
       const [current] = await tx
         .select({ status: workflows.status })
         .from(workflows)
@@ -156,8 +161,8 @@ export async function togglePause(workflowId: string): Promise<TogglePauseResult
 
       const newStatus = current.status === "paused" ? "active" : "paused";
 
-      // Create a new version to record the status change (D-03)
-      // Status is a surface field but not in WorkflowDefinition — update directly
+      // WR-05: status is NOT part of WorkflowDefinition, so pause/resume is a
+      // direct UPDATE and does NOT create a new version (see doc block above).
       await tx
         .update(workflows)
         .set({ status: newStatus, updated_at: new Date() })
@@ -234,12 +239,17 @@ export async function restoreVersion(
         throw new Error("Workflow not found or not owned by user");
       }
 
-      // Restore = createWorkflowVersion with the old definition as the patch (forward-only, D-04)
+      // Restore = createWorkflowVersion with the old definition (forward-only, D-04).
+      // WR-06: replaceDefinition makes the new version an EXACT snapshot of the
+      // target version's definition rather than a shallow merge into the current
+      // one (which would union stale current-only keys into the restored version).
       await createWorkflowVersionWithRetry(
         tx,
         userId,
         workflowId,
-        version.definition as Record<string, unknown>
+        version.definition as Record<string, unknown>,
+        undefined,
+        { replaceDefinition: true }
       );
     });
 
