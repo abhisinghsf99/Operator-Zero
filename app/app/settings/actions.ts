@@ -268,11 +268,19 @@ export async function saveBrandVoice(
   // 3. Encrypt before storing (T-4-03-01 — plaintext never persisted)
   const encrypted = await encryptToken(parsed.data.markdown);
 
-  // 4. Upsert via serviceDb with explicit user_id filter
+  // 4. Upsert via serviceDb — insert if no row exists, update if it does (CR-01).
+  //    user_id is the PK on brand_voice_profiles so it is a valid upsert target.
   await serviceDb
-    .update(brandVoiceProfiles)
-    .set({ profile_markdown: encrypted, updated_at: new Date() })
-    .where(eq(brandVoiceProfiles.user_id, userId));
+    .insert(brandVoiceProfiles)
+    .values({
+      user_id: userId,
+      profile_markdown: encrypted,
+      updated_at: new Date(),
+    })
+    .onConflictDoUpdate({
+      target: brandVoiceProfiles.user_id,
+      set: { profile_markdown: encrypted, updated_at: new Date() },
+    });
 
   revalidatePath("/app/settings");
 }
