@@ -6,9 +6,11 @@
  * A new row is created on every workflow edit.
  * Column names match DATA-FLOW.md §3.2 verbatim.
  *
- * MULTI-TENANT: Accessed via the parent workflow's user_id RLS (cascaded FK).
- *   No direct RLS policy — isolation is enforced by always joining to workflows
- *   which is RLS-protected. Agent tier (serviceDb) must include user_id filter.
+ * MULTI-TENANT: This table has no user_id column of its own; ownership is
+ *   inherited from the parent workflow (FK workflow_id → workflows.id). RLS is
+ *   ENABLED with workflow_versions_user_policy, whose USING/WITH CHECK match only
+ *   rows whose parent workflow belongs to auth.uid() (migration 0007). The agent
+ *   tier (serviceDb) bypasses RLS and must still filter via the parent workflow.
  *
  * NOTE: v1 retains the last 10 versions; a nightly job prunes older ones.
  */
@@ -21,7 +23,10 @@ import {
   integer,
   jsonb,
   unique,
+  pgPolicy,
 } from "drizzle-orm/pg-core";
+import { authenticatedRole } from "drizzle-orm/supabase";
+import { sql } from "drizzle-orm";
 
 export const workflowVersions = pgTable(
   "workflow_versions",
@@ -71,5 +76,19 @@ export const workflowVersions = pgTable(
       table.workflow_id,
       table.version_number
     ),
+
+    /**
+     * RLS policy: a row is visible/writable only when its parent workflow
+     * belongs to the current user. workflow_versions has no user_id column, so
+     * ownership is checked via the parent workflow (migration 0007). The EXISTS
+     * subquery is itself subject to workflows_user_policy.
+     */
+    pgPolicy("workflow_versions_user_policy", {
+      as: "permissive",
+      for: "all",
+      to: authenticatedRole,
+      using: sql`EXISTS (SELECT 1 FROM "workflows" w WHERE w."id" = ${table.workflow_id} AND w."user_id" = (SELECT auth.uid()))`,
+      withCheck: sql`EXISTS (SELECT 1 FROM "workflows" w WHERE w."id" = ${table.workflow_id} AND w."user_id" = (SELECT auth.uid()))`,
+    }),
   ]
-);
+).enableRLS();
