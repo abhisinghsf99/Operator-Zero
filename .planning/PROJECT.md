@@ -45,12 +45,12 @@ Sarah builds workflows in plain language and trusts the agent to run them — mo
 - [x] Workflow versioning (10-version retention, forward-only restore, run-references-version)
 - [x] Default landing surface flips Conversation → My Workflows (D-16 redirect)
 
-**Phase 3 — Polish (daily use feels effortless)**
-- [ ] Approval Inbox surface (batch triage, stakes sort, approve/edit/reject/snooze, bulk actions)
-- [ ] Inline approval cards at full fidelity (upgrade from placeholder; synced across surfaces via Realtime)
-- [ ] Settings (full): Brand Voice editor, Autonomy Thresholds, What I Remember About You, Profile, Sessions, Export/Delete
-- [ ] Mobile parity for the 5 core surfaces (Workflows, Chat, Approvals, Activity, More)
-- [ ] Polished empty states, loading skeletons, error/degraded states
+**Phase 3 — Polish (daily use feels effortless)** — _built & code-verified in GSD Phase 4 (2026-05-22); live validation pending human UAT (live e2e a11y/mobile/keyboard/perf, Sessions/Export after migrations 0008+0009 applied, Realtime badge <5s) tracked in `04-HUMAN-UAT.md`. Not yet moved to Validated until confirmed valuable via real usage._
+- [x] Approval Inbox surface (batch triage, stakes sort, approve/edit/reject/snooze, bulk actions)
+- [x] Inline approval cards at full fidelity (upgrade from placeholder; synced across surfaces via Realtime)
+- [x] Settings (full): Brand Voice editor, Autonomy Thresholds, What I Remember About You, Profile, Sessions, Export/Delete
+- [x] Mobile parity for the 5 core surfaces (Workflows, Chat, Approvals, Activity, More)
+- [x] Polished empty states, loading skeletons, error/degraded states
 
 ### Out of Scope
 
@@ -121,4 +121,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-05-22 — GSD Phase 3 (Ownership — The Portfolio) complete: 4 plans, My Workflows landing (new default) + Workflow Detail + Activity log (atomic revert, drift rules, bulk revert) + workflow versioning + migration 0005 (Activity indexes + Realtime RLS, applied live). Code-verified (315 tests, tsc clean; 3 review blockers + 9 warnings fixed); live validation pending in 03-HUMAN-UAT.md.*
+*Last updated: 2026-05-22 — GSD Phase 4 (Polish — Effortless Daily Use) complete: 6 plans across 5 waves. Approvals vertical slice (Inbox + inline card + snooze/edit/bulk/revert + reject→memory + Realtime sync), full Settings (Brand Voice, Memory, Profile, Autonomy thresholds + one-directional override gate, Sessions registry/revoke, Account export/purge + Danger Zone), mobile drill-down parity, WCAG 2.1 AA + keyboard + perf pass. Migrations 0006 + 0007 (workflow_versions RLS) applied live; 0008 (user_exports UNIQUE) + 0009 (user_sessions UNIQUE) authored, pending live apply. Code-verified (336 tests, tsc clean, next build green; 5 review blockers incl. a cross-tenant data leak + 5 warnings fixed); live validation pending in 04-HUMAN-UAT.md. This completes the v1.0 Ship-Now MVP milestone.*
