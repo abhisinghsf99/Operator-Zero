@@ -26,7 +26,7 @@ import { workflows, activityEntries, approvals } from "@/lib/db/schema";
 import { eq, and, gte, count, desc } from "drizzle-orm";
 import { groupWorkflowsByStatus, type WorkflowSummary } from "@/lib/workflows/grouping";
 import { WorkflowsView } from "./_workflows-view";
-import { workflowsCacheTag } from "@/lib/actions/workflows";
+import { workflowsCacheTag } from "@/lib/cache-tags/workflows";
 
 // ─── Time-saved constants (D-15: labeled heuristic, not hard claims) ─────────
 

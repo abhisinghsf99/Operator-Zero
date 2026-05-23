@@ -31,17 +31,12 @@ import { createWorkflowVersionWithRetry } from "@/lib/workflows/versions";
 import { toClientError } from "@/lib/errors";
 import { revalidatePath } from "next/cache";
 
-/**
- * Tag helpers for unstable_cache invalidation (UX-04, PRD §5.4.2).
- * Tag pattern: workflows-{userId} — per-user workflow list cache tag.
- * Used in unstable_cache tags array on the workflows page.
- * Cache is invalidated via revalidatePath("/app/workflows") on every mutation —
- * revalidatePath invalidates both the Router Cache and any unstable_cache entries
- * associated with that path when the page segment renders.
- */
-export function workflowsCacheTag(userId: string): string {
-  return `workflows-${userId}`;
-}
+// Cache-tag helper lives in lib/cache-tags/workflows.ts — a "use server" module
+// can only export async functions, so the synchronous workflowsCacheTag() helper
+// cannot be exported from here. Import it from "@/lib/cache-tags/workflows".
+// Cache is invalidated via revalidatePath("/app/workflows") on every mutation —
+// revalidatePath invalidates both the Router Cache and any unstable_cache entries
+// associated with that path when the page segment renders.
 
 // ─── Input schemas ────────────────────────────────────────────────────────────
 
