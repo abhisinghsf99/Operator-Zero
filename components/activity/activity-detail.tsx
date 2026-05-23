@@ -26,17 +26,27 @@
  *   - Focus trap not needed (panel is persistent, not modal)
  *   - Workflow link: aria-label
  *   - Revert button: isPending guard + accessible disabled state via RevertTooltip
+ *
+ * DESIGN: Matches surface-activity.jsx ActivityDetail pixel-for-pixel.
+ *   Uses Badge, ResultIndicator, Card, SectionHeader, Button from shared primitives.
  */
 
 import { useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Undo, Workflow, MessageSquare, X } from "lucide-react";
 import { canRevert } from "@/lib/workflows/revert";
 import {
   revertActivity,
   saveAsWorkflow,
 } from "@/lib/actions/activity";
+import {
+  Badge,
+  ResultIndicator,
+  Card,
+  SectionHeader,
+  Button,
+} from "@/components/design/primitives";
+import { Icons } from "@/components/design/icons";
 import { BeforeAfterDiff } from "./before-after-diff";
 import { ReasoningChain } from "./reasoning-chain";
 import { RevertTooltip } from "./revert-tooltip";
@@ -54,84 +64,6 @@ function formatFullTime(date: Date): string {
     minute: "2-digit",
     hour12: true,
   });
-}
-
-function LevelBadge({ level }: { level: string | null }) {
-  if (!level) return null;
-  const isL3 = level === "L3";
-  return (
-    <span
-      aria-label={`Automation level: ${level}`}
-      style={{
-        display: "inline-flex",
-        alignItems: "center",
-        height: 22,
-        padding: "0 8px",
-        fontSize: 11.5,
-        background: "var(--bg-subtle)",
-        color: isL3 ? "var(--acc-workflow-ink)" : "var(--acc-activity-ink)",
-        borderRadius: "var(--r-pill)",
-        fontFamily: "var(--font-mono)",
-        fontWeight: 500,
-        letterSpacing: "0.01em",
-        whiteSpace: "nowrap",
-        border: `0.5px solid color-mix(in oklch, ${isL3 ? "var(--acc-workflow-ink)" : "var(--acc-activity-ink)"} 18%, transparent)`,
-      }}
-    >
-      {level}
-    </span>
-  );
-}
-
-function ResultBadge({ result }: { result: string }) {
-  const isSuccess = result === "success";
-  const isFailed = result === "failed";
-  const color = isSuccess ? "var(--success)" : isFailed ? "var(--danger)" : "var(--acc-activity-ink)";
-  const label = isSuccess ? "Success" : isFailed ? "Failed" : "Partial";
-  return (
-    <span
-      aria-label={`Result: ${label}`}
-      style={{
-        display: "inline-flex",
-        alignItems: "center",
-        gap: 4,
-        fontSize: 12,
-        color,
-        fontFamily: "var(--font-mono)",
-        fontWeight: 500,
-      }}
-    >
-      <span
-        aria-hidden="true"
-        style={{
-          width: 6,
-          height: 6,
-          borderRadius: "50%",
-          background: color,
-          flexShrink: 0,
-        }}
-      />
-      {label}
-    </span>
-  );
-}
-
-function SectionHeader({ children }: { children: React.ReactNode }) {
-  return (
-    <p
-      style={{
-        margin: "0 0 8px",
-        fontSize: 11,
-        fontWeight: 600,
-        textTransform: "uppercase",
-        letterSpacing: "0.06em",
-        color: "var(--text-tertiary)",
-        fontFamily: "var(--font-mono)",
-      }}
-    >
-      {children}
-    </p>
-  );
 }
 
 // ─── ActivityDetail ────────────────────────────────────────────────────────────
@@ -205,6 +137,8 @@ export function ActivityDetail({ entry, onClose }: ActivityDetailProps) {
     }
   }, [entry.id, isSaving, router]);
 
+  const isL3 = entry.automation_level === "L3";
+
   return (
     <div
       style={{
@@ -216,7 +150,17 @@ export function ActivityDetail({ entry, onClose }: ActivityDetailProps) {
     >
       {/* Header row: level badge, timestamp, result, close */}
       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-        <LevelBadge level={entry.automation_level} />
+        {entry.automation_level && (
+          <span aria-label={`Automation level: ${entry.automation_level}`}>
+            <Badge
+              accent={isL3 ? "workflow" : "activity"}
+              size="md"
+              mono
+            >
+              {entry.automation_level}
+            </Badge>
+          </span>
+        )}
         <span
           style={{
             fontSize: 12,
@@ -227,7 +171,7 @@ export function ActivityDetail({ entry, onClose }: ActivityDetailProps) {
           {formatFullTime(entry.occurred_at)}
         </span>
         <span style={{ marginLeft: "auto" }}>
-          <ResultBadge result={entry.result} />
+          <ResultIndicator result={entry.result as "success" | "partial" | "failed"} />
         </span>
         {onClose && (
           <button
@@ -246,16 +190,16 @@ export function ActivityDetail({ entry, onClose }: ActivityDetailProps) {
               cursor: "pointer",
             }}
           >
-            <X size={14} aria-hidden="true" />
+            <Icons.X size={14} aria-hidden={true} />
           </button>
         )}
       </div>
 
-      {/* Action summary heading */}
+      {/* Action summary heading — 26px per design */}
       <h2
         className="display"
         style={{
-          fontSize: 22,
+          fontSize: 26,
           color: "var(--text)",
           margin: 0,
           lineHeight: 1.25,
@@ -286,8 +230,9 @@ export function ActivityDetail({ entry, onClose }: ActivityDetailProps) {
             (e.currentTarget.style.textDecoration = "none")
           }
         >
-          <Workflow size={12} aria-hidden="true" />
-          {entry.workflowName ?? "View workflow"}
+          <Icons.Workflows size={12} aria-hidden={true} />
+          from {entry.workflowName ?? "View workflow"}
+          <Icons.ArrowRight size={11} aria-hidden={true} />
         </a>
       )}
 
@@ -306,6 +251,11 @@ export function ActivityDetail({ entry, onClose }: ActivityDetailProps) {
             gap: 10,
           }}
         >
+          <Icons.Warning
+            size={14}
+            style={{ color: "var(--danger)", flexShrink: 0, marginTop: 2 }}
+            aria-hidden={true}
+          />
           <div>
             <strong style={{ fontWeight: 500 }}>This needs your attention.</strong>{" "}
             {entry.result_details ??
@@ -315,75 +265,41 @@ export function ActivityDetail({ entry, onClose }: ActivityDetailProps) {
       )}
 
       {/* Before/after diff (D-14 / ACT-03) */}
-      {(entry.before_state !== null ||
-        entry.after_state !== null) && (
-        <div
-          style={{
-            padding: "14px 16px",
-            background: "var(--bg)",
-            border: "0.5px solid var(--border)",
-            borderRadius: "var(--r-md)",
-          }}
-        >
+      {(entry.before_state !== null || entry.after_state !== null) && (
+        <Card padding={16}>
           <SectionHeader>Changes</SectionHeader>
           <BeforeAfterDiff
             before={entry.before_state as Record<string, unknown> | null}
             after={entry.after_state as Record<string, unknown> | null}
             targetType={entry.target_type}
           />
-        </div>
+        </Card>
       )}
 
       {/* Reasoning chain (ACT-03 / Discretion 4) */}
-      {(entry.reasoning_chain !== null ||
-        entry.reasoning_chain_url) && (
-        <div
-          style={{
-            padding: "14px 16px",
-            background: "var(--bg)",
-            border: "0.5px solid var(--border)",
-            borderRadius: "var(--r-md)",
-          }}
-        >
+      {(entry.reasoning_chain !== null || entry.reasoning_chain_url) && (
+        <Card padding={16}>
           <ReasoningChain
             reasoning_chain={entry.reasoning_chain}
             reasoning_chain_url={entry.reasoning_chain_url}
           />
-        </div>
+        </Card>
       )}
 
       {/* Action buttons */}
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
         {/* Revert control (ACT-04 / D-09) */}
         {revertCheck.allowed ? (
-          <button
-            type="button"
+          <Button
+            variant="secondary"
+            size="md"
+            icon="Undo"
             onClick={handleRevert}
             disabled={isReverting}
-            aria-disabled={isReverting}
             aria-label={isReverting ? "Reverting..." : "Revert this action"}
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              gap: 6,
-              height: 34,
-              padding: "0 14px",
-              borderRadius: "var(--r-sm)",
-              background: "var(--bg-elevated)",
-              color: "var(--text)",
-              border: "0.5px solid var(--border-strong)",
-              fontSize: 13,
-              fontWeight: 500,
-              cursor: isReverting ? "not-allowed" : "pointer",
-              opacity: isReverting ? 0.6 : 1,
-              fontFamily: "inherit",
-              letterSpacing: "-0.005em",
-              transition: "background 0.12s",
-            }}
           >
-            <Undo size={14} aria-hidden="true" />
             {isReverting ? "Reverting..." : "Revert"}
-          </button>
+          </Button>
         ) : (
           // Disabled revert with accessible tooltip (D-09)
           <RevertTooltip
@@ -392,33 +308,17 @@ export function ActivityDetail({ entry, onClose }: ActivityDetailProps) {
           />
         )}
 
-        {/* Save as Workflow (ACT-06 / D-10) */}
-        <button
-          type="button"
+        {/* Save as Workflow / Open in chat (ACT-06 / D-10) */}
+        <Button
+          variant="ghost"
+          size="md"
+          icon="Chat"
           onClick={handleSaveAsWorkflow}
           disabled={isSaving}
-          aria-disabled={isSaving}
           aria-label="Save this action as a reusable workflow"
-          style={{
-            display: "inline-flex",
-            alignItems: "center",
-            gap: 6,
-            height: 34,
-            padding: "0 14px",
-            borderRadius: "var(--r-sm)",
-            background: "transparent",
-            color: "var(--text-secondary)",
-            border: "0.5px solid var(--border)",
-            fontSize: 13,
-            cursor: isSaving ? "not-allowed" : "pointer",
-            opacity: isSaving ? 0.6 : 1,
-            fontFamily: "inherit",
-            letterSpacing: "-0.005em",
-          }}
         >
-          <MessageSquare size={14} aria-hidden="true" />
-          {isSaving ? "Opening..." : "Save as Workflow"}
-        </button>
+          {isSaving ? "Opening..." : "Open in chat"}
+        </Button>
       </div>
 
       {/* Drift note (informational) */}

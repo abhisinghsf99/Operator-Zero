@@ -15,9 +15,11 @@
  *
  * DESIGN: Mirrors surface-activity.jsx ActivityRow layout:
  *   grid (timestamp | summary+workflow | level badge | result indicator)
+ *   Uses shared Badge + ResultIndicator primitives for pixel fidelity.
  */
 
 import { Check } from "lucide-react";
+import { Badge, ResultIndicator } from "@/components/design/primitives";
 import type { ActivityEntryRow } from "@/app/app/activity/actions";
 
 interface ActivityRowProps {
@@ -39,73 +41,6 @@ function formatTime(date: Date): string {
   });
 }
 
-function ResultIndicator({ result }: { result: string }) {
-  const isFailed = result === "failed" || result === "partial";
-  const isPartial = result === "partial";
-
-  const color = isFailed
-    ? isPartial
-      ? "var(--acc-activity-ink)"
-      : "var(--danger)"
-    : "var(--success)";
-
-  const label = result === "success" ? "Success" : result === "partial" ? "Partial" : "Failed";
-
-  return (
-    <span
-      aria-label={label}
-      title={label}
-      style={{
-        display: "inline-flex",
-        alignItems: "center",
-        gap: 4,
-        fontSize: 11.5,
-        color,
-        fontFamily: "var(--font-mono)",
-        whiteSpace: "nowrap",
-      }}
-    >
-      <span
-        style={{
-          width: 6,
-          height: 6,
-          borderRadius: "50%",
-          background: color,
-          flexShrink: 0,
-        }}
-        aria-hidden="true"
-      />
-      {label}
-    </span>
-  );
-}
-
-function LevelBadge({ level }: { level: string | null }) {
-  if (!level) return null;
-  const isL3 = level === "L3";
-  return (
-    <span
-      style={{
-        display: "inline-flex",
-        alignItems: "center",
-        height: 18,
-        padding: "0 6px",
-        fontSize: 11,
-        background: "var(--bg-subtle)",
-        color: isL3 ? "var(--acc-workflow-ink)" : "var(--acc-activity-ink)",
-        borderRadius: "var(--r-pill)",
-        fontFamily: "var(--font-mono)",
-        fontWeight: 500,
-        letterSpacing: "0.01em",
-        whiteSpace: "nowrap",
-        border: `0.5px solid color-mix(in oklch, ${isL3 ? "var(--acc-workflow-ink)" : "var(--acc-activity-ink)"} 18%, transparent)`,
-      }}
-    >
-      {level}
-    </span>
-  );
-}
-
 // ─── ActivityRow ───────────────────────────────────────────────────────────────
 
 export function ActivityRow({
@@ -117,6 +52,7 @@ export function ActivityRow({
   onToggleSelect,
 }: ActivityRowProps) {
   const isFailed = entry.result === "failed" || entry.result === "partial";
+  const isL3 = entry.automation_level === "L3";
 
   function handleClick(e: React.MouseEvent) {
     if (selectMode) {
@@ -274,11 +210,19 @@ export function ActivityRow({
         )}
       </div>
 
-      {/* Level badge */}
-      <LevelBadge level={entry.automation_level} />
+      {/* Level badge — shared primitive, matches design */}
+      {entry.automation_level && (
+        <Badge
+          accent={isL3 ? "workflow" : "activity"}
+          size="sm"
+          mono
+        >
+          {entry.automation_level}
+        </Badge>
+      )}
 
-      {/* Result indicator */}
-      <ResultIndicator result={entry.result} />
+      {/* Result indicator — shared primitive */}
+      <ResultIndicator result={entry.result as "success" | "partial" | "failed"} />
     </div>
   );
 }

@@ -18,6 +18,7 @@
  */
 
 import { useState, useCallback } from "react";
+import { SurfaceHeader, Button } from "@/components/design/primitives";
 import { ActivityFiltersBar } from "@/components/activity/activity-filters";
 import { ActivityLog } from "@/components/activity/activity-log";
 import { ActivityDetail } from "@/components/activity/activity-detail";
@@ -38,65 +39,6 @@ interface ActivityViewProps {
   initialFilters: ActivityFilters;
   workflowOptions: WorkflowOption[];
   fetchError: string | null;
-}
-
-// ─── SurfaceHeader ────────────────────────────────────────────────────────────
-
-function SurfaceHeader({
-  kicker,
-  title,
-  subtitle,
-}: {
-  kicker: string;
-  title: string;
-  subtitle: string;
-}) {
-  return (
-    <header
-      style={{
-        padding: "28px 40px 20px",
-        borderBottom: "0.5px solid var(--border)",
-        background: "var(--bg)",
-        flexShrink: 0,
-      }}
-    >
-      <p
-        style={{
-          margin: 0,
-          fontSize: 11.5,
-          fontFamily: "var(--font-mono)",
-          textTransform: "uppercase",
-          letterSpacing: "0.06em",
-          color: "var(--acc-activity-ink)",
-          opacity: 0.8,
-        }}
-      >
-        {kicker}
-      </p>
-      <h1
-        className="display"
-        style={{
-          margin: "4px 0 0",
-          fontSize: 28,
-          letterSpacing: "-0.015em",
-          color: "var(--text)",
-          lineHeight: 1.2,
-        }}
-      >
-        {title}
-      </h1>
-      <p
-        style={{
-          margin: "4px 0 0",
-          fontSize: 13.5,
-          lineHeight: 1.5,
-          color: "var(--text-tertiary)",
-        }}
-      >
-        {subtitle}
-      </p>
-    </header>
-  );
 }
 
 // ─── ActivityView ─────────────────────────────────────────────────────────────
@@ -164,11 +106,18 @@ export function ActivityView({
         overflow: "hidden",
       }}
     >
-      {/* Surface header */}
+      {/* Surface header — matches surface-activity.jsx SurfaceHeader with accent="activity" */}
       <SurfaceHeader
         kicker={`Activity · ${initialEntries.length}+ events`}
         title="Everything the agent has done."
         subtitle="A record of every autonomous action, every approval, every result. Inspectable, attributable, revertable."
+        accent="activity"
+        right={
+          <>
+            <Button variant="ghost" icon="Calendar">All time</Button>
+            <Button variant="secondary" icon="Filter">Filter</Button>
+          </>
+        }
       />
 
       {/* Filter bar */}

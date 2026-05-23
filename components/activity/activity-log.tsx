@@ -26,6 +26,7 @@ import { useRef, useCallback, useEffect, useState } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { fetchActivityPage } from "@/app/app/activity/actions";
 import { ActivityRow } from "./activity-row";
+import { SectionHeader } from "@/components/design/primitives";
 import type { ActivityEntryRow, ActivityFilters, ActivityCursor } from "@/app/app/activity/actions";
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
@@ -258,17 +259,10 @@ export function ActivityLog({
                     top: 0,
                     background: "var(--bg)",
                     paddingTop: 4,
-                    paddingBottom: 8,
                     zIndex: 1,
-                    fontSize: 11.5,
-                    fontWeight: 600,
-                    color: "var(--text-tertiary)",
-                    textTransform: "uppercase",
-                    letterSpacing: "0.06em",
-                    fontFamily: "var(--font-mono)",
                   }}
                 >
-                  {item.day}
+                  <SectionHeader>{item.day}</SectionHeader>
                 </div>
               ) : (
                 <div role="listitem">
