@@ -129,7 +129,7 @@ Plans:
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
-- [ ] 04-04-PLAN.md — Settings slice B: Autonomy thresholds + one-directional override gate (execute-workflow-run) + Sessions list/revoke/sign-out-everywhere + session registry + cancel-deletion-on-signin (wave 3)
+- [x] 04-04-PLAN.md — Settings slice B: Autonomy thresholds + one-directional override gate (execute-workflow-run) + Sessions list/revoke/sign-out-everywhere + session registry + cancel-deletion-on-signin (wave 3)
 
 **Wave 4** *(blocked on Wave 3 completion)*
 
@@ -148,4 +148,4 @@ Plans:
 | 1. Infrastructure Foundation | 4/4 | Complete   | 2026-05-22 |
 | 2. Foundation — Prove the Agent | 8/8 | Complete   | 2026-05-22 |
 | 3. Ownership — The Portfolio | 4/4 | Complete   | 2026-05-22 |
-| 4. Polish — Effortless Daily Use | 3/6 | In Progress|  |
+| 4. Polish — Effortless Daily Use | 4/6 | In Progress|  |

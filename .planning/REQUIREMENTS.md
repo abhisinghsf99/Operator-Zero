@@ -116,7 +116,7 @@
 
 - [x] **SET-01**: Connections section shows Shopify/Gmail status + last sync, with reconnect and disconnect-with-confirmation
 - [ ] **SET-02**: Brand Voice Profile is editable markdown with preview; changes take effect on the next agent action; "regenerate from examples" is available
-- [ ] **SET-03**: Autonomy Thresholds set a global default level + curated per-action overrides that win over workflow level
+- [x] **SET-03**: Autonomy Thresholds set a global default level + curated per-action overrides that win over workflow level
 - [ ] **SET-04**: "What I Remember About You" lists memory items by category; user can edit inline, delete (24h reversible), or add
 - [ ] **SET-05**: Profile section edits name, email, password, and avatar
 - [x] **SET-06**: User can export all account data (workflows + history, activity, memory, brand voice) as JSON, initiated within 60s

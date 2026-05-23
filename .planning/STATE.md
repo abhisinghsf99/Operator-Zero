@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed Phase 04-01 — Foundation plan complete
-last_updated: "2026-05-23T00:03:54.594Z"
-last_activity: 2026-05-22
+stopped_at: Completed Phase 04-04 — Autonomy thresholds + session management slice
+last_updated: "2026-05-23T00:17:19.359Z"
+last_activity: 2026-05-23
 progress:
   total_phases: 4
   completed_phases: 3
   total_plans: 22
-  completed_plans: 17
+  completed_plans: 20
   percent: 75
 ---
 
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-05-21)
 ## Current Position
 
 Phase: 04 (polish-effortless-daily-use) — EXECUTING
-Plan: 2 of 6
+Plan: 3 of 6
 Status: Ready to execute
-Last activity: 2026-05-22
+Last activity: 2026-05-23
 
-Progress: [████████░░] 77%
+Progress: [█████████░] 91%
 
 ## Performance Metrics
 
@@ -67,6 +67,7 @@ Progress: [████████░░] 77%
 | Phase 03 P04 | 45 | 3 tasks | 11 files |
 | Phase 03 P03 | ~30min | 2 tasks | 9 files |
 | Phase 04 P01 | 130min | 4 tasks | 19 files |
+| Phase 04 P04 | 55 | 3 tasks | 9 files |
 
 ## Accumulated Context
 
@@ -112,6 +113,10 @@ Recent decisions affecting current work:
 - [Phase ?]: [04-01] Wave-0 RED scaffold pattern intentionally fails typecheck on test files — imports not-yet-built modules; resolves as 04-02..04-04 ship
 - [Phase ?]: [04-01] Migration 0006 applied via supabase db push over session pooler port 5432 — MCP lacks project-write permission; same convention as 03-01
 - [Phase ?]: [04-01] user-exports bucket is PRIVATE — downloads via 24h signed URL only per threat model T-4-01-02
+- [Phase ?]: [04-04] getEffectiveAutomationLevel pure helper in lib/workflows/autonomy.ts — D-06 one-directional logic shared between engine and tests
+- [Phase ?]: [04-04] Override gate as step.run in execute-workflow-run.ts before L2 branch — deterministic step ID, serviceDb filter (T-2-07-04)
+- [Phase ?]: [04-04] admin.signOut scope is string arg not object — Supabase JS SDK v2 API; fixed during typecheck
+- [Phase ?]: [04-04] recordSession non-fatal in login paths — errors logged, never block login redirect
 
 ### Pending Todos
 
@@ -125,6 +130,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-05-22T23:17:13.817Z
-Stopped at: Completed Phase 04-01 — Foundation plan complete
+Last session: 2026-05-23T00:17:19.355Z
+Stopped at: Completed Phase 04-04 — Autonomy thresholds + session management slice
 Resume file: None
