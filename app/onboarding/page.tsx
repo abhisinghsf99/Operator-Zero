@@ -28,6 +28,7 @@ import { getIntegrationHealth } from "@/lib/integrations/health";
 import { getCatalogAuditSuggestions } from "@/lib/inngest/functions/catalog-audit";
 import { ProgressRail, type ProgressStep } from "@/components/onboarding/progress-rail";
 import { OnboardingWizard } from "@/app/onboarding/_wizard";
+import { Icons } from "@/components/design/icons";
 
 const STEPS: ProgressStep[] = [
   { key: "welcome", label: "Welcome" },
@@ -83,17 +84,31 @@ export default async function OnboardingPage({ searchParams }: OnboardingPagePro
       </a>
 
       {/* Top progress rail */}
-      <div className="flex-shrink-0 border-b-[0.5px] border-[var(--border)] bg-[var(--bg)] px-10 py-5">
-        <div className="mx-auto flex max-w-[720px] items-center gap-4">
-          {/* Logo mark */}
-          <div className="mr-4 flex items-center gap-2">
-            <div className="flex h-[22px] w-[22px] items-center justify-center rounded-full bg-[var(--text)] text-[var(--bg)]">
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2" fill="currentColor" fillOpacity="0.2" />
-                <path d="M8 12l3 3 5-5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
+      <div
+        style={{
+          padding: "20px 40px",
+          borderBottom: "0.5px solid var(--border)",
+          background: "var(--bg)",
+          flexShrink: 0,
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: 10, maxWidth: 720, margin: "0 auto" }}>
+          {/* Logo mark + wordmark */}
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginRight: 18 }}>
+            <div
+              style={{
+                width: 22,
+                height: 22,
+                borderRadius: "50%",
+                background: "var(--text)",
+                color: "var(--bg)",
+                display: "grid",
+                placeItems: "center",
+              }}
+            >
+              <Icons.Logo size={13} aria-hidden={true} />
             </div>
-            <span className="display text-[16px] text-[var(--text)]">Operator Zero</span>
+            <span className="display" style={{ fontSize: 16, color: "var(--text)" }}>Operator Zero</span>
           </div>
           <ProgressRail steps={STEPS} currentStep={currentStep} />
         </div>

@@ -4,21 +4,22 @@
  * app/onboarding/_steps/brand-voice.tsx
  * Step 3: Brand voice bootstrap conversation.
  *
- * Drives a 3-5 turn scoped conversation via the SSE streaming route
- * with only ask_user_clarification + record_memory_item tools.
- * On completion, saves a brand_voice_profiles row before proceeding.
+ * Chat-style 3-question conversation. Each answer is shown as a user bubble
+ * after submission. On completion shows a drafted voice profile card before
+ * proceeding.
  *
  * Full implementation in Task 2 (02-08 Plan).
  */
-import { useState } from "react";
-import { ArrowRight } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { useState, useRef, useEffect } from "react";
+import { Button, Avatar, Card } from "@/components/design/primitives";
+import { Icons } from "@/components/design/icons";
 import { saveBrandVoiceProfile } from "@/app/onboarding/actions";
 
 const PROMPTS = [
   {
     id: "writing",
-    question: "Show me a piece of writing you're proud of. A product description, an email, anything.",
+    question:
+      "Show me a piece of writing you're proud of. A product description, an email, anything.",
     placeholder: "Paste a paragraph or two…",
   },
   {
@@ -40,19 +41,15 @@ interface BrandVoiceStepProps {
 export function BrandVoiceStep({ onNext }: BrandVoiceStepProps) {
   const [promptIndex, setPromptIndex] = useState(0);
   const [answers, setAnswers] = useState<Record<string, string>>({});
-  const [currentAnswer, setCurrentAnswer] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const isDone = promptIndex >= PROMPTS.length;
   const current = PROMPTS[promptIndex];
 
-  function handleNext() {
-    if (!currentAnswer.trim()) return;
-
-    const newAnswers = { ...answers, [current!.id]: currentAnswer };
+  function handleSubmit(value: string) {
+    const newAnswers = { ...answers, [PROMPTS[promptIndex]!.id]: value };
     setAnswers(newAnswers);
-    setCurrentAnswer("");
     setPromptIndex(promptIndex + 1);
   }
 
@@ -72,80 +69,236 @@ export function BrandVoiceStep({ onNext }: BrandVoiceStepProps) {
   }
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="anim-pop" style={{ display: "flex", flexDirection: "column", gap: 18 }}>
+      {/* Header */}
       <div>
-        <div className="font-mono text-[11.5px] uppercase tracking-[0.06em] text-[var(--text-tertiary)]">
-          Brand voice · {Math.min(promptIndex + 1, PROMPTS.length)} of {PROMPTS.length}
+        <div
+          style={{
+            fontSize: 11.5,
+            fontFamily: "var(--font-mono)",
+            color: "var(--text-tertiary)",
+            textTransform: "uppercase",
+            letterSpacing: "0.06em",
+          }}
+        >
+          Brand voice · 3 quick questions
         </div>
-        <h2 className="display mt-2 text-[36px] leading-tight tracking-[-0.015em] text-[var(--text)]">
-          {isDone ? "Got it. Let me build your voice." : "What's your brand?"}
+        <h2
+          className="display"
+          style={{
+            fontSize: 36,
+            margin: "8px 0 6px",
+            color: "var(--text)",
+            letterSpacing: "-0.015em",
+          }}
+        >
+          {isDone ? "Got it." : "How do you sound when you sound like you?"}
         </h2>
+        <p style={{ margin: 0, fontSize: 14, color: "var(--text-tertiary)", lineHeight: 1.55 }}>
+          {isDone
+            ? "I’ve drafted a voice profile from your answers. You can refine it anytime in Settings."
+            : "I’ll use this to draft copy that reads like yours, not like an AI’s. You’ll see the profile before we save it."}
+        </p>
       </div>
 
-      {/* Answered prompts */}
-      {Object.entries(answers).map(([id, answer]) => {
-        const prompt = PROMPTS.find(p => p.id === id);
-        return (
-          <div key={id} className="rounded-[var(--r-md)] border-[0.5px] border-[var(--border)] bg-[var(--bg-subtle)] p-4">
-            <div className="mb-1.5 text-[12px] text-[var(--text-tertiary)]">{prompt?.question}</div>
-            <div className="text-[13.5px] text-[var(--text)]">{answer}</div>
-          </div>
-        );
-      })}
-
-      {/* Current prompt */}
-      {!isDone && current && (
-        <div className="flex flex-col gap-3">
-          <label
-            htmlFor="brand-voice-answer"
-            className="text-[15px] font-medium text-[var(--text)]"
-          >
-            {current.question}
-          </label>
-          <textarea
-            id="brand-voice-answer"
-            value={currentAnswer}
-            onChange={(e) => setCurrentAnswer(e.target.value)}
-            placeholder={current.placeholder}
-            rows={3}
-            className="w-full resize-none rounded-[var(--r-sm)] border-[0.5px] border-[var(--border)] bg-[var(--bg-elevated)] px-3 py-2.5 text-[13.5px] text-[var(--text)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:ring-2 focus:ring-[var(--acc-workflow)]"
-          />
-          <div className="flex justify-end">
-            <Button
-              variant="workflow"
-              onClick={handleNext}
-              disabled={!currentAnswer.trim()}
+      {/* Chat-style conversation */}
+      <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+        {/* Answered prompts */}
+        {PROMPTS.slice(0, promptIndex).map((p) => (
+          <div key={p.id} style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            {/* Agent question */}
+            <div style={{ display: "flex", gap: 10 }}>
+              <Avatar agent size={24} />
+              <div
+                style={{
+                  fontSize: 13.5,
+                  color: "var(--text)",
+                  lineHeight: 1.5,
+                  paddingTop: 2,
+                }}
+              >
+                {p.question}
+              </div>
+            </div>
+            {/* User answer bubble */}
+            <div
+              style={{
+                alignSelf: "flex-end",
+                maxWidth: "80%",
+                padding: "10px 14px",
+                background: "var(--bg-deeper)",
+                borderRadius: "var(--r-lg)",
+                borderBottomRightRadius: "var(--r-xs)",
+                fontSize: 13.5,
+                color: "var(--text)",
+              }}
             >
-              {promptIndex < PROMPTS.length - 1 ? "Next question" : "That's it"}
-              <ArrowRight className="h-4 w-4" aria-hidden="true" />
-            </Button>
+              {answers[p.id]}
+            </div>
           </div>
-        </div>
+        ))}
+
+        {/* Current prompt */}
+        {!isDone && current && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {/* Agent question */}
+            <div style={{ display: "flex", gap: 10 }}>
+              <Avatar agent size={24} />
+              <div
+                style={{
+                  fontSize: 13.5,
+                  color: "var(--text)",
+                  lineHeight: 1.5,
+                  paddingTop: 2,
+                }}
+              >
+                {current.question}
+              </div>
+            </div>
+            {/* Answer input */}
+            <VoiceAnswerInput
+              placeholder={current.placeholder}
+              onSubmit={handleSubmit}
+            />
+          </div>
+        )}
+
+        {/* Drafted voice profile shown after all answers */}
+        {isDone && (
+          <Card padding={18}>
+            <div
+              style={{
+                fontSize: 11,
+                fontFamily: "var(--font-mono)",
+                color: "var(--text-tertiary)",
+                textTransform: "uppercase",
+                letterSpacing: "0.06em",
+                marginBottom: 8,
+              }}
+            >
+              Drafted voice profile
+            </div>
+            <div
+              style={{
+                fontFamily: "var(--font-serif)",
+                fontSize: 16,
+                lineHeight: 1.55,
+                color: "var(--text)",
+                whiteSpace: "pre-wrap",
+              }}
+            >
+              {buildVoiceProfile(answers)}
+            </div>
+          </Card>
+        )}
+      </div>
+
+      {/* Error */}
+      {error && (
+        <p style={{ fontSize: 13, color: "var(--danger)" }} role="alert">
+          {error}
+        </p>
       )}
 
-      {/* Save step */}
+      {/* Continue after all answers */}
       {isDone && (
-        <div className="flex flex-col gap-3">
-          <p className="text-[14px] leading-[1.55] text-[var(--text-secondary)]">
-            I'll use these answers to shape how I write for your store. You can always update your brand voice in Settings.
-          </p>
-          {error && (
-            <p className="text-[13px] text-[var(--danger)]" role="alert">{error}</p>
-          )}
-          <div className="flex justify-end">
-            <Button
-              variant="workflow"
-              size="lg"
-              onClick={handleSave}
-              disabled={saving}
-              aria-busy={saving}
-            >
-              {saving ? "Saving…" : "Build my voice profile"}
-              <ArrowRight className="h-4 w-4" aria-hidden="true" />
-            </Button>
-          </div>
+        <div style={{ display: "flex", justifyContent: "flex-end" }}>
+          <Button
+            variant="primary"
+            accent="workflow"
+            icon="ArrowRight"
+            onClick={handleSave}
+            disabled={saving}
+            aria-label={saving ? "Saving brand voice profile" : undefined}
+          >
+            {saving ? "Saving…" : "Continue"}
+          </Button>
         </div>
       )}
+    </div>
+  );
+}
+
+/** Build a short readable profile preview from the Q&A answers. */
+function buildVoiceProfile(answers: Record<string, string>): string {
+  const lines: string[] = [];
+  if (answers["writing"]) {
+    lines.push(`Based on your writing:\n${answers["writing"]}`);
+  }
+  if (answers["customer"]) {
+    lines.push(`Your customer: ${answers["customer"]}`);
+  }
+  if (answers["avoid"]) {
+    lines.push(`Phrases to avoid: ${answers["avoid"]}`);
+  }
+  return lines.join("\n\n");
+}
+
+/** Auto-focusing textarea + Send button — chat-style answer input. */
+function VoiceAnswerInput({
+  placeholder,
+  onSubmit,
+}: {
+  placeholder: string;
+  onSubmit: (value: string) => void;
+}) {
+  const [value, setValue] = useState("");
+  const ref = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    ref.current?.focus();
+  }, []);
+
+  function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      if (value.trim()) onSubmit(value.trim());
+    }
+  }
+
+  return (
+    <div
+      style={{
+        padding: "10px 14px",
+        background: "var(--bg-elevated)",
+        border: "0.5px solid var(--border-strong)",
+        borderRadius: "var(--r-lg)",
+        display: "flex",
+        alignItems: "flex-end",
+        gap: 8,
+      }}
+    >
+      <textarea
+        ref={ref}
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        placeholder={placeholder}
+        onKeyDown={handleKeyDown}
+        rows={2}
+        aria-label="Your answer"
+        style={{
+          all: "unset",
+          flex: 1,
+          padding: "4px 0",
+          fontSize: 14,
+          lineHeight: 1.55,
+          minHeight: 28,
+          fontFamily: "inherit",
+          color: "var(--text)",
+          resize: "none",
+        } as React.CSSProperties}
+      />
+      <Button
+        variant="primary"
+        accent="chat"
+        size="sm"
+        icon="ArrowUp"
+        disabled={!value.trim()}
+        onClick={() => value.trim() && onSubmit(value.trim())}
+        aria-label="Send answer"
+      >
+        Send
+      </Button>
     </div>
   );
 }

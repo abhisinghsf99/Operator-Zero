@@ -8,8 +8,8 @@
  * and redirects to /app/chat with a welcome seed.
  */
 import { useState } from "react";
-import { ArrowRight, CheckCircle } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { Button } from "@/components/design/primitives";
+import { Icons } from "@/components/design/icons";
 import { completeOnboarding } from "@/app/onboarding/actions";
 
 export function DoneStep() {
@@ -31,35 +31,73 @@ export function DoneStep() {
   }
 
   return (
-    <div className="flex flex-col items-center gap-6 text-center">
-      <div className="flex h-20 w-20 items-center justify-center rounded-full bg-[var(--success)] text-white">
-        <CheckCircle className="h-9 w-9" strokeWidth={1.8} aria-hidden="true" />
+    <div
+      className="anim-pop"
+      style={{
+        textAlign: "center",
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        gap: 22,
+      }}
+    >
+      <div
+        style={{
+          width: 80,
+          height: 80,
+          borderRadius: "50%",
+          background: "var(--success)",
+          color: "white",
+          display: "grid",
+          placeItems: "center",
+        }}
+        aria-hidden="true"
+      >
+        <Icons.CheckDouble size={36} strokeWidth={1.8} />
       </div>
 
-      <div className="flex flex-col gap-4">
-        <h1 className="display text-[52px] leading-[1.05] tracking-[-0.02em] text-[var(--text)]">
-          You have an operator.
-        </h1>
-        <p className="mx-auto max-w-[520px] text-[16px] leading-[1.55] text-[var(--text-secondary)]">
-          Three workflows are seeded as drafts. The first run is ready in your Approval Inbox. From here on out, the agent is working for you.
-        </p>
-      </div>
+      <h1
+        className="display"
+        style={{
+          fontSize: 52,
+          margin: 0,
+          color: "var(--text)",
+          lineHeight: 1.05,
+          letterSpacing: "-0.02em",
+        }}
+      >
+        You have an operator.
+      </h1>
+
+      <p
+        style={{
+          margin: 0,
+          fontSize: 16,
+          color: "var(--text-secondary)",
+          maxWidth: 520,
+          lineHeight: 1.55,
+        }}
+      >
+        Three workflows are seeded as drafts. The first run is ready in your Approval Inbox.
+        From here on out, the agent is working for you.
+      </p>
 
       {error && (
-        <p className="text-[13px] text-[var(--danger)]" role="alert">
+        <p style={{ fontSize: 13, color: "var(--danger)" }} role="alert">
           {error}
         </p>
       )}
 
       <Button
-        variant="workflow"
+        variant="primary"
+        accent="workflow"
         size="lg"
+        icon="ArrowRight"
         onClick={handleEnter}
         disabled={entering}
-        aria-busy={entering}
+        aria-label={entering ? "Setting up your operator" : undefined}
       >
         {entering ? "Setting up…" : "Enter Operator Zero"}
-        <ArrowRight className="h-4 w-4" aria-hidden="true" />
       </Button>
     </div>
   );

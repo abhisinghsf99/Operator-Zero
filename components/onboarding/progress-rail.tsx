@@ -11,11 +11,10 @@
  *
  * WCAG 2.1 AA:
  *   - aria-current="step" on the active step
- *   - aria-label on each step button
+ *   - aria-label on each step indicator
  *   - Connector lines are aria-hidden
  */
-import { Check } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { Icons } from "@/components/design/icons";
 
 export interface ProgressStep {
   key: string;
@@ -31,7 +30,7 @@ export function ProgressRail({ steps, currentStep }: ProgressRailProps) {
   return (
     <nav
       aria-label="Onboarding progress"
-      className="flex items-center gap-0 overflow-x-auto"
+      style={{ display: "flex", alignItems: "center", gap: 0, overflowX: "auto" }}
     >
       {steps.map((step, i) => {
         const isDone = i < currentStep;
@@ -39,37 +38,52 @@ export function ProgressRail({ steps, currentStep }: ProgressRailProps) {
         const isFuture = i > currentStep;
 
         return (
-          <div key={step.key} className="flex items-center">
+          <div key={step.key} style={{ display: "flex", alignItems: "center" }}>
             {/* Step indicator */}
             <div
-              className="flex items-center gap-1.5"
+              style={{ display: "flex", alignItems: "center", gap: 6 }}
               aria-current={isCurrent ? "step" : undefined}
             >
               <div
                 aria-label={`Step ${i + 1}: ${step.label}${isDone ? " (completed)" : isCurrent ? " (current)" : ""}`}
                 role="img"
-                className={cn(
-                  "flex h-[18px] w-[18px] items-center justify-center rounded-full border text-[10px] font-mono font-semibold transition-colors",
-                  isDone && "border-[var(--acc-workflow-ink)] bg-[var(--acc-workflow-ink)] text-[var(--bg)]",
-                  isCurrent && "border-[var(--acc-workflow-ink)] bg-[var(--bg-elevated)] text-[var(--text-tertiary)]",
-                  isFuture && "border-[var(--border-strong)] bg-transparent text-[var(--text-tertiary)]"
-                )}
+                style={{
+                  width: 18,
+                  height: 18,
+                  borderRadius: "50%",
+                  background: isDone
+                    ? "var(--acc-workflow-ink)"
+                    : isCurrent
+                    ? "var(--bg-elevated)"
+                    : "transparent",
+                  border: "0.5px solid",
+                  borderColor:
+                    isDone || isCurrent
+                      ? "var(--acc-workflow-ink)"
+                      : "var(--border-strong)",
+                  color: isDone ? "var(--bg)" : "var(--text-tertiary)",
+                  display: "grid",
+                  placeItems: "center",
+                  fontSize: 10,
+                  fontFamily: "var(--font-mono)",
+                  fontWeight: 600,
+                  flexShrink: 0,
+                }}
               >
                 {isDone ? (
-                  <Check
-                    className="h-2.5 w-2.5"
-                    strokeWidth={2.4}
-                    aria-hidden="true"
-                  />
+                  <Icons.Check size={10} strokeWidth={2.4} aria-hidden={true} />
                 ) : (
                   <span aria-hidden="true">{i + 1}</span>
                 )}
               </div>
               <span
-                className={cn(
-                  "font-mono text-[11.5px] tracking-[0.02em]",
-                  isFuture ? "text-[var(--text-tertiary)]" : "text-[var(--text)]"
-                )}
+                style={{
+                  fontSize: 11.5,
+                  color: isFuture ? "var(--text-tertiary)" : "var(--text)",
+                  fontFamily: "var(--font-mono)",
+                  letterSpacing: "0.02em",
+                  whiteSpace: "nowrap",
+                }}
               >
                 {step.label}
               </span>
@@ -79,7 +93,13 @@ export function ProgressRail({ steps, currentStep }: ProgressRailProps) {
             {i < steps.length - 1 && (
               <span
                 aria-hidden="true"
-                className="mx-2.5 h-px w-4 flex-shrink-0 bg-[var(--border-strong)]"
+                style={{
+                  flexShrink: 0,
+                  width: 16,
+                  height: 0.5,
+                  background: "var(--border-strong)",
+                  margin: "0 10px",
+                }}
               />
             )}
           </div>

@@ -11,9 +11,8 @@
  * Full implementation in Task 2 (02-08 Plan).
  */
 import { useState, useEffect } from "react";
-import { ArrowRight, Check } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
+import { Button, Badge, Card, DomainBadge } from "@/components/design/primitives";
+import { Icons } from "@/components/design/icons";
 import { createStarterWorkflows } from "@/app/onboarding/actions";
 
 export interface WorkflowSuggestion {
@@ -36,6 +35,14 @@ const DOMAIN_LABELS: Record<WorkflowSuggestion["domain"], string> = {
   inventory: "Inventory",
   content: "Content",
 };
+
+/** Audit checklist items shown during the loading state */
+const AUDIT_LINES = [
+  "Pulling product catalog",
+  "Reading order history",
+  "Scanning customer email patterns",
+  "Cross-referencing with brand voice",
+];
 
 export function CatalogAuditStep({ suggestions, onNext }: CatalogAuditStepProps) {
   const [picked, setPicked] = useState<Set<number>>(new Set());
@@ -61,7 +68,7 @@ export function CatalogAuditStep({ suggestions, onNext }: CatalogAuditStepProps)
     setSaving(true);
     setError(null);
 
-    const selected = Array.from(picked).map(i => suggestions[i]!);
+    const selected = Array.from(picked).map((i) => suggestions[i]!);
     const result = await createStarterWorkflows(selected);
 
     if (result && "error" in result) {
@@ -73,43 +80,126 @@ export function CatalogAuditStep({ suggestions, onNext }: CatalogAuditStepProps)
     onNext();
   }
 
+  // Loading / running state
   if (suggestions.length === 0) {
     return (
-      <div className="flex flex-col gap-6">
+      <div className="anim-pop" style={{ display: "flex", flexDirection: "column", gap: 18 }}>
         <div>
-          <div className="font-mono text-[11.5px] uppercase tracking-[0.06em] text-[var(--text-tertiary)]">
+          <div
+            style={{
+              fontSize: 11.5,
+              fontFamily: "var(--font-mono)",
+              color: "var(--text-tertiary)",
+              textTransform: "uppercase",
+              letterSpacing: "0.06em",
+            }}
+          >
             Catalog audit
           </div>
-          <h2 className="display mt-2 text-[36px] leading-tight tracking-[-0.015em] text-[var(--text)]">
+          <h2
+            className="display"
+            style={{
+              fontSize: 36,
+              margin: "8px 0 6px",
+              color: "var(--text)",
+              letterSpacing: "-0.015em",
+            }}
+          >
             Reading your store…
           </h2>
         </div>
-        <div className="flex items-center justify-center py-12">
-          <div
-            className="h-6 w-6 animate-spin rounded-full border-2 border-[var(--acc-workflow-ink)] border-t-transparent"
-            aria-label="Loading catalog audit"
-            role="status"
-          />
-        </div>
+        <Card padding={20}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            {AUDIT_LINES.map((line) => (
+              <div
+                key={line}
+                style={{ display: "flex", alignItems: "center", gap: 10 }}
+              >
+                <Icons.Check
+                  size={14}
+                  style={{ color: "var(--success)" }}
+                  aria-hidden={true}
+                />
+                <span
+                  style={{
+                    fontSize: 13,
+                    color: "var(--text-secondary)",
+                    fontFamily: "var(--font-mono)",
+                  }}
+                >
+                  {line}
+                </span>
+              </div>
+            ))}
+            {/* Composing spinner */}
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <span
+                style={{
+                  width: 14,
+                  height: 14,
+                  borderRadius: "50%",
+                  border: "1.5px solid var(--acc-workflow-ink)",
+                  borderTopColor: "transparent",
+                  display: "inline-block",
+                  animation: "spin 0.8s linear infinite",
+                }}
+                aria-label="Loading"
+                role="status"
+              />
+              <span
+                style={{
+                  fontSize: 14.5,
+                  color: "var(--text-tertiary)",
+                  fontStyle: "italic",
+                  fontFamily: "var(--font-serif)",
+                }}
+              >
+                composing suggestions…
+              </span>
+            </div>
+          </div>
+        </Card>
+        <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
       </div>
     );
   }
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="anim-pop" style={{ display: "flex", flexDirection: "column", gap: 18 }}>
       <div>
-        <div className="font-mono text-[11.5px] uppercase tracking-[0.06em] text-[var(--text-tertiary)]">
+        <div
+          style={{
+            fontSize: 11.5,
+            fontFamily: "var(--font-mono)",
+            color: "var(--text-tertiary)",
+            textTransform: "uppercase",
+            letterSpacing: "0.06em",
+          }}
+        >
           Starter workflows · {suggestions.length} suggestions
         </div>
-        <h2 className="display mt-2 text-[36px] leading-tight tracking-[-0.015em] text-[var(--text)]">
-          Here's where I'd start.
+        <h2
+          className="display"
+          style={{
+            fontSize: 36,
+            margin: "8px 0 6px",
+            color: "var(--text)",
+            letterSpacing: "-0.015em",
+          }}
+        >
+          Here&apos;s where I&apos;d start.
         </h2>
-        <p className="mt-1 text-[14px] leading-[1.55] text-[var(--text-tertiary)]">
-          Tailored to what I found in your store. Pick the ones you want — I'll build them. You can dial autonomy per workflow.
+        <p style={{ margin: 0, fontSize: 14, color: "var(--text-tertiary)", lineHeight: 1.55 }}>
+          Tailored to what I found in your store. Pick the ones you want — I&apos;ll build them.
+          You can dial autonomy per workflow.
         </p>
       </div>
 
-      <div className="flex flex-col gap-2" role="group" aria-label="Starter workflow suggestions">
+      <div
+        style={{ display: "flex", flexDirection: "column", gap: 8 }}
+        role="group"
+        aria-label="Starter workflow suggestions"
+      >
         {suggestions.map((s, i) => {
           const isSelected = picked.has(i);
           return (
@@ -119,36 +209,64 @@ export function CatalogAuditStep({ suggestions, onNext }: CatalogAuditStepProps)
               onClick={() => toggle(i)}
               aria-pressed={isSelected}
               aria-label={`${isSelected ? "Deselect" : "Select"} ${s.name}`}
-              className={`flex w-full cursor-pointer items-center gap-3.5 rounded-[var(--r-md)] border-[0.5px] px-4 py-3.5 text-left transition-colors ${
-                isSelected
-                  ? "border-[color-mix(in_oklch,var(--acc-workflow-ink)_35%,transparent)] bg-[var(--acc-workflow-bg)]"
-                  : "border-[var(--border)] bg-[var(--bg-elevated)] hover:bg-[var(--bg-subtle)]"
-              }`}
+              style={{
+                padding: "14px 18px",
+                background: isSelected ? "var(--acc-workflow-bg)" : "var(--bg-elevated)",
+                border: "0.5px solid",
+                borderColor: isSelected
+                  ? "color-mix(in oklch, var(--acc-workflow-ink) 35%, transparent)"
+                  : "var(--border)",
+                borderRadius: "var(--r-md)",
+                cursor: "pointer",
+                display: "flex",
+                alignItems: "center",
+                gap: 14,
+                width: "100%",
+                textAlign: "left",
+                fontFamily: "inherit",
+                transition: "background 0.15s, border-color 0.15s",
+              }}
             >
               {/* Checkbox visual */}
               <div
-                className={`flex h-4 w-4 flex-shrink-0 items-center justify-center rounded-[3px] border-[0.5px] transition-colors ${
-                  isSelected
-                    ? "border-[var(--acc-workflow-ink)] bg-[var(--acc-workflow-ink)]"
-                    : "border-[var(--border-strong)] bg-transparent"
-                }`}
+                style={{
+                  width: 16,
+                  height: 16,
+                  flexShrink: 0,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  borderRadius: 3,
+                  border: "0.5px solid",
+                  borderColor: isSelected ? "var(--acc-workflow-ink)" : "var(--border-strong)",
+                  background: isSelected ? "var(--acc-workflow-ink)" : "transparent",
+                  transition: "background 0.12s, border-color 0.12s",
+                }}
                 aria-hidden="true"
               >
-                {isSelected && <Check className="h-2.5 w-2.5 text-[var(--bg)]" strokeWidth={2.5} />}
+                {isSelected && (
+                  <Icons.Check
+                    size={10}
+                    strokeWidth={2.5}
+                    style={{ color: "var(--bg)" }}
+                  />
+                )}
               </div>
 
               {/* Content */}
-              <div className="flex-1">
-                <div className="flex items-center gap-2">
-                  <span className="text-[14px] font-medium text-[var(--text)]">{s.name}</span>
-                  <Badge variant="activity" size="sm">
-                    {DOMAIN_LABELS[s.domain]}
-                  </Badge>
-                  <Badge variant="subtle" size="sm">
+              <div style={{ flex: 1 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <span style={{ fontSize: 14, color: "var(--text)", fontWeight: 500 }}>
+                    {s.name}
+                  </span>
+                  <DomainBadge domain={DOMAIN_LABELS[s.domain]} />
+                  <Badge mono accent="activity" size="sm">
                     {s.level}
                   </Badge>
                 </div>
-                <div className="mt-0.5 text-[12.5px] text-[var(--text-tertiary)]">
+                <div
+                  style={{ fontSize: 12.5, color: "var(--text-tertiary)", marginTop: 3 }}
+                >
                   {s.description}
                 </div>
               </div>
@@ -158,22 +276,25 @@ export function CatalogAuditStep({ suggestions, onNext }: CatalogAuditStepProps)
       </div>
 
       {error && (
-        <p className="text-[13px] text-[var(--danger)]" role="alert">{error}</p>
+        <p style={{ fontSize: 13, color: "var(--danger)" }} role="alert">
+          {error}
+        </p>
       )}
 
-      <div className="flex items-center justify-between">
-        <span className="text-[12px] text-[var(--text-tertiary)]">
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 4 }}>
+        <span style={{ fontSize: 12, color: "var(--text-tertiary)" }}>
           {picked.size} of {suggestions.length} selected
         </span>
         <Button
-          variant="workflow"
+          variant="primary"
+          accent="workflow"
+          icon="ArrowRight"
           size="lg"
           onClick={handleBuild}
           disabled={picked.size === 0 || saving}
-          aria-busy={saving}
+          aria-label={saving ? "Building workflows" : undefined}
         >
           {saving ? "Building…" : `Build these${picked.size > 0 ? ` (${picked.size})` : ""}`}
-          <ArrowRight className="h-4 w-4" aria-hidden="true" />
         </Button>
       </div>
     </div>
