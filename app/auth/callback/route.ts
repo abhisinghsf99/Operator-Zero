@@ -8,6 +8,8 @@
  *   2. Calls supabase.auth.exchangeCodeForSession(code) — server-side PKCE exchange.
  *   3. Validates the `next` parameter (MUST be a same-origin relative path).
  *   4. Redirects to the validated `next` path (default: /app/home).
+ *   5. (Phase 4) Writes a session registry row (recordSession) and cancels any pending
+ *      account deletion (D-09 grace cancel).
  *
  * SECURITY — T-1-04-04 (Open Redirect):
  *   The `next` parameter is user-controlled and MUST be validated before redirect.
@@ -18,10 +20,16 @@
  * SECURITY — T-1-04-03 (OAuth CSRF):
  *   Supabase's PKCE flow (exchangeCodeForSession) handles state verification internally.
  *   We do not need to hand-roll state parameter validation.
+ *
+ * PHASE 4 (D-10):
+ *   recordSession is called AFTER successful exchangeCodeForSession (not in middleware).
+ *   T-4-04-06: UA/IP stored as display labels only — never used as a trust decision.
  */
 import { createClient } from "@/lib/auth/server";
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
+import { recordSession, cancelDeletionIfPending } from "@/lib/auth/session-registry";
+import { inngest } from "@/lib/inngest/client";
 
 /** Default redirect target when `next` is absent or invalid. */
 const DEFAULT_NEXT = "/app/home";
@@ -96,6 +104,33 @@ export async function GET(request: NextRequest) {
       // Exchange failed — redirect to login with an error indicator.
       // Do not expose the error detail in the URL (may contain sensitive tokens).
       return NextResponse.redirect(`${origin}/login?error=auth_callback_error`);
+    }
+
+    // ── Phase 4: Session registry + D-09 grace cancel ─────────────────────────
+    // Record the session and cancel any pending deletion.
+    // Non-fatal: errors here must NOT block the login redirect.
+    try {
+      const { data: claimsData } = await supabase.auth.getClaims();
+      const userId = claimsData?.claims?.sub;
+      if (userId) {
+        const sessionId = (claimsData?.claims as Record<string, unknown> | null)?.["session_id"] as string | null ?? null;
+        // A4: coarse geo from Vercel header — no third-party API call
+        await recordSession(userId, {
+          rawUa: request.headers.get("user-agent"),
+          ip: request.headers.get("x-forwarded-for"),
+          countryCode: request.headers.get("x-vercel-ip-country"),
+          supabaseSessionId: sessionId,
+        });
+        // D-09: cancel pending deletion if user signed in during grace period
+        await cancelDeletionIfPending(userId, inngest);
+      }
+    } catch (sessionErr) {
+      // Log but do not block — session registry failure is not a login blocker
+      console.error(JSON.stringify({
+        level: "warn",
+        event: "auth.callback.session_registry_failed",
+        error: String(sessionErr),
+      }));
     }
 
     // Session established — redirect to the validated next path.
