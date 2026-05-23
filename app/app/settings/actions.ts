@@ -44,7 +44,7 @@
 import { createClient } from "@/lib/auth/server";
 import { withUserRls, integrations } from "@/lib/db";
 import { serviceDb } from "@/lib/db/client";
-import { eq, and, isNull, isNotNull, inArray } from "drizzle-orm";
+import { eq, and, isNull, inArray, desc } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import {
@@ -901,7 +901,7 @@ export async function getLatestExport(userId: string): Promise<{
     })
     .from(userExports)
     .where(eq(userExports.user_id, userId))
-    .orderBy(userExports.created_at)
+    .orderBy(desc(userExports.created_at))   // CR-03: descending — most recent first
     .limit(1);
 
   return row ?? null;
