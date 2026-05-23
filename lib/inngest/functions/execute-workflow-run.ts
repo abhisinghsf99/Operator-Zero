@@ -44,11 +44,13 @@ import {
   workflowRuns,
   approvals,
   messages,
+  autonomyThresholds,
 } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import { writeActivity } from "@/lib/workflows/activity";
 import { createApproval, resolveApprovalRow } from "@/lib/workflows/approvals";
 import { runWorkflowStep } from "@/lib/agent/runtime";
+import { getEffectiveAutomationLevel } from "@/lib/workflows/autonomy";
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
@@ -205,8 +207,38 @@ export const executeWorkflowRun = inngest.createFunction(
         });
       });
 
+      // ── Autonomy override gate (D-07b, Phase 4 — T-4-04-01/02) ─────────────
+      // Read per-action overrides from autonomy_thresholds (serviceDb — bypasses RLS;
+      // explicit user_id filter is REQUIRED here — T-2-07-04).
+      //
+      // D-06: overrides can ONLY add friction (never loosen).
+      //   levelOrder: L1=1, L2=2, L3=3 — lower number = more restrictive.
+      //   effectiveAutomationLevel = override ONLY when levelOrder[override] <
+      //   levelOrder[workflow.automation_level]; otherwise keep workflow level.
+      //   → L3 workflow + L2 override → effective L2 (approval required)
+      //   → L2 workflow + L3 override → stays L2 (cannot be loosened)
+      //
+      // A3 from RESEARCH.md: gate lives here in the engine, NOT in dispatchTool.
+      const effectiveAutomationLevel = await step.run(
+        `compute-effective-level-${i}-${workflowStep.id}`,
+        async () => {
+          const [thresholdRow] = await serviceDb
+            .select()
+            .from(autonomyThresholds)
+            .where(eq(autonomyThresholds.user_id, userId))
+            .limit(1);
+
+          const overrides = (thresholdRow?.per_action_overrides ?? {}) as Record<string, string>;
+          const overrideLevel = overrides[workflowStep.tool];
+
+          return getEffectiveAutomationLevel(workflow.automation_level, overrideLevel);
+        }
+      );
+
       // ── L2: Requires approval — pause + waitForEvent ───────────────────────
-      if (workflow.automation_level === "L2" && stepResult.requiresApproval) {
+      // Uses effectiveAutomationLevel (not raw workflow.automation_level) so an L2
+      // override on an L3 workflow's tool routes through the approval branch (D-07b).
+      if (effectiveAutomationLevel === "L2" && stepResult.requiresApproval) {
         // Write activity entry BEFORE creating the approval (WF-06, T-2-07-05)
         await step.run(
           `write-activity-pre-approval-${i}-${workflowStep.id}`,
@@ -511,7 +543,7 @@ export const executeWorkflowRun = inngest.createFunction(
             action_type: workflowStep.tool,
             summary: `Executing step: ${workflowStep.name}`,
             result: "success",
-            automation_level: workflow.automation_level as "L1" | "L2" | "L3",
+            automation_level: effectiveAutomationLevel as "L1" | "L2" | "L3",
             workflow_id: workflowId,
           });
         }

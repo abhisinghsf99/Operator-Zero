@@ -5,18 +5,23 @@
  * Server Actions for the Settings surface.
  *
  * Exports:
- *   disconnectIntegration(provider)   — delete integration + clear mirror data (T-2-08-05)
- *   saveBrandVoice(markdown)          — encrypt + persist brand voice (SET-02, T-4-03-01)
- *   getBrandVoice(userId)             — decrypt with legacy-plaintext fallback (SET-02, A2)
- *   regenerateBrandVoice()            — return AI-generated draft only, no DB write (SET-02, T-4-03-04)
- *   addMemoryItem(content, category)  — store new memory item (SET-04)
- *   editMemoryItem(id, content)       — update memory item content (SET-04)
- *   deleteMemoryItem(id)              — soft-delete memory item (SET-04)
- *   undoDeleteMemoryItem(id)          — restore soft-deleted item (SET-04)
- *   getMemoryItems(userId)            — list all non-deleted items for user (SET-04)
- *   updateProfile(data)               — update display_name / avatar_url (SET-05)
- *   updateEmail(email)                — update auth email via supabase.auth.updateUser (SET-05)
- *   updatePassword(password)          — update auth password via supabase.auth.updateUser (SET-05)
+ *   disconnectIntegration(provider)         — delete integration + clear mirror data (T-2-08-05)
+ *   saveBrandVoice(markdown)                — encrypt + persist brand voice (SET-02, T-4-03-01)
+ *   getBrandVoice(userId)                   — decrypt with legacy-plaintext fallback (SET-02, A2)
+ *   regenerateBrandVoice()                  — return AI-generated draft only, no DB write (SET-02, T-4-03-04)
+ *   addMemoryItem(content, category)        — store new memory item (SET-04)
+ *   editMemoryItem(id, content)             — update memory item content (SET-04)
+ *   deleteMemoryItem(id)                    — soft-delete memory item (SET-04)
+ *   undoDeleteMemoryItem(id)                — restore soft-deleted item (SET-04)
+ *   getMemoryItems(userId)                  — list all non-deleted items for user (SET-04)
+ *   updateProfile(data)                     — update display_name / avatar_url (SET-05)
+ *   updateEmail(email)                      — update auth email via supabase.auth.updateUser (SET-05)
+ *   updatePassword(password)                — update auth password via supabase.auth.updateUser (SET-05)
+ *   saveAutonomyThresholds(level, overrides)— persist default level + curated overrides (SET-03, D-05/D-06)
+ *   getAutonomyThresholds(userId)           — load autonomy thresholds for a user (SET-03)
+ *   revokeSession(sessionId)               — mark session revoked_at + Supabase signOut (AUTH-04)
+ *   signOutEverywhere()                    — revoke all sessions + Supabase global signOut (AUTH-05)
+ *   listSessions(userId)                   — list non-revoked sessions (AUTH-04)
  *
  * SECURITY:
  *   - user_id ALWAYS from getClaims().sub — never from client input (T-4-03-02)
@@ -33,11 +38,13 @@
  *   T-4-03-03: XSS via markdown — react-markdown without rehype-raw in UI (enforced in component)
  *   T-4-03-04: silent overwrite — regenerateBrandVoice returns draft only
  *   T-4-03-05: memory category injection — category restricted to enum in Zod
+ *   T-4-04-03: cross-tenant session revoke — listSessions/revokeSession filter by user_id
+ *   T-4-04-05: injected override key (non-curated tool) — Zod restricts keys to D-05 set
  */
 import { createClient } from "@/lib/auth/server";
 import { withUserRls, integrations } from "@/lib/db";
 import { serviceDb } from "@/lib/db/client";
-import { eq, and, isNull } from "drizzle-orm";
+import { eq, and, isNull, isNotNull } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import {
@@ -54,6 +61,8 @@ import {
   brandVoiceSamples,
   memoryItems,
   userProfiles,
+  autonomyThresholds,
+  userSessions,
 } from "@/lib/db/schema";
 import { encryptToken, decryptToken } from "@/lib/integrations/crypto";
 import {
@@ -61,7 +70,9 @@ import {
   updateMemoryItem,
   softDeleteMemoryItem,
 } from "@/lib/agent/memory";
+import { revokeSession as registryRevokeSession, signOutEverywhere as registrySignOutEverywhere } from "@/lib/auth/session-registry";
 import Anthropic from "@anthropic-ai/sdk";
+import { CURATED_OVERRIDE_TOOLS } from "@/lib/workflows/autonomy";
 
 // ─── Schemas ──────────────────────────────────────────────────────────────────
 
@@ -105,6 +116,23 @@ const UpdateEmailSchema = z.object({
 
 const UpdatePasswordSchema = z.object({
   password: z.string().min(8, "Password must be at least 8 characters."),
+});
+
+// T-4-04-05: restrict override keys to the D-05 curated tool set
+const AutomationLevelEnum = z.enum(["L1", "L2", "L3"]);
+
+// Zod enum requires a mutable tuple with at least one element — cast via unknown
+const curatedToolsTuple = [...CURATED_OVERRIDE_TOOLS] as unknown as [string, ...string[]];
+
+const SaveAutonomySchema = z.object({
+  defaultLevel: AutomationLevelEnum,
+  overrides: z
+    .record(z.enum(curatedToolsTuple), AutomationLevelEnum)
+    .default({}),
+});
+
+const RevokeSessionSchema = z.object({
+  sessionId: z.string().uuid("Invalid session ID"),
 });
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -624,4 +652,176 @@ export async function updatePassword(
   }
 
   revalidatePath("/app/settings");
+}
+
+// ─── Autonomy Thresholds ──────────────────────────────────────────────────────
+
+/**
+ * saveAutonomyThresholds — persist global default automation level and curated
+ * per-action overrides for the authenticated user.
+ *
+ * D-05: overrides are restricted to the curated tool set (price, status,
+ *       redirects, inventory, send-email, page-content) — Zod enforces keys.
+ * D-06: override one-directionality is enforced in the engine (execute-workflow-run.ts),
+ *       not here. The UI copy makes this clear ("overrides only add friction").
+ * D-07: default_level applies to NEW workflows only — this action does NOT
+ *       retroactively update existing workflows' automation_level columns.
+ *
+ * @param defaultLevel - 'L1' | 'L2' | 'L3'
+ * @param overrides    - { [curatedToolName]: 'L1' | 'L2' | 'L3' }
+ */
+export async function saveAutonomyThresholds(
+  defaultLevel: string,
+  overrides: Record<string, string>
+): Promise<{ error: string } | void> {
+  // 1. Validate inputs (T-4-04-05: curated key restriction enforced by Zod)
+  const parsed = SaveAutonomySchema.safeParse({ defaultLevel, overrides });
+  if (!parsed.success) {
+    return { error: parsed.error.errors[0]?.message ?? "Invalid input." };
+  }
+
+  // 2. Get authenticated user claims (T-4-04-03)
+  const { claims, error } = await getValidatedClaims();
+  if (error || !claims) {
+    return { error: error ?? "Not authenticated." };
+  }
+  const userId = claims.sub as string;
+
+  // 3. Upsert autonomy_thresholds row — apply to this user's global defaults.
+  //    D-07: does NOT mutate existing workflows' automation_level columns.
+  await serviceDb
+    .insert(autonomyThresholds)
+    .values({
+      user_id: userId,
+      default_level: parsed.data.defaultLevel,
+      per_action_overrides: parsed.data.overrides,
+      updated_at: new Date(),
+    })
+    .onConflictDoUpdate({
+      target: autonomyThresholds.user_id,
+      set: {
+        default_level: parsed.data.defaultLevel,
+        per_action_overrides: parsed.data.overrides,
+        updated_at: new Date(),
+      },
+    });
+
+  revalidatePath("/app/settings");
+}
+
+/**
+ * getAutonomyThresholds — load autonomy thresholds for a user.
+ *
+ * Returns null if no row exists (user has never saved custom thresholds).
+ * Callers should fall back to { default_level: "L2", per_action_overrides: {} }.
+ *
+ * @param userId - the authenticated user's UUID
+ */
+export async function getAutonomyThresholds(
+  userId: string
+): Promise<{ default_level: string; per_action_overrides: Record<string, string> } | null> {
+  const [row] = await serviceDb
+    .select()
+    .from(autonomyThresholds)
+    .where(eq(autonomyThresholds.user_id, userId))
+    .limit(1);
+
+  if (!row) return null;
+
+  return {
+    default_level: row.default_level,
+    per_action_overrides: (row.per_action_overrides ?? {}) as Record<string, string>,
+  };
+}
+
+// ─── Session Management ───────────────────────────────────────────────────────
+
+/**
+ * revokeSession — mark a specific session revoked and call Supabase Auth signOut.
+ *
+ * Ownership re-checked: the sessionId + userId must match (T-4-04-03).
+ * Note: JWT access tokens remain valid for up to ~15 min after revocation
+ * (Supabase documented window). UI surfaces this caveat honestly (D-10).
+ *
+ * @param sessionId - the user_sessions.id UUID to revoke
+ */
+export async function revokeSession(
+  sessionId: string
+): Promise<{ success: true } | { error: string }> {
+  // 1. Validate input
+  const parsed = RevokeSessionSchema.safeParse({ sessionId });
+  if (!parsed.success) {
+    return { error: parsed.error.errors[0]?.message ?? "Invalid session ID." };
+  }
+
+  // 2. Get authenticated user claims (T-4-04-03)
+  const { claims, error } = await getValidatedClaims();
+  if (error || !claims) {
+    return { error: error ?? "Not authenticated." };
+  }
+  const userId = claims.sub as string;
+
+  // 3. Delegate to session-registry helper (ownership re-check inside)
+  const result = await registryRevokeSession(userId, parsed.data.sessionId);
+  if (!result.success) {
+    return { error: result.error };
+  }
+
+  revalidatePath("/app/settings");
+  return { success: true };
+}
+
+/**
+ * signOutEverywhere — revoke all sessions for the authenticated user.
+ *
+ * Marks all non-revoked rows with revoked_at and calls supabase.auth.signOut
+ * with scope 'global'. JWT window honesty: up to ~15 min for other devices
+ * to fully expire.
+ */
+export async function signOutEverywhere(): Promise<{ success: true } | { error: string }> {
+  // 1. Get authenticated user claims (T-4-04-03)
+  const { claims, error } = await getValidatedClaims();
+  if (error || !claims) {
+    return { error: error ?? "Not authenticated." };
+  }
+  const userId = claims.sub as string;
+
+  // 2. Delegate to session-registry helper
+  const result = await registrySignOutEverywhere(userId);
+  if (!result.success) {
+    return { error: result.error };
+  }
+
+  // No revalidatePath — user will be signed out and redirected to /login
+  return { success: true };
+}
+
+/**
+ * listSessions — return non-revoked user_sessions rows for the settings page.
+ *
+ * Ordered by last_seen_at descending (most recently active first).
+ * T-4-04-03: filtered by userId only.
+ *
+ * @param userId - the authenticated user's UUID
+ */
+export async function listSessions(
+  userId: string
+): Promise<Array<{
+  id: string;
+  device_label: string;
+  ip_geo_label: string | null;
+  last_seen_at: Date;
+  created_at: Date;
+}>> {
+  return serviceDb
+    .select({
+      id: userSessions.id,
+      device_label: userSessions.device_label,
+      ip_geo_label: userSessions.ip_geo_label,
+      last_seen_at: userSessions.last_seen_at,
+      created_at: userSessions.created_at,
+    })
+    .from(userSessions)
+    .where(and(eq(userSessions.user_id, userId), isNull(userSessions.revoked_at)))
+    .orderBy(userSessions.last_seen_at);
 }
