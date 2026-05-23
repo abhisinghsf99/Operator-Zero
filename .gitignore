@@ -20,3 +20,4 @@ build/
 Docs/
 Operator Zero Design Files/
 supabase/.temp/
+.vercel
