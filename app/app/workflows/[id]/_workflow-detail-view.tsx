@@ -5,11 +5,11 @@
  * Workflow Detail client view shell.
  *
  * Layout mirrors surface-workflow-detail.jsx:
- *   - Breadcrumb → My Workflows
- *   - Header: WorkflowDetailHeader (inline-editable name/description + level + actions)
- *   - 5-stat bar
- *   - Left: WorkflowDiagram
- *   - Right: HistoricalRunsPanel + VersionHistoryPanel
+ *   - Breadcrumb → My Workflows (ChevronLeft icon)
+ *   - Header: WorkflowDetailHeader (inline-editable name/description + LevelToggle + actions)
+ *   - 5-stat bar (Automation stat shows LevelToggle read-only display)
+ *   - Left: WorkflowDiagram in Card with SectionHeader
+ *   - Right: HistoricalRunsPanel + VersionHistoryPanel (bg-subtle panel)
  *
  * D-01: Inline editable name/description via WorkflowDetailHeader
  * D-02: Schedule picker in header for trigger editing
@@ -25,6 +25,13 @@ import { WorkflowDetailHeader } from "@/components/workflows/workflow-detail-hea
 import { WorkflowDiagram } from "@/components/workflows/workflow-diagram";
 import { HistoricalRunsPanel } from "@/components/workflows/historical-runs-panel";
 import { VersionHistoryPanel } from "@/components/workflows/version-history-panel";
+import {
+  SectionHeader,
+  Card,
+  LevelToggle,
+  type Level,
+} from "@/components/design/primitives";
+import { Icons } from "@/components/design/icons";
 import type {
   WorkflowDetailData,
   WorkflowVersionData,
@@ -73,34 +80,6 @@ function StatBlock({
         {value}
       </span>
     </div>
-  );
-}
-
-// ─── StatusDot ────────────────────────────────────────────────────────────────
-
-function StatusDot({ status }: { status: string }) {
-  const colorMap: Record<string, string> = {
-    active: "var(--success)",
-    running: "var(--acc-workflow)",
-    paused: "var(--text-faint)",
-    draft: "var(--text-faint)",
-    failed: "var(--danger)",
-  };
-  const pulse = status === "active" || status === "running";
-  return (
-    <span
-      style={{
-        display: "inline-block",
-        width: 7,
-        height: 7,
-        borderRadius: "50%",
-        background: colorMap[status] ?? "var(--text-faint)",
-        flexShrink: 0,
-        animation: pulse ? "glow 2.4s ease-in-out infinite" : "none",
-      }}
-      aria-label={`Status: ${status}`}
-      role="img"
-    />
   );
 }
 
@@ -156,7 +135,7 @@ export function WorkflowDetailView({
       style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "auto" }}
       data-testid="workflow-detail-view"
     >
-      {/* Breadcrumb */}
+      {/* Breadcrumb — ChevronLeft icon matching design */}
       <div style={{ padding: "20px 40px 0", display: "flex", alignItems: "center", gap: 8 }}>
         <Link
           href="/app/workflows"
@@ -170,22 +149,12 @@ export function WorkflowDetailView({
           }}
           aria-label="Back to My Workflows"
         >
-          <svg
-            width="13"
-            height="13"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            aria-hidden="true"
-          >
-            <polyline points="15 18 9 12 15 6" />
-          </svg>
+          <Icons.ChevronLeft size={13} aria-hidden />
           My Workflows
         </Link>
       </div>
 
-      {/* Header: inline-editable name/description, level toggle, actions */}
+      {/* Header: inline-editable name/description, LevelToggle, actions */}
       <WorkflowDetailHeader
         workflow={workflow}
         onWorkflowUpdate={handleWorkflowUpdate}
@@ -204,7 +173,15 @@ export function WorkflowDetailView({
         role="region"
         aria-label="Workflow statistics"
       >
-        <StatBlock label="Automation" value={workflow.automation_level} />
+        <StatBlock
+          label="Automation"
+          value={
+            <LevelToggle
+              value={workflow.automation_level as Level}
+              size="sm"
+            />
+          }
+        />
         <StatBlock label="Trigger" value={workflow.trigger_type} mono />
         <StatBlock label="Last run" value={formatRelativeTime(lastRun)} mono />
         <StatBlock label="Total runs" value={totalRuns.toString()} mono />
@@ -231,53 +208,44 @@ export function WorkflowDetailView({
       >
         {/* Left: workflow definition diagram */}
         <div style={{ padding: "32px 40px 60px", overflow: "auto" }}>
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              marginBottom: 16,
-            }}
+          <SectionHeader
+            right={
+              <Link
+                href={`/app/chat?workflow=${workflow.id}`}
+                style={{ textDecoration: "none" }}
+                tabIndex={0}
+              >
+                {/* Render as a ghost-style button using design token inline styles */}
+                <span
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 6,
+                    height: 28,
+                    padding: "0 10px",
+                    fontSize: 12.5,
+                    borderRadius: "var(--r-sm)",
+                    color: "var(--text-secondary)",
+                    background: "transparent",
+                    border: "0.5px solid transparent",
+                    fontFamily: "inherit",
+                    fontWeight: 500,
+                    letterSpacing: "-0.005em",
+                    cursor: "pointer",
+                    transition: "background 0.12s, color 0.12s",
+                  }}
+                >
+                  <Icons.Chat size={13} aria-hidden />
+                  Edit in chat
+                </span>
+              </Link>
+            }
           >
-            <h2
-              style={{
-                fontSize: 11,
-                fontFamily: "var(--font-mono)",
-                color: "var(--text-tertiary)",
-                textTransform: "uppercase" as const,
-                letterSpacing: "0.06em",
-                margin: 0,
-              }}
-            >
-              Definition
-            </h2>
-            <Link
-              href={`/app/chat?workflow=${workflow.id}`}
-              style={{
-                display: "inline-flex",
-                alignItems: "center",
-                gap: 6,
-                fontSize: 12.5,
-                color: "var(--text-secondary)",
-                padding: "5px 10px",
-                borderRadius: "var(--r-sm)",
-                textDecoration: "none",
-                border: "0.5px solid var(--border)",
-              }}
-            >
-              Edit in chat
-            </Link>
-          </div>
-          <div
-            style={{
-              background: "var(--bg-elevated)",
-              border: "0.5px solid var(--border)",
-              borderRadius: "var(--r-lg)",
-              padding: 24,
-            }}
-          >
+            Definition
+          </SectionHeader>
+          <Card padding={24}>
             <WorkflowDiagram steps={steps} workflowName={workflow.name} />
-          </div>
+          </Card>
         </div>
 
         {/* Right: historical runs + version history */}

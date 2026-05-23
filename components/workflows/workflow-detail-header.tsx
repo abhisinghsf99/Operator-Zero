@@ -6,10 +6,11 @@
  *
  * Features (D-01/D-03/D-06/WF-11/WF-12):
  *   - InlineEditableText for name (large display heading) + description
- *   - Automation level selector with L3 one-time confirm dialog (D-03)
- *   - "Open in Chat" → creates a scoped thread with context_workflow_id = workflowId (D-06/WF-12)
- *   - "Run Now" button → opens RunNowDialog (D-05/WF-13)
- *   - Pause/Resume toggle button
+ *   - LevelToggle (design primitive) with L3 one-time confirm dialog (D-03)
+ *   - StatusDot (design primitive) for status indicator
+ *   - "Open in chat" ghost Button (design primitive, Chat icon) — creates a scoped thread (D-06/WF-12)
+ *   - Pause/Resume Button (design primitive) — primary when paused, secondary when active
+ *   - Run Now IconButton for explicit trigger (D-05/WF-13)
  *   - Schedule picker link (trigger_type / trigger_config inline editing per D-02)
  *   - Each edit calls editWorkflow → version increments (D-03)
  *
@@ -38,7 +39,14 @@ import {
   DialogFooter,
   DialogClose,
 } from "@/components/ui/dialog";
-import { Button } from "@/components/ui/button";
+import { Button as ShadcnButton } from "@/components/ui/button";
+import {
+  Button,
+  LevelToggle,
+  StatusDot,
+  type Level,
+} from "@/components/design/primitives";
+import { Icons } from "@/components/design/icons";
 import type { WorkflowDetailData, WorkflowRunData } from "@/app/app/workflows/[id]/page";
 
 // ─── Props ────────────────────────────────────────────────────────────────────
@@ -56,29 +64,24 @@ interface WorkflowDetailHeaderProps {
   onRunsUpdated: (newRun: WorkflowRunData) => void;
 }
 
-// ─── AutomationLevel toggle with L3 confirm ───────────────────────────────────
+// ─── LevelToggleWithConfirm ───────────────────────────────────────────────────
+// Wraps the design LevelToggle primitive with L3 one-time confirm dialog (D-03)
 
-type AutomationLevel = "L1" | "L2" | "L3";
-
-const LEVEL_LABELS: Record<AutomationLevel, string> = {
-  L1: "Manual (L1)",
-  L2: "Approval-gated (L2)",
-  L3: "Autonomous (L3)",
-};
-
-interface LevelSelectorProps {
+interface LevelToggleWithConfirmProps {
   workflowId: string;
-  currentLevel: AutomationLevel;
-  onLevelChanged: (level: AutomationLevel) => void;
+  currentLevel: Level;
+  onLevelChanged: (level: Level) => void;
 }
 
-function LevelSelector({ workflowId, currentLevel, onLevelChanged }: LevelSelectorProps) {
+function LevelToggleWithConfirm({
+  workflowId,
+  currentLevel,
+  onLevelChanged,
+}: LevelToggleWithConfirmProps) {
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [isPending, startTransition] = useTransition();
 
-  const levels: AutomationLevel[] = ["L1", "L2", "L3"];
-
-  function handleLevelClick(level: AutomationLevel) {
+  function handleLevelChange(level: Level) {
     if (level === currentLevel || isPending) return;
     if (level === "L3") {
       // L3 requires explicit confirmation (D-03)
@@ -88,7 +91,7 @@ function LevelSelector({ workflowId, currentLevel, onLevelChanged }: LevelSelect
     }
   }
 
-  function applyLevel(level: AutomationLevel) {
+  function applyLevel(level: Level) {
     startTransition(async () => {
       const result = await editWorkflow(workflowId, { automation_level: level });
       if ("error" in result) {
@@ -111,43 +114,13 @@ function LevelSelector({ workflowId, currentLevel, onLevelChanged }: LevelSelect
   return (
     <>
       <div
-        role="group"
+        style={{ opacity: isPending ? 0.6 : 1, transition: "opacity 0.15s" }}
         aria-label="Automation level"
-        style={{ display: "flex", gap: 4 }}
       >
-        {levels.map((level) => (
-          <button
-            key={level}
-            onClick={() => handleLevelClick(level)}
-            disabled={isPending}
-            aria-pressed={currentLevel === level}
-            aria-label={`Set automation level to ${LEVEL_LABELS[level]}`}
-            style={{
-              padding: "3px 9px",
-              borderRadius: "var(--r-xs)",
-              fontSize: 11.5,
-              fontFamily: "var(--font-mono)",
-              border: "0.5px solid",
-              borderColor:
-                currentLevel === level
-                  ? "var(--acc-workflow-ink)"
-                  : "var(--border)",
-              background:
-                currentLevel === level
-                  ? "var(--acc-workflow)"
-                  : "transparent",
-              color:
-                currentLevel === level
-                  ? "var(--text)"
-                  : "var(--text-tertiary)",
-              cursor: isPending || currentLevel === level ? "default" : "pointer",
-              opacity: isPending ? 0.6 : 1,
-              transition: "background 0.15s, border-color 0.15s",
-            }}
-          >
-            {level}
-          </button>
-        ))}
+        <LevelToggle
+          value={currentLevel}
+          onChange={handleLevelChange}
+        />
       </div>
 
       {/* L3 one-time confirm dialog */}
@@ -163,18 +136,18 @@ function LevelSelector({ workflowId, currentLevel, onLevelChanged }: LevelSelect
           </DialogHeader>
           <DialogFooter>
             <DialogClose asChild>
-              <Button variant="secondary" size="sm">
+              <ShadcnButton variant="secondary" size="sm">
                 Cancel
-              </Button>
+              </ShadcnButton>
             </DialogClose>
-            <Button
+            <ShadcnButton
               variant="default"
               size="sm"
               onClick={handleConfirmL3}
               aria-label="Confirm enable L3 autonomous mode"
             >
               Enable L3
-            </Button>
+            </ShadcnButton>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -246,6 +219,8 @@ export function WorkflowDetailHeader({
       ? "Paused"
       : workflow.status;
 
+  const isPaused = workflow.status === "paused";
+
   return (
     <header
       style={{
@@ -262,27 +237,7 @@ export function WorkflowDetailHeader({
           marginBottom: 6,
         }}
       >
-        <span
-          style={{
-            width: 7,
-            height: 7,
-            borderRadius: "50%",
-            background:
-              workflow.status === "active"
-                ? "var(--success)"
-                : workflow.status === "paused"
-                ? "var(--text-faint)"
-                : "var(--text-faint)",
-            display: "inline-block",
-            flexShrink: 0,
-            animation:
-              workflow.status === "active"
-                ? "glow 2.4s ease-in-out infinite"
-                : "none",
-          }}
-          aria-label={`Status: ${statusLabel}`}
-          role="img"
-        />
+        <StatusDot status={workflow.status} />
         <span
           style={{
             fontSize: 12,
@@ -334,11 +289,11 @@ export function WorkflowDetailHeader({
             }}
           />
 
-          {/* Level selector (D-03) */}
+          {/* Level toggle (D-03) — design primitive with L3 confirm */}
           <div style={{ marginTop: 12 }}>
-            <LevelSelector
+            <LevelToggleWithConfirm
               workflowId={workflow.id}
-              currentLevel={workflow.automation_level as "L1" | "L2" | "L3"}
+              currentLevel={workflow.automation_level as Level}
               onLevelChanged={(level) => onWorkflowUpdate({ automation_level: level })}
             />
           </div>
@@ -359,63 +314,48 @@ export function WorkflowDetailHeader({
               padding: "2px 0",
             }}
           >
-            <svg
-              width="12"
-              height="12"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              aria-hidden="true"
-            >
-              <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
-              <line x1="16" y1="2" x2="16" y2="6" />
-              <line x1="8" y1="2" x2="8" y2="6" />
-              <line x1="3" y1="10" x2="21" y2="10" />
-            </svg>
+            <Icons.Calendar size={12} aria-hidden />
             {workflow.trigger_type}
           </button>
         </div>
 
-        {/* Action buttons */}
+        {/* Action buttons — matching design: Open in chat (ghost) + Pause/Resume */}
         <div
           style={{ display: "flex", gap: 8, alignItems: "center", flexShrink: 0 }}
         >
-          {/* Open in Chat (D-06/WF-12) — sets context_workflow_id */}
+          {/* Open in Chat (D-06/WF-12) — ghost variant with Chat icon */}
           <Button
-            variant="secondary"
-            size="sm"
+            variant="ghost"
+            icon="Chat"
             onClick={handleOpenInChat}
             aria-label="Open workflow in Chat"
-            data-context-workflow-id={workflow.id}
           >
-            Open in Chat
+            Open in chat
           </Button>
 
-          {/* Run Now button (D-05/WF-13) */}
+          {/* Run Now button (D-05/WF-13) — secondary */}
           <Button
-            variant="default"
-            size="sm"
+            variant="secondary"
+            icon="Play"
             onClick={() => setRunNowOpen(true)}
             aria-label="Run this workflow now"
           >
             Run Now
           </Button>
 
-          {/* Pause/Resume */}
+          {/* Pause/Resume — primary when paused (to resume), secondary when active */}
           <Button
-            variant={workflow.status === "paused" ? "default" : "secondary"}
-            size="sm"
+            variant={isPaused ? "primary" : "secondary"}
+            icon={isPaused ? "Play" : "Pause"}
             onClick={handleTogglePause}
             disabled={isPausingTransition}
-            aria-label={workflow.status === "paused" ? "Resume workflow" : "Pause workflow"}
-            aria-busy={isPausingTransition}
+            aria-label={isPaused ? "Resume workflow" : "Pause workflow"}
           >
             {isPausingTransition
-              ? workflow.status === "paused"
+              ? isPaused
                 ? "Resuming…"
                 : "Pausing…"
-              : workflow.status === "paused"
+              : isPaused
               ? "Resume"
               : "Pause"}
           </Button>
