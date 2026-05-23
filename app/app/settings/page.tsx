@@ -2,7 +2,7 @@
  * app/app/settings/page.tsx
  * Settings page — Server Component.
  *
- * Renders seven Settings sections:
+ * Renders eight Settings sections:
  *   - Connections (SET-01, INTEG-06): Shopify + Gmail health badges
  *   - Brand Voice (SET-02): markdown editor + preview + encrypted save + regenerate-with-confirm
  *   - Autonomy Thresholds (SET-03): default level + curated per-action overrides (D-05/D-06)
@@ -10,12 +10,15 @@
  *   - Profile (SET-05): name, email, password, avatar
  *   - Sessions (AUTH-04/AUTH-05): active sessions list + revoke + sign-out-everywhere (D-10)
  *   - Notifications (SET-08): badge explainer + coming-soon placeholder (no functional toggles)
+ *   - Danger Zone (SET-06/07): export data + delete account (typed confirm, run-gate, cancellable)
  *
  * SECURITY:
  *   T-2-08-04: Reads integration data via withUserRls (cross-user protection)
  *   T-2-08-05: Disconnect requires confirm dialog (enforced in ConnectionRow client component)
  *   T-4-03-01: getBrandVoice decrypts with legacy-plaintext fallback (A2)
  *   T-4-04-03: listSessions filtered by userId — no cross-user session exposure
+ *   T-4-05-01: getLatestExport filtered by userId — no cross-user export exposure
+ *   T-4-05-02: signed_url from user_exports (24h) — never a public object URL
  *
  * WCAG 2.1 AA:
  *   - Status badges have text labels (not color alone)
@@ -33,11 +36,13 @@ import { MemorySection } from "@/app/app/settings/_memory";
 import { ProfileSection } from "@/app/app/settings/_profile";
 import { SessionsSection } from "@/app/app/settings/_sessions";
 import { NotificationsSection } from "@/app/app/settings/_notifications";
+import { DangerSection } from "@/app/app/settings/_danger";
 import {
   getBrandVoice,
   getMemoryItems,
   getAutonomyThresholds,
   listSessions,
+  getLatestExport,
 } from "@/app/app/settings/actions";
 
 export default async function SettingsPage() {
@@ -51,8 +56,8 @@ export default async function SettingsPage() {
 
   const userId = profile.user_id;
 
-  // 3. Parallel data loads — integration health + brand voice + autonomy + memory + sessions
-  const [shopifyHealth, gmailHealth, brandVoice, autonomyThresholds, memoryItemsList, sessions] =
+  // 3. Parallel data loads — integration health + brand voice + autonomy + memory + sessions + danger
+  const [shopifyHealth, gmailHealth, brandVoice, autonomyThresholds, memoryItemsList, sessions, latestExport] =
     await Promise.all([
       getIntegrationHealth(userId, "shopify"),
       getIntegrationHealth(userId, "gmail"),
@@ -60,6 +65,7 @@ export default async function SettingsPage() {
       getAutonomyThresholds(userId),      // SET-03: default level + curated overrides
       getMemoryItems(userId),
       listSessions(userId),               // AUTH-04: non-revoked session rows (T-4-04-03)
+      getLatestExport(userId),            // SET-06: most recent export job status (T-4-05-01/02)
     ]);
 
   const initialMarkdown = brandVoice?.profile_markdown ?? "";
@@ -108,6 +114,12 @@ export default async function SettingsPage() {
 
         {/* SET-08: Notifications — badge explainer + coming-soon placeholder (no functional toggles) */}
         <NotificationsSection />
+
+        {/* SET-06/07: Danger Zone — export data + delete account (typed confirm, run-gate, 7d grace) */}
+        <DangerSection
+          latestExport={latestExport}
+          deletionRequestedAt={profile.deletion_requested_at ?? null}
+        />
       </div>
     </div>
   );
