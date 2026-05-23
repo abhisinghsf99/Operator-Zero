@@ -120,7 +120,7 @@
 - [ ] **SET-04**: "What I Remember About You" lists memory items by category; user can edit inline, delete (24h reversible), or add
 - [ ] **SET-05**: Profile section edits name, email, password, and avatar
 - [x] **SET-06**: User can export all account data (workflows + history, activity, memory, brand voice) as JSON, initiated within 60s
-- [ ] **SET-07**: User can delete account (hard delete, 7-day grace, email confirmation); blocked while workflows are mid-run
+- [x] **SET-07**: User can delete account (hard delete, 7-day grace, email confirmation); blocked while workflows are mid-run
 - [ ] **SET-08**: Notifications section shows only the in-app sidebar badge + a "coming soon" placeholder (no non-functional toggles)
 
 ### Mobile & Accessibility (UX)

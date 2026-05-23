@@ -133,7 +133,7 @@ Plans:
 
 **Wave 4** *(blocked on Wave 3 completion)*
 
-- [ ] 04-05-PLAN.md — Account lifecycle: durable Export job (signed URL) + Delete/purge job (lock-now/sleep-7d/cancelOn) + Danger Zone section (wave 4)
+- [x] 04-05-PLAN.md — Account lifecycle: durable Export job (signed URL) + Delete/purge job (lock-now/sleep-7d/cancelOn) + Danger Zone section (wave 4)
 
 **Wave 5** *(blocked on Wave 4 completion)*
 
@@ -148,4 +148,4 @@ Plans:
 | 1. Infrastructure Foundation | 4/4 | Complete   | 2026-05-22 |
 | 2. Foundation — Prove the Agent | 8/8 | Complete   | 2026-05-22 |
 | 3. Ownership — The Portfolio | 4/4 | Complete   | 2026-05-22 |
-| 4. Polish — Effortless Daily Use | 4/6 | In Progress|  |
+| 4. Polish — Effortless Daily Use | 5/6 | In Progress|  |
