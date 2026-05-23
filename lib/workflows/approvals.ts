@@ -124,15 +124,24 @@ export async function resolveApprovalRow(
   path?: "inline" | "inbox",
   rejectReason?: string
 ): Promise<string | null> {
-  // Ownership check: look up the row by id + user_id
+  // Ownership check: look up the row by id + user_id + status='pending' (CR-02).
+  // Guarding on status='pending' mirrors bulkResolveApprovals and prevents
+  // double-resolution: an already-approved/rejected/expired row cannot re-fire
+  // approval.resolved and potentially resume a workflow that already completed.
   const [existing] = await serviceDb
     .select()
     .from(approvals)
-    .where(and(eq(approvals.id, approvalId), eq(approvals.user_id, userId)))
+    .where(
+      and(
+        eq(approvals.id, approvalId),
+        eq(approvals.user_id, userId),
+        eq(approvals.status, "pending")
+      )
+    )
     .limit(1);
 
   if (!existing) {
-    // Row not found or user doesn't own it
+    // Row not found, user doesn't own it, or it's already resolved/expired
     return null;
   }
 
