@@ -25,6 +25,7 @@ import {
   timestamp,
   pgPolicy,
   index,
+  unique,
 } from "drizzle-orm/pg-core";
 import { authenticatedRole } from "drizzle-orm/supabase";
 import { sql } from "drizzle-orm";
@@ -93,6 +94,15 @@ export const userSessions = pgTable(
      * Covers AUTH-04 session list query.
      */
     index("idx_user_sessions_user").on(table.user_id, table.last_seen_at),
+
+    /**
+     * Upsert target for recordSession() dedup (migration 0009). Nullable column,
+     * so Postgres permits multiple NULLs; recordSession skips the insert when the
+     * session id is null, so only non-null ids reach the unique constraint.
+     */
+    unique("user_sessions_supabase_session_id_unique").on(
+      table.supabase_session_id
+    ),
 
     /**
      * RLS policy: authenticated users can only access their own session rows.
