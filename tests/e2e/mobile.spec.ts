@@ -1,75 +1,207 @@
 /**
  * tests/e2e/mobile.spec.ts
- * Wave-0 RED scaffolds — Phase 4 Mobile parity requirements
+ * Phase 4 Mobile parity e2e tests
  *
  * Requirements covered:
  *   UX-01 — 5 core surfaces fully functional on mobile (375px-class viewport)
  *            No read-only stripping. Two-pane → drill-down (D-11).
  *
- * Turned GREEN by: 04-05 (A11y + Mobile + Keyboard + Perf pass)
+ * Turned GREEN by: 04-06 (Cross-cutting quality pass)
  *
  * Run with the mobile-chrome Playwright project (Pixel 7, 412px logical width)
- * for real mobile viewport behavior.
+ * for real mobile viewport behavior:
+ *   npx playwright test tests/e2e/mobile.spec.ts --project=mobile-chrome
  *
- * These tests are marked fixme (RED) until 04-05 ships the mobile drill-down.
+ * Environment guard: skip when NEXT_PUBLIC_SUPABASE_URL is absent.
+ *
+ * Note: Tests that require auth session (navigating /app/* surfaces) need a
+ * live Supabase stack + an authenticated browser context. Run these tests
+ * locally with NEXT_PUBLIC_SUPABASE_URL set and a running dev server.
+ * Tests that only check static markup or the login redirect work without auth.
+ *
+ * CI tolerance: All navigation tests have a 30s timeout (cold dev server start).
  */
 import { test, expect } from "@playwright/test";
 
 const HAS_LIVE_STACK = !!process.env["NEXT_PUBLIC_SUPABASE_URL"];
 
-test.describe("UX-01 — Mobile parity (two-pane drill-down)", () => {
-  // Marked fixme: RED until 04-05 ships mobile drill-down for Approvals + Settings.
+// ─── Bottom-tab parity (structural — no auth needed) ─────────────────────────
 
-  test.fixme(
-    "approvals: list visible on mobile, tapping row navigates to detail (drill-down)",
+test.describe("UX-01 — Bottom-tab structure (mobile nav)", () => {
+  test(
+    "bottom tab bar renders with all 5 core surface links",
     async ({ page }) => {
-      // TODO(04-05): D-11 — mobile shows list OR detail (not both columns)
-      // Tap an approval row → navigate to /app/approvals/[id] (detail fills full width)
+      // The login page loads without auth — bottom tabs are in the /app/* layout,
+      // so we navigate to /app/* which will redirect to /login. We check the DOM
+      // structure by navigating to login which always renders.
+      // The bottom-tabs bar is part of the /app/* shell — check via nav redirect.
+      await page.goto("/");
+
+      // The bottom tab bar is part of the /app layout — navigate to an /app/* route.
+      // Without auth, we land at /login. We verify the bottom-tabs are present when
+      // the /app/* shell is rendered (which requires auth). Skip when no live stack.
+      test.skip(!HAS_LIVE_STACK, "Requires live stack — bottom tabs are in /app/* shell");
+
+      await page.goto("/app/approvals");
+      // After auth redirect the /app/* shell renders with bottom tabs on mobile
+      const nav = page.locator("[aria-label='Mobile navigation']");
+      await expect(nav).toBeVisible();
+
+      // All 5 surfaces reachable from bottom tabs
+      const expectedHrefs = ["/app/chat", "/app/workflows", "/app/approvals", "/app/activity", "/app/settings"];
+      for (const href of expectedHrefs) {
+        const link = nav.locator(`a[href="${href}"]`);
+        await expect(link).toBeAttached();
+      }
+    }
+  );
+});
+
+// ─── Approvals drill-down (requires auth + live stack) ───────────────────────
+
+test.describe("UX-01 — Approvals two-pane drill-down on mobile", () => {
+  test(
+    "approvals: list visible on mobile at /app/approvals",
+    async ({ page }) => {
+      // Note: CI tolerance — 30s timeout for cold dev server
       test.skip(!HAS_LIVE_STACK, "Requires live stack + auth session");
       await page.goto("/app/approvals");
-      // On mobile, list should be visible
-      await expect(page.getByTestId("approvals-list")).toBeVisible();
-      // Tap first row
-      await page.getByTestId("approval-row").first().tap();
-      // Detail panel should fill full width; list should be hidden
+      // On mobile, the approvals list should be the primary view (no detail open yet)
+      const list = page.getByTestId("approvals-list");
+      // List is visible when no detail is active (mobile drill-down initial state)
+      await expect(list).toBeVisible({ timeout: 15_000 });
+    }
+  );
+
+  test(
+    "approvals: tapping a row navigates to detail (drill-down hides list)",
+    async ({ page }) => {
+      test.skip(!HAS_LIVE_STACK, "Requires live stack + auth session");
+      await page.goto("/app/approvals");
+      const row = page.getByTestId("approval-row").first();
+      await expect(row).toBeVisible({ timeout: 15_000 });
+
+      // Tap the first approval row
+      await row.tap();
+
+      // Detail panel should now be visible
       await expect(page.getByTestId("approval-detail")).toBeVisible();
+      // List panel should now be hidden on mobile (CSS: hidden when activeId is set)
       await expect(page.getByTestId("approvals-list")).not.toBeVisible();
     }
   );
 
-  test.fixme(
-    "approvals: back button on detail returns to list (focus managed)",
+  test(
+    "approvals: Back button on detail returns to list (focus managed)",
     async ({ page }) => {
-      // TODO(04-05): Back affordance — aria-label='Back to approvals list'
       test.skip(!HAS_LIVE_STACK, "Requires live stack + auth session");
       await page.goto("/app/approvals");
-      await page.getByTestId("approval-row").first().tap();
-      await page.getByLabel("Back to approvals list").tap();
+      const row = page.getByTestId("approval-row").first();
+      await expect(row).toBeVisible({ timeout: 15_000 });
+      await row.tap();
+
+      // Back button should be visible on mobile (hidden on md+)
+      const backBtn = page.getByLabel("Back to approvals list");
+      await expect(backBtn).toBeVisible();
+      await backBtn.tap();
+
+      // List should be visible again after back
       await expect(page.getByTestId("approvals-list")).toBeVisible();
+      // Detail should be hidden
+      await expect(page.getByTestId("approval-detail")).not.toBeVisible();
     }
   );
 
-  test.fixme(
-    "settings: nav sections visible on mobile; tapping section navigates to detail",
+  test(
+    "approvals: bulk action bar is touch-friendly (select mode toggle works on mobile)",
     async ({ page }) => {
-      // TODO(04-05): D-11 — settings mobile drill-down: /app/settings → list of sections
-      // Tap "Brand Voice" → detail fills full width
+      test.skip(!HAS_LIVE_STACK, "Requires live stack + auth session");
+      await page.goto("/app/approvals");
+      const toggle = page.getByTestId("select-mode-toggle");
+      await expect(toggle).toBeVisible({ timeout: 15_000 });
+
+      // Tap the select-mode toggle
+      await toggle.tap();
+      // Select a row
+      const row = page.getByTestId("approval-row").first();
+      await row.tap();
+
+      // Bulk action bar should appear
+      await expect(page.getByTestId("bulk-action-bar")).toBeVisible();
+    }
+  );
+});
+
+// ─── Settings drill-down (requires auth + live stack) ────────────────────────
+
+test.describe("UX-01 — Settings section drill-down on mobile", () => {
+  test(
+    "settings: section nav list visible on mobile at /app/settings",
+    async ({ page }) => {
       test.skip(!HAS_LIVE_STACK, "Requires live stack + auth session");
       await page.goto("/app/settings");
-      await expect(page.getByTestId("settings-nav")).toBeVisible();
-      await page.getByText("Brand Voice").tap();
-      await expect(page.getByTestId("brand-voice-section")).toBeVisible();
+      // On mobile, the section nav should be visible
+      const nav = page.getByTestId("settings-nav");
+      await expect(nav).toBeVisible({ timeout: 15_000 });
     }
   );
 
-  test.fixme(
-    "bulk action bar is touch-friendly on mobile (no hover dependency)",
+  test(
+    "settings: tapping Brand Voice section shows full-screen content",
     async ({ page }) => {
-      // TODO(04-05): D-12 — bulk select-mode toggle + action bar; touch targets ≥44px
+      test.skip(!HAS_LIVE_STACK, "Requires live stack + auth session");
+      await page.goto("/app/settings");
+      const navItem = page.getByTestId("settings-nav-brand-voice");
+      await expect(navItem).toBeVisible({ timeout: 15_000 });
+
+      // Tap the Brand Voice nav item
+      await navItem.tap();
+
+      // Brand voice section content should be visible
+      await expect(page.getByTestId("brand-voice-section")).toBeVisible();
+      // Nav list should be hidden (replaced by section content)
+      await expect(page.getByTestId("settings-nav")).not.toBeVisible();
+    }
+  );
+
+  test(
+    "settings: Back button returns to section nav list",
+    async ({ page }) => {
+      test.skip(!HAS_LIVE_STACK, "Requires live stack + auth session");
+      await page.goto("/app/settings");
+      const navItem = page.getByTestId("settings-nav-brand-voice");
+      await expect(navItem).toBeVisible({ timeout: 15_000 });
+      await navItem.tap();
+
+      // Back button
+      const backBtn = page.getByLabel("Back to settings");
+      await expect(backBtn).toBeVisible();
+      await backBtn.tap();
+
+      // Nav list should be visible again
+      await expect(page.getByTestId("settings-nav")).toBeVisible();
+    }
+  );
+});
+
+// ─── Touch target sizes (structural) ─────────────────────────────────────────
+
+test.describe("UX-01 — Touch target sizes (≥44px) on mobile", () => {
+  test(
+    "bottom tab items have touch-friendly min height (≥44px)",
+    async ({ page }) => {
       test.skip(!HAS_LIVE_STACK, "Requires live stack + auth session");
       await page.goto("/app/approvals");
-      await page.getByTestId("select-mode-toggle").tap();
-      await expect(page.getByTestId("bulk-action-bar")).toBeVisible();
+      const nav = page.locator("[aria-label='Mobile navigation']");
+      await expect(nav).toBeVisible({ timeout: 15_000 });
+
+      // Check first tab link has at least 44px height
+      const firstTab = nav.locator("a").first();
+      const box = await firstTab.boundingBox();
+      expect(box).not.toBeNull();
+      if (box) {
+        expect(box.height).toBeGreaterThanOrEqual(44);
+      }
     }
   );
 });

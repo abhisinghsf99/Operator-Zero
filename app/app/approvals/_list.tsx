@@ -16,6 +16,12 @@
  * BulkActionBar: appears when selectedIds.size > 0 in select mode.
  * ApprovalsEmpty: "All clear" empty state — no task CTA (APRV-08).
  *
+ * Mobile drill-down (D-11, UX-01):
+ *   - On mobile (<md), shows list OR detail (not both columns).
+ *   - When activeId is set on mobile, list is hidden; detail fills full width.
+ *   - Back button (aria-label="Back to approvals list") clears activeId, returns focus.
+ *   - All actions (approve/reject/snooze/edit/bulk) work at 375px — no read-only stripping.
+ *
  * WCAG 2.1 AA:
  *   - Checkboxes with aria-label
  *   - Bulk bar aria-label
@@ -25,9 +31,9 @@
  * Calls bulkResolve Server Action for bulk triage.
  */
 
-import { useState, useTransition, useCallback, useMemo } from "react";
+import { useState, useTransition, useCallback, useMemo, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { Inbox, CheckSquare, Clock, Filter } from "lucide-react";
+import { Inbox, CheckSquare, Clock, ArrowLeft } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { bulkResolve } from "./actions";
 import { ApprovalDetail } from "./_detail";
@@ -172,19 +178,21 @@ function ApprovalRow({
   isActive: boolean;
   isSelected: boolean;
   selectMode: boolean;
-  onClick: () => void;
+  onClick: (el: HTMLDivElement | null) => void;
   onToggleSelect: () => void;
   isLast: boolean;
 }) {
+  const rowRef = useRef<HTMLDivElement>(null);
   return (
     <div
+      ref={rowRef}
       role="button"
       tabIndex={0}
-      onClick={onClick}
+      onClick={() => onClick(rowRef.current)}
       onKeyDown={(e) => {
         if (e.key === "Enter" || e.key === " ") {
           e.preventDefault();
-          onClick();
+          onClick(rowRef.current);
         }
       }}
       className={cn(
@@ -384,12 +392,18 @@ export function ApprovalsView({
   showSnoozed = false,
 }: ApprovalsViewProps) {
   const [approvalsList, setApprovalsList] = useState<PendingApproval[]>(initialApprovals);
-  const [activeId, setActiveId] = useState<string | null>(initialApprovals[0]?.id ?? null);
+  // Desktop: default to first item. Mobile: start with no active item (show list first).
+  const [activeId, setActiveId] = useState<string | null>(null);
   const [selectMode, setSelectMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [activeFilter, setActiveFilter] = useState<FilterId>("all");
   const [isBulkPending, startBulkTransition] = useTransition();
   const [bulkError, setBulkError] = useState<string | null>(null);
+
+  // Ref to the last activated list row — for returning focus on Back (D-11)
+  const lastActivatedRowRef = useRef<HTMLDivElement | null>(null);
+  // Ref to the detail heading — for moving focus on open (D-11)
+  const detailHeadingRef = useRef<HTMLHeadingElement | null>(null);
 
   // Subscribe to Realtime changes for cross-surface badge sync (APRV-05)
   useApprovalsSync(userId, initialCount);
@@ -438,7 +452,28 @@ export function ApprovalsView({
     removeIds([approvalId]);
     // Router refresh picks up the fresh pending count for the badge
     router.refresh();
+    // On mobile, return to list after resolution
+    setActiveId(null);
   }, [removeIds, router]);
+
+  // Mobile Back: clear activeId, return focus to last activated row (D-11)
+  const handleMobileBack = useCallback(() => {
+    setActiveId(null);
+    // Return focus to the last activated row after state update
+    requestAnimationFrame(() => {
+      lastActivatedRowRef.current?.focus();
+    });
+  }, []);
+
+  // Activate an approval row: set activeId + move focus to detail heading on mobile (D-11)
+  const handleRowActivate = useCallback((id: string, rowEl: HTMLDivElement | null) => {
+    lastActivatedRowRef.current = rowEl;
+    setActiveId(id);
+    // Move focus to the detail heading after render
+    requestAnimationFrame(() => {
+      detailHeadingRef.current?.focus();
+    });
+  }, []);
 
   const handleBulkApprove = () => {
     const ids = Array.from(selectedIds);
@@ -509,6 +544,7 @@ export function ApprovalsView({
               )}
               aria-pressed={selectMode}
               aria-label={selectMode ? "Exit select mode" : "Enter select mode for bulk actions"}
+              data-testid="select-mode-toggle"
             >
               <CheckSquare size={13} aria-hidden="true" />
               {selectMode ? "Cancel select" : "Select"}
@@ -546,13 +582,24 @@ export function ApprovalsView({
         </span>
       </div>
 
-      {/* Two-pane flex layout (PATTERNS.md) */}
+      {/* Two-pane flex layout (PATTERNS.md) + mobile drill-down (D-11, UX-01) */}
       <div className="flex flex-1 overflow-hidden">
-        {/* List panel — 380px on md+ */}
+        {/*
+          List panel:
+            Desktop (md+): 380px fixed width, always visible.
+            Mobile (<md):  Full width, visible when NO activeId; hidden when detail is open.
+          No read-only stripping: select-mode + bulk-bar work at 375px (D-11, UX-01).
+        */}
         <div
-          className="hidden w-[380px] shrink-0 flex-col overflow-y-auto border-r border-[var(--border)] md:flex"
+          className={cn(
+            "shrink-0 flex-col overflow-y-auto border-r border-[var(--border)]",
+            "md:flex md:w-[380px]",
+            // Mobile: full width list, hidden when detail is open
+            activeId ? "hidden md:flex" : "flex w-full"
+          )}
           role="list"
           aria-label="Pending approvals"
+          data-testid="approvals-list"
         >
           {filteredApprovals.length === 0 ? (
             <div className="p-8 text-center text-[13px] text-[var(--text-tertiary)]">
@@ -566,7 +613,7 @@ export function ApprovalsView({
                 isActive={a.id === activeId}
                 isSelected={selectedIds.has(a.id)}
                 selectMode={selectMode}
-                onClick={() => setActiveId(a.id)}
+                onClick={(rowEl) => handleRowActivate(a.id, rowEl)}
                 onToggleSelect={() => toggleSelect(a.id)}
                 isLast={i === filteredApprovals.length - 1}
               />
@@ -574,12 +621,38 @@ export function ApprovalsView({
           )}
         </div>
 
-        {/* Detail panel — flex-1 */}
-        <div className="flex flex-1 flex-col overflow-hidden">
+        {/*
+          Detail panel:
+            Desktop (md+): flex-1, always visible (shows "select an item" placeholder).
+            Mobile (<md):  Full width, visible only when activeId is set.
+                           Shows ← Back affordance at top (aria-label="Back to approvals list").
+        */}
+        <div
+          className={cn(
+            "flex-col overflow-hidden",
+            "md:flex md:flex-1",
+            // Mobile: full width detail, only visible when detail is open
+            activeId ? "flex flex-1" : "hidden md:flex"
+          )}
+        >
+          {/* Mobile-only Back affordance (D-11) */}
+          {activeId && (
+            <div className="flex shrink-0 items-center border-b border-[var(--border)] bg-[var(--bg)] px-4 py-3 md:hidden">
+              <button
+                onClick={handleMobileBack}
+                aria-label="Back to approvals list"
+                className="flex items-center gap-2 rounded-[var(--r-sm)] px-2 py-1.5 text-[13px] text-[var(--text-secondary)] hover:bg-[var(--bg-subtle)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--acc-workflow)] focus-visible:ring-offset-1"
+              >
+                <ArrowLeft size={15} aria-hidden="true" />
+                Back
+              </button>
+            </div>
+          )}
           {activeApproval ? (
             <ApprovalDetail
               approval={activeApproval}
               onResolved={handleResolved}
+              detailHeadingRef={detailHeadingRef}
             />
           ) : (
             <div

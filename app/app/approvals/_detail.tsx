@@ -20,7 +20,7 @@
  *   - Radix Dialog for reject-reason + snooze picker (focus-trapped)
  */
 
-import { useState, useEffect, useTransition } from "react";
+import { useState, useEffect, useTransition, type RefObject } from "react";
 import { Brain, TriangleAlert, Clock, X, Edit, Check, RotateCcw } from "lucide-react";
 import {
   Dialog,
@@ -41,6 +41,8 @@ import type { PendingApproval } from "./actions";
 interface ApprovalDetailProps {
   approval: PendingApproval;
   onResolved: (approvalId: string) => void;
+  /** Optional ref for the detail heading — receives focus on mobile drill-down open (D-11) */
+  detailHeadingRef?: RefObject<HTMLHeadingElement | null>;
 }
 
 // ─── Snooze presets ───────────────────────────────────────────────────────────
@@ -70,7 +72,7 @@ function getSnoozePresets(): Array<{ label: string; isoString: string }> {
 
 // ─── ApprovalDetail ───────────────────────────────────────────────────────────
 
-export function ApprovalDetail({ approval, onResolved }: ApprovalDetailProps) {
+export function ApprovalDetail({ approval, onResolved, detailHeadingRef }: ApprovalDetailProps) {
   const [rejectOpen, setRejectOpen] = useState(false);
   const [snoozeOpen, setSnoozeOpen] = useState(false);
   const [editMode, setEditMode] = useState(false);
@@ -239,8 +241,10 @@ export function ApprovalDetail({ approval, onResolved }: ApprovalDetailProps) {
             {approval.action_type}
           </div>
           <h2
-            className="display m-0 text-[32px] leading-[1.2] tracking-[-0.015em]"
+            ref={detailHeadingRef}
+            className="display m-0 text-[32px] leading-[1.2] tracking-[-0.015em] focus:outline-none"
             style={{ color: "var(--text)" }}
+            tabIndex={-1}
           >
             {approval.action_summary}
           </h2>
