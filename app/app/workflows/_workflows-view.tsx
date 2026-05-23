@@ -24,6 +24,8 @@ import { type StripStats } from "./page";
 import { RecentActivityStrip } from "@/components/workflows/recent-activity-strip";
 import { WorkflowGroup } from "@/components/workflows/workflow-group";
 import { WorkflowSearch } from "@/components/workflows/workflow-search";
+import { SurfaceHeader, Button } from "@/components/design/primitives";
+import { Icons } from "@/components/design/icons";
 
 // ─── Props ─────────────────────────────────────────────────────────────────────
 
@@ -94,119 +96,32 @@ export function WorkflowsView({
 
   return (
     <div className="flex flex-col">
-      {/* Surface header — design file: SurfaceHeader with kicker, title, subtitle, right actions */}
-      <header
-        className="border-b-[0.5px] border-[var(--border)] bg-[var(--bg)]"
-        style={{ padding: "32px 40px 22px" }}
-      >
-        <div
-          style={{
-            display: "flex",
-            alignItems: "flex-end",
-            justifyContent: "space-between",
-            gap: 24,
-          }}
-        >
-          <div style={{ display: "flex", flexDirection: "column", gap: 4, minWidth: 0 }}>
-            {/* Kicker: accent dot + label */}
-            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <span
-                style={{
-                  width: 6,
-                  height: 6,
-                  borderRadius: "50%",
-                  background: "var(--acc-workflow-ink)",
-                  flexShrink: 0,
-                }}
-              />
-              <span
-                style={{
-                  fontSize: 11.5,
-                  letterSpacing: "0.08em",
-                  textTransform: "uppercase",
-                  color: "var(--acc-workflow-ink)",
-                  fontWeight: 500,
-                  fontFamily: "var(--font-mono)",
-                }}
-              >
-                My Workflows &middot; {totalActive} active
-              </span>
-            </div>
-            <h1
-              className="display"
-              style={{
-                fontSize: 38,
-                margin: 0,
-                color: "var(--text)",
-                lineHeight: 1.05,
-                letterSpacing: "-0.02em",
-              }}
-            >
-              Your workshop, today.
-            </h1>
-            <p
-              style={{
-                margin: "4px 0 0",
-                fontSize: 14,
-                color: "var(--text-tertiary)",
-                maxWidth: 640,
-                lineHeight: 1.45,
-              }}
-            >
-              A portfolio of operations your agent runs for you. Built one at a
-              time, in conversation.
-            </p>
-          </div>
-
-          {/* Header actions: search + new workflow */}
-          <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
+      {/* Surface header — SurfaceHeader primitive, design: surface-workflows.jsx */}
+      <SurfaceHeader
+        kicker={`My Workflows · ${totalActive} active`}
+        title="Your workshop, today."
+        subtitle="A portfolio of operations your agent runs for you. Built one at a time, in conversation."
+        accent="workflow"
+        right={
+          <>
+            {/* Find a workflow: ghost button wrapping the search input (D-17) */}
             <WorkflowSearch
               query={searchQuery}
               onQueryChange={setSearchQuery}
             />
             {/* + New Workflow: WF-10 — navigates to blank Conversation */}
-            <button
-              type="button"
+            <Button
+              variant="primary"
+              accent="workflow"
+              icon="Plus"
               onClick={handleNewWorkflow}
               aria-label="Create a new workflow in Conversation"
-              style={{
-                display: "inline-flex",
-                alignItems: "center",
-                gap: 8,
-                height: 34,
-                padding: "0 14px",
-                fontSize: 13,
-                borderRadius: "var(--r-sm)",
-                background: "var(--acc-workflow-ink)",
-                color: "var(--bg)",
-                border: "0.5px solid transparent",
-                fontFamily: "inherit",
-                fontWeight: 500,
-                letterSpacing: "-0.005em",
-                cursor: "pointer",
-                transition: "background 0.12s",
-              }}
-              data-testid="new-workflow-btn"
             >
-              <svg
-                width="14"
-                height="14"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                aria-hidden="true"
-              >
-                <line x1="12" y1="5" x2="12" y2="19" />
-                <line x1="5" y1="12" x2="19" y2="12" />
-              </svg>
               New workflow
-            </button>
-          </div>
-        </div>
-      </header>
+            </Button>
+          </>
+        }
+      />
 
       {/* Recent activity strip — live counts via Realtime (D-15) */}
       <div style={{ margin: "20px 40px 0" }}>
@@ -278,60 +193,13 @@ export function WorkflowsView({
 function WorkflowsEmptyState({ onNewWorkflow }: { onNewWorkflow: () => void }) {
   return (
     <div className="flex flex-col">
-      <header
-        className="border-b-[0.5px] border-[var(--border)] bg-[var(--bg)]"
-        style={{ padding: "32px 40px 22px" }}
-      >
-        <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <span
-              style={{
-                width: 6,
-                height: 6,
-                borderRadius: "50%",
-                background: "var(--acc-workflow-ink)",
-              }}
-            />
-            <span
-              style={{
-                fontSize: 11.5,
-                letterSpacing: "0.08em",
-                textTransform: "uppercase",
-                color: "var(--acc-workflow-ink)",
-                fontWeight: 500,
-                fontFamily: "var(--font-mono)",
-              }}
-            >
-              My Workflows
-            </span>
-          </div>
-          <h1
-            className="display"
-            style={{
-              fontSize: 38,
-              margin: 0,
-              color: "var(--text)",
-              lineHeight: 1.05,
-              letterSpacing: "-0.02em",
-            }}
-          >
-            A blank workshop.
-          </h1>
-          <p
-            style={{
-              margin: "4px 0 0",
-              fontSize: 14,
-              color: "var(--text-tertiary)",
-              maxWidth: 640,
-              lineHeight: 1.45,
-            }}
-          >
-            No workflows yet. Build your first by talking to the Orchestrator —
-            describe what you&apos;d like the agent to handle, and watch it take
-            shape.
-          </p>
-        </div>
-      </header>
+      {/* Empty-state header — SurfaceHeader primitive */}
+      <SurfaceHeader
+        kicker="My Workflows"
+        title="A blank workshop."
+        subtitle="No workflows yet. Build your first by talking to the Orchestrator — describe what you'd like the agent to handle, and watch it take shape."
+        accent="workflow"
+      />
 
       <div style={{ padding: "40px", display: "flex", justifyContent: "center" }}>
         <div
@@ -360,20 +228,7 @@ function WorkflowsEmptyState({ onNewWorkflow }: { onNewWorkflow: () => void }) {
             }}
             aria-hidden="true"
           >
-            <svg
-              width="28"
-              height="28"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.5"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <circle cx="12" cy="12" r="3" />
-              <path d="M19.07 4.93a10 10 0 0 1 0 14.14" />
-              <path d="M4.93 4.93a10 10 0 0 0 0 14.14" />
-            </svg>
+            <Icons.Workflows size={28} />
           </div>
           <div
             className="display"
@@ -393,28 +248,16 @@ function WorkflowsEmptyState({ onNewWorkflow }: { onNewWorkflow: () => void }) {
             you&apos;d like off your plate. It will sketch a workflow with you
             in real time.
           </p>
-          <button
-            type="button"
+          <Button
+            variant="primary"
+            accent="workflow"
+            size="lg"
+            icon="Chat"
             onClick={onNewWorkflow}
             aria-label="Talk to the Orchestrator to build your first workflow"
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              gap: 8,
-              height: 40,
-              padding: "0 18px",
-              fontSize: 14,
-              borderRadius: "var(--r-md)",
-              background: "var(--acc-workflow-ink)",
-              color: "var(--bg)",
-              border: "0.5px solid transparent",
-              fontFamily: "inherit",
-              fontWeight: 500,
-              cursor: "pointer",
-            }}
           >
             Talk to the Orchestrator
-          </button>
+          </Button>
 
           <div
             style={{

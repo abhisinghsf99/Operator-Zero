@@ -28,9 +28,16 @@
  */
 
 import { useState, useCallback } from "react";
-import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { editWorkflow, togglePause } from "@/lib/actions/workflows";
 import { type WorkflowSummary } from "@/lib/workflows/grouping";
+import {
+  StatusDot,
+  LevelToggle,
+  IconButton,
+  DomainBadge,
+  type Level,
+} from "@/components/design/primitives";
 import {
   Dialog,
   DialogContent,
@@ -41,118 +48,6 @@ import {
   DialogClose,
 } from "@/components/ui/dialog";
 
-// ─── Types ─────────────────────────────────────────────────────────────────────
-
-type AutomationLevel = "L1" | "L2" | "L3";
-
-// ─── StatusDot ────────────────────────────────────────────────────────────────
-
-function StatusDot({ status }: { status: string }) {
-  const colorMap: Record<string, string> = {
-    active: "var(--success)",
-    success: "var(--success)",
-    paused: "var(--text-faint)",
-    draft: "var(--text-faint)",
-    error: "var(--danger)",
-    failed: "var(--danger)",
-    partial: "var(--warning)",
-    running: "var(--acc-workflow)",
-  };
-  const pulse = status === "running" || status === "active";
-  return (
-    <span
-      style={{
-        display: "inline-block",
-        width: 7,
-        height: 7,
-        borderRadius: "50%",
-        background: colorMap[status] ?? "var(--text-faint)",
-        flexShrink: 0,
-        animation: pulse ? "glow 2.4s ease-in-out infinite" : "none",
-      }}
-      aria-label={`Status: ${status}`}
-      role="img"
-    />
-  );
-}
-
-// ─── LevelToggle (inline, with L3 confirm) ────────────────────────────────────
-
-interface LevelToggleProps {
-  value: AutomationLevel;
-  workflowId: string;
-  isPending: boolean;
-  onLevelSelect: (level: AutomationLevel) => void;
-}
-
-const LEVEL_TITLES: Record<AutomationLevel, string> = {
-  L1: "Manual — agent prepares, you trigger",
-  L2: "Approval-gated — agent proposes, you approve",
-  L3: "Autonomous — agent acts, you observe",
-};
-
-function LevelToggle({
-  value,
-  workflowId,
-  isPending,
-  onLevelSelect,
-}: LevelToggleProps) {
-  const levels: AutomationLevel[] = ["L1", "L2", "L3"];
-  return (
-    <div
-      style={{
-        display: "inline-flex",
-        padding: 2,
-        background: "var(--bg-subtle)",
-        border: "0.5px solid var(--border)",
-        borderRadius: "var(--r-sm)",
-        gap: 1,
-      }}
-      role="group"
-      aria-label={`Automation level for workflow. Currently ${value}.`}
-      id={`level-toggle-${workflowId}`}
-    >
-      {levels.map((level) => {
-        const active = value === level;
-        return (
-          <button
-            key={level}
-            type="button"
-            title={LEVEL_TITLES[level]}
-            aria-label={`Set to ${level}: ${LEVEL_TITLES[level]}`}
-            aria-pressed={active}
-            disabled={isPending}
-            onClick={(e) => {
-              e.stopPropagation();
-              if (!isPending && !active) {
-                onLevelSelect(level);
-              }
-            }}
-            style={{
-              padding: "2px 8px",
-              fontSize: 11,
-              fontFamily: "var(--font-mono)",
-              fontWeight: 500,
-              letterSpacing: "0.02em",
-              background: active ? "var(--bg-elevated)" : "transparent",
-              color: active ? "var(--text)" : "var(--text-tertiary)",
-              border: "0.5px solid",
-              borderColor: active ? "var(--border-strong)" : "transparent",
-              borderRadius: "var(--r-xs)",
-              cursor: isPending || active ? (isPending ? "not-allowed" : "default") : "pointer",
-              boxShadow: active ? "var(--shadow-sm)" : "none",
-              transition: "all 0.12s",
-              opacity: isPending ? 0.5 : 1,
-            }}
-          >
-            {level}
-          </button>
-        );
-      })}
-    </div>
-  );
-}
-
 // ─── WorkflowRow ──────────────────────────────────────────────────────────────
 
 interface WorkflowRowProps {
@@ -161,14 +56,15 @@ interface WorkflowRowProps {
 }
 
 export function WorkflowRow({ workflow, isLast }: WorkflowRowProps) {
+  const router = useRouter();
   const [hover, setHover] = useState(false);
   const [isPending, setIsPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   // Optimistic local status + level (updated immediately; reverted on error)
   const [localStatus, setLocalStatus] = useState(workflow.status);
-  const [localLevel, setLocalLevel] = useState<AutomationLevel>(
-    (workflow.automation_level as AutomationLevel) ?? "L2"
+  const [localLevel, setLocalLevel] = useState<Level>(
+    (workflow.automation_level as Level) ?? "L2"
   );
 
   // L3 confirm dialog state (WF-08 — one-time confirmation)
@@ -177,7 +73,7 @@ export function WorkflowRow({ workflow, isLast }: WorkflowRowProps) {
   // ── Level toggle handler ─────────────────────────────────────────────────
 
   const handleLevelSelect = useCallback(
-    (level: AutomationLevel) => {
+    (level: Level) => {
       if (isPending) return;
       if (level === "L3" && localLevel !== "L3") {
         // L3 selection: show one-time confirm dialog first (WF-08)
@@ -190,7 +86,7 @@ export function WorkflowRow({ workflow, isLast }: WorkflowRowProps) {
   );
 
   const doEditLevel = useCallback(
-    async (level: AutomationLevel) => {
+    async (level: Level) => {
       const prevLevel = localLevel;
       setLocalLevel(level);
       setIsPending(true);
@@ -222,10 +118,10 @@ export function WorkflowRow({ workflow, isLast }: WorkflowRowProps) {
   }, []);
 
   // ── Pause/resume handler ──────────────────────────────────────────────────
+  // stopPropagation is handled at the actions wrapper div; no event arg needed.
 
   const handleTogglePause = useCallback(
-    async (e: React.MouseEvent) => {
-      e.stopPropagation();
+    async () => {
       if (isPending) return;
       const prevStatus = localStatus;
       const nextStatus = localStatus === "paused" ? "active" : "paused";
@@ -251,11 +147,21 @@ export function WorkflowRow({ workflow, isLast }: WorkflowRowProps) {
   );
 
   const isPaused = localStatus === "paused";
+  // Show "running" pulse if workflow was active and updated within the last 10 min.
+  // updated_at may be a Date or ISO string after RSC serialization.
+  const isRunning =
+    localStatus === "active" &&
+    workflow.updated_at != null &&
+    new Date(workflow.updated_at as Date | string).getTime() > Date.now() - 10 * 60 * 1000;
+
+  // ── Row click → detail page ───────────────────────────────────────────────
+  const handleRowClick = useCallback(() => {
+    router.push(`/app/workflows/${workflow.id}`);
+  }, [router, workflow.id]);
 
   return (
     <>
       {/* L3 Confirm Dialog (WF-08) */}
-      {/* context_workflow_id is NOT set here — this is a level change, not new-workflow */}
       <Dialog open={pendingL3} onOpenChange={(open) => !open && setPendingL3(false)}>
         <DialogContent>
           <DialogHeader>
@@ -318,9 +224,10 @@ export function WorkflowRow({ workflow, isLast }: WorkflowRowProps) {
         </DialogContent>
       </Dialog>
 
-      {/* Row */}
+      {/* Row — full row is clickable, navigates to detail page */}
       <div
         role="listitem"
+        onClick={handleRowClick}
         onMouseEnter={() => setHover(true)}
         onMouseLeave={() => setHover(false)}
         style={{
@@ -330,6 +237,7 @@ export function WorkflowRow({ workflow, isLast }: WorkflowRowProps) {
           gap: 16,
           padding: "14px 18px",
           borderBottom: isLast ? "none" : "0.5px solid var(--border-hairline)",
+          cursor: "pointer",
           background: hover ? "var(--bg-subtle)" : "transparent",
           transition: "background 0.12s",
           minHeight: 60,
@@ -345,42 +253,23 @@ export function WorkflowRow({ workflow, isLast }: WorkflowRowProps) {
           }}
         >
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <StatusDot status={localStatus} />
-            {/* Name links to detail page (D-01: inline edit in detail, not list) */}
-            <Link
-              href={`/app/workflows/${workflow.id}`}
+            <StatusDot status={isRunning ? "running" : localStatus} />
+            {/* Name — stopPropagation so clicking the text still navigates via row */}
+            <span
               style={{
                 fontSize: 14,
                 color: "var(--text)",
                 fontWeight: 500,
                 letterSpacing: "-0.005em",
-                textDecoration: "none",
               }}
-              onClick={(e) => e.stopPropagation()}
             >
               {workflow.name}
-            </Link>
+            </span>
           </div>
 
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            {/* Domain badge from trigger_type (simplified — full domain data in detail) */}
-            <span
-              style={{
-                display: "inline-flex",
-                alignItems: "center",
-                gap: 5,
-                fontSize: 11,
-                color: "var(--text-tertiary)",
-                padding: "1px 7px 1px 5px",
-                background: "var(--bg-subtle)",
-                border: "0.5px solid var(--border)",
-                borderRadius: "var(--r-xs)",
-                height: 20,
-                flexShrink: 0,
-              }}
-            >
-              {workflow.trigger_type}
-            </span>
+            {/* DomainBadge — shows trigger_type as domain label */}
+            <DomainBadge domain={workflow.trigger_type} />
             {typeof workflow.description === "string" && workflow.description && (
               <span
                 style={{
@@ -408,14 +297,15 @@ export function WorkflowRow({ workflow, isLast }: WorkflowRowProps) {
           )}
         </div>
 
-        {/* Level toggle (WF-08) */}
-        {/* context_workflow_id not relevant here — this is level change, not new-workflow */}
-        <div style={{ display: "flex", justifyContent: "flex-start" }}>
+        {/* Level toggle (WF-08) — stopPropagation to prevent row navigation */}
+        <div
+          style={{ display: "flex", justifyContent: "flex-start" }}
+          onClick={(e) => e.stopPropagation()}
+        >
           <LevelToggle
             value={localLevel}
-            workflowId={workflow.id}
-            isPending={isPending}
-            onLevelSelect={handleLevelSelect}
+            onChange={handleLevelSelect}
+            size="sm"
           />
         </div>
 
@@ -469,7 +359,7 @@ export function WorkflowRow({ workflow, isLast }: WorkflowRowProps) {
           </span>
         </div>
 
-        {/* Actions: pause/resume + accessible disabled states */}
+        {/* Actions: pause/resume + more — IconButton primitives */}
         <div
           style={{
             display: "flex",
@@ -477,12 +367,19 @@ export function WorkflowRow({ workflow, isLast }: WorkflowRowProps) {
             opacity: hover ? 1 : 0.4,
             transition: "opacity 0.12s",
           }}
+          onClick={(e) => e.stopPropagation()}
         >
-          {/* Pause / Resume button (WF-09) */}
-          <button
-            type="button"
-            onClick={handleTogglePause}
-            disabled={isPending}
+          {/* Pause / Resume — IconButton (WF-09) */}
+          <IconButton
+            icon={isPaused ? "Play" : "Pause"}
+            size={28}
+            title={
+              isPending
+                ? "Saving..."
+                : isPaused
+                ? `Resume workflow: ${workflow.name}`
+                : `Pause workflow: ${workflow.name}`
+            }
             aria-label={
               isPending
                 ? "Saving..."
@@ -490,104 +387,16 @@ export function WorkflowRow({ workflow, isLast }: WorkflowRowProps) {
                 ? `Resume workflow: ${workflow.name}`
                 : `Pause workflow: ${workflow.name}`
             }
-            title={isPaused ? "Resume" : "Pause"}
-            style={{
-              width: 28,
-              height: 28,
-              display: "grid",
-              placeItems: "center",
-              background: "transparent",
-              color: "var(--text-secondary)",
-              border: "0.5px solid transparent",
-              borderRadius: "var(--r-sm)",
-              cursor: isPending ? "not-allowed" : "pointer",
-              opacity: isPending ? 0.5 : 1,
-              transition: "background 0.12s, color 0.12s",
-            }}
-            onMouseEnter={(e) => {
-              if (!isPending) {
-                (e.currentTarget as HTMLElement).style.background =
-                  "var(--bg-subtle)";
-                (e.currentTarget as HTMLElement).style.color = "var(--text)";
-              }
-            }}
-            onMouseLeave={(e) => {
-              (e.currentTarget as HTMLElement).style.background = "transparent";
-              (e.currentTarget as HTMLElement).style.color =
-                "var(--text-secondary)";
-            }}
-          >
-            {isPaused ? (
-              // Play icon (resume)
-              <svg
-                width="14"
-                height="14"
-                viewBox="0 0 24 24"
-                fill="currentColor"
-                aria-hidden="true"
-              >
-                <polygon points="5 3 19 12 5 21 5 3" />
-              </svg>
-            ) : (
-              // Pause icon
-              <svg
-                width="14"
-                height="14"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                aria-hidden="true"
-              >
-                <rect x="6" y="4" width="4" height="16" />
-                <rect x="14" y="4" width="4" height="16" />
-              </svg>
-            )}
-          </button>
+            onClick={() => void handleTogglePause()}
+          />
 
           {/* More actions placeholder */}
-          <button
-            type="button"
-            onClick={(e) => e.stopPropagation()}
+          <IconButton
+            icon="More"
+            size={28}
+            title="More actions"
             aria-label={`More actions for workflow: ${workflow.name}`}
-            title="More"
-            style={{
-              width: 28,
-              height: 28,
-              display: "grid",
-              placeItems: "center",
-              background: "transparent",
-              color: "var(--text-secondary)",
-              border: "0.5px solid transparent",
-              borderRadius: "var(--r-sm)",
-              cursor: "pointer",
-              transition: "background 0.12s, color 0.12s",
-            }}
-            onMouseEnter={(e) => {
-              (e.currentTarget as HTMLElement).style.background =
-                "var(--bg-subtle)";
-              (e.currentTarget as HTMLElement).style.color = "var(--text)";
-            }}
-            onMouseLeave={(e) => {
-              (e.currentTarget as HTMLElement).style.background = "transparent";
-              (e.currentTarget as HTMLElement).style.color =
-                "var(--text-secondary)";
-            }}
-          >
-            <svg
-              width="14"
-              height="14"
-              viewBox="0 0 24 24"
-              fill="currentColor"
-              aria-hidden="true"
-            >
-              <circle cx="12" cy="5" r="1.5" />
-              <circle cx="12" cy="12" r="1.5" />
-              <circle cx="12" cy="19" r="1.5" />
-            </svg>
-          </button>
+          />
         </div>
       </div>
     </>

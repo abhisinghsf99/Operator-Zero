@@ -22,6 +22,8 @@
 import { useState, useEffect } from "react";
 import { createBrowserClient } from "@/lib/auth/client";
 import { type StripStats, type RecentActivityEntry } from "@/app/app/workflows/page";
+import { ResultIndicator, Badge, SectionHeader } from "@/components/design/primitives";
+import { Icons, type IconName } from "@/components/design/icons";
 
 // ─── Time formatting helpers ──────────────────────────────────────────────────
 
@@ -41,64 +43,6 @@ function formatRelativeTime(date: Date): string {
   if (hrs < 24) return `${hrs}h ago`;
   const days = Math.floor(hrs / 24);
   return `${days}d ago`;
-}
-
-function resultIcon(result: string) {
-  if (result === "success") {
-    return (
-      <svg
-        width="14"
-        height="14"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="var(--success)"
-        strokeWidth="2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        aria-label="Success"
-      >
-        <polyline points="20 6 9 17 4 12" />
-      </svg>
-    );
-  }
-  if (result === "partial") {
-    return (
-      <svg
-        width="14"
-        height="14"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="var(--warning)"
-        strokeWidth="2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        aria-label="Partial"
-      >
-        <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
-        <line x1="12" y1="9" x2="12" y2="13" />
-        <line x1="12" y1="17" x2="12.01" y2="17" />
-      </svg>
-    );
-  }
-  if (result === "failed") {
-    return (
-      <svg
-        width="14"
-        height="14"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="var(--danger)"
-        strokeWidth="2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        aria-label="Failed"
-      >
-        <line x1="18" y1="6" x2="6" y2="18" />
-        <line x1="6" y1="6" x2="18" y2="18" />
-      </svg>
-    );
-  }
-  return null;
 }
 
 // ─── Props ─────────────────────────────────────────────────────────────────────
@@ -280,7 +224,7 @@ export function RecentActivityStrip({ stats, userId }: RecentActivityStripProps)
         <RecentBlock
           label="Decisions outstanding"
           value={String(pendingCount)}
-          iconPath="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2M9 5a2 2 0 0 0 2 2h2a2 2 0 0 0 2-2M9 5a2 2 0 0 0 2-2h2a2 2 0 0 0 2 2"
+          iconName="Inbox"
           accent="approval"
           hint="awaiting your approval"
           href="/app/approvals"
@@ -296,7 +240,7 @@ export function RecentActivityStrip({ stats, userId }: RecentActivityStripProps)
         <RecentBlock
           label="Ran while you slept"
           value={String(l3Count)}
-          iconPath="M13 2L3 14h9l-1 8 10-12h-9l1-8z"
+          iconName="Bolt"
           accent="workflow"
           hint="L3 actions, last 12 hours"
           href="/app/activity"
@@ -312,7 +256,7 @@ export function RecentActivityStrip({ stats, userId }: RecentActivityStripProps)
         <RecentBlock
           label="Time saved this week"
           value={formatTimeSaved(timeSavedMins)}
-          iconPath="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"
+          iconName="Clock"
           accent="chat"
           hint="estimated — see how"
           href="/app/activity"
@@ -322,28 +266,8 @@ export function RecentActivityStrip({ stats, userId }: RecentActivityStripProps)
 
       {/* "What just happened" ticker */}
       <div style={{ marginTop: 16 }}>
-        {/* Section header */}
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            padding: "0 0 10px",
-          }}
-        >
-          <span
-            style={{
-              fontSize: 11,
-              letterSpacing: "0.1em",
-              textTransform: "uppercase",
-              color: "var(--text-tertiary)",
-              fontFamily: "var(--font-mono)",
-              fontWeight: 500,
-            }}
-          >
-            What just happened
-          </span>
-        </div>
+        {/* Section header — SectionHeader primitive */}
+        <SectionHeader>What just happened</SectionHeader>
 
         {ticker.length === 0 ? (
           <div
@@ -378,7 +302,7 @@ export function RecentActivityStrip({ stats, userId }: RecentActivityStripProps)
 interface RecentBlockProps {
   label: string;
   value: string;
-  iconPath: string;
+  iconName: IconName;
   accent: string;
   hint: string;
   href: string;
@@ -388,12 +312,13 @@ interface RecentBlockProps {
 function RecentBlock({
   label,
   value,
-  iconPath,
+  iconName,
   accent,
   hint,
   href,
   isEstimated,
 }: RecentBlockProps) {
+  const Ico = Icons[iconName];
   return (
     <a
       href={href}
@@ -416,19 +341,7 @@ function RecentBlock({
       aria-label={`${label}: ${value}. ${hint}`}
     >
       <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-        <svg
-          width="12"
-          height="12"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke={`var(--acc-${accent}-ink)`}
-          strokeWidth="2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          aria-hidden="true"
-        >
-          <path d={iconPath} />
-        </svg>
+        <Ico size={12} style={{ color: `var(--acc-${accent}-ink)` }} />
         <span
           style={{
             fontSize: 11,
@@ -487,8 +400,10 @@ function TickerRow({ entry }: { entry: RecentActivityEntry }) {
       }
       aria-label={`${entry.summary} — ${entry.result}`}
     >
-      {/* Result indicator */}
-      <span style={{ flexShrink: 0 }}>{resultIcon(entry.result)}</span>
+      {/* Result indicator — ResultIndicator primitive */}
+      <span style={{ flexShrink: 0 }}>
+        <ResultIndicator result={entry.result as "success" | "partial" | "failed"} />
+      </span>
 
       {/* Time */}
       <span
@@ -517,27 +432,11 @@ function TickerRow({ entry }: { entry: RecentActivityEntry }) {
         {entry.summary}
       </span>
 
-      {/* Level badge */}
+      {/* Level badge — Badge primitive (sm, mono, activity accent) */}
       {entry.automation_level && (
-        <span
-          style={{
-            display: "inline-flex",
-            alignItems: "center",
-            height: 18,
-            padding: "0 6px",
-            background: "var(--bg-subtle)",
-            color: "var(--acc-activity-ink)",
-            borderRadius: "var(--r-pill)",
-            fontFamily: "var(--font-mono)",
-            fontWeight: 500,
-            fontSize: 11,
-            letterSpacing: "0.01em",
-            border: "0.5px solid color-mix(in oklch, var(--acc-activity-ink) 18%, transparent)",
-            flexShrink: 0,
-          }}
-        >
+        <Badge size="sm" accent="activity" mono style={{ flexShrink: 0 }}>
           {entry.automation_level}
-        </span>
+        </Badge>
       )}
     </a>
   );

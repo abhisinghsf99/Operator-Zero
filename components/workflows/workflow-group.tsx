@@ -14,6 +14,7 @@
 
 import { type WorkflowSummary } from "@/lib/workflows/grouping";
 import { WorkflowRow } from "@/components/workflows/workflow-row";
+import { SectionHeader } from "@/components/design/primitives";
 
 // ─── Props ─────────────────────────────────────────────────────────────────────
 
@@ -33,38 +34,19 @@ export function WorkflowGroup({ title, workflows, muted }: WorkflowGroupProps) {
     <section
       aria-label={`${title} — ${count} workflow${count !== 1 ? "s" : ""}`}
     >
-      {/* Section header: title + count */}
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          padding: "0 0 10px",
-        }}
+      {/* Section header: title + count — SectionHeader primitive */}
+      <SectionHeader
+        right={
+          <span
+            style={{ fontSize: 11, color: "var(--text-faint)", fontFamily: "var(--font-mono)" }}
+            aria-hidden="true"
+          >
+            {String(count).padStart(2, "0")}
+          </span>
+        }
       >
-        <span
-          style={{
-            fontSize: 11,
-            letterSpacing: "0.1em",
-            textTransform: "uppercase",
-            color: "var(--text-tertiary)",
-            fontFamily: "var(--font-mono)",
-            fontWeight: 500,
-          }}
-        >
-          {title}
-        </span>
-        <span
-          style={{
-            fontSize: 11,
-            color: "var(--text-faint)",
-            fontFamily: "var(--font-mono)",
-          }}
-          aria-hidden="true"
-        >
-          {String(count).padStart(2, "0")}
-        </span>
-      </div>
+        {title}
+      </SectionHeader>
 
       {/* Workflow rows container */}
       <div
