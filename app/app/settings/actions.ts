@@ -44,7 +44,7 @@
 import { createClient } from "@/lib/auth/server";
 import { withUserRls, integrations } from "@/lib/db";
 import { serviceDb } from "@/lib/db/client";
-import { eq, and, isNull, isNotNull } from "drizzle-orm";
+import { eq, and, isNull, isNotNull, inArray } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import {
@@ -63,7 +63,10 @@ import {
   userProfiles,
   autonomyThresholds,
   userSessions,
+  workflowRuns,
+  userExports,
 } from "@/lib/db/schema";
+import { inngest } from "@/lib/inngest/client";
 import { encryptToken, decryptToken } from "@/lib/integrations/crypto";
 import {
   storeMemoryItem,
@@ -824,4 +827,160 @@ export async function listSessions(
     .from(userSessions)
     .where(and(eq(userSessions.user_id, userId), isNull(userSessions.revoked_at)))
     .orderBy(userSessions.last_seen_at);
+}
+
+// ─── Account Export (SET-06, D-08) ───────────────────────────────────────────
+
+/**
+ * exportAccountData — initiate a background data export for the authenticated user.
+ *
+ * Sends an account.export_requested event to Inngest which runs the durable
+ * export-account-data job (lib/inngest/functions/export-account-data.ts).
+ * The job assembles a JSON bundle, uploads it to the private "user-exports"
+ * bucket, and surfaces a 24h signed URL via a user_exports row.
+ *
+ * This action returns immediately (within 60s) — the export runs in the background.
+ * The UI polls/reads the latest user_exports row for status + download link (A5).
+ *
+ * SECURITY:
+ *   T-4-05-01: userId from claims.sub only — never from client input
+ *   T-4-05-02: export job targets PRIVATE bucket; download via signed URL only
+ *
+ * @returns { status: "initiated" } on success, { error } on auth failure
+ */
+export async function exportAccountData(): Promise<
+  { status: "initiated" } | { error: string }
+> {
+  // 1. Get authenticated user claims (T-4-05-01: userId from claims.sub)
+  const { claims, error } = await getValidatedClaims();
+  if (error || !claims) {
+    return { error: error ?? "Not authenticated." };
+  }
+  const userId = claims.sub as string;
+
+  // 2. Fire Inngest event — job assembles + uploads in background
+  await inngest.send({ name: "account.export_requested", data: { userId } });
+
+  // 3. Return immediately — avoids Vercel timeout (export can take minutes for large accounts)
+  return { status: "initiated" };
+}
+
+/**
+ * getLatestExport — load the most recent user_exports row for the settings page.
+ *
+ * Used by the Danger Zone UI to surface export status + download link (A5).
+ *
+ * @param userId - the authenticated user's UUID
+ */
+export async function getLatestExport(userId: string): Promise<{
+  id: string;
+  status: string;
+  signed_url: string | null;
+  object_path: string | null;
+  error: string | null;
+  created_at: Date;
+  completed_at: Date | null;
+} | null> {
+  const [row] = await serviceDb
+    .select({
+      id: userExports.id,
+      status: userExports.status,
+      signed_url: userExports.signed_url,
+      object_path: userExports.object_path,
+      error: userExports.error,
+      created_at: userExports.created_at,
+      completed_at: userExports.completed_at,
+    })
+    .from(userExports)
+    .where(eq(userExports.user_id, userId))
+    .orderBy(userExports.created_at)
+    .limit(1);
+
+  return row ?? null;
+}
+
+// ─── Account Deletion (SET-07, D-09) ─────────────────────────────────────────
+
+/**
+ * requestAccountDeletion — gate-checked deletion request that initiates the
+ * purge-account Inngest job.
+ *
+ * Gate (D-09, Pitfall 4): Blocks deletion if any workflow run is in
+ * 'running' or 'paused_for_approval' status. Prevents data corruption from
+ * deleting while the agent is mid-execution.
+ *
+ * On success: sends account.deletion_requested to Inngest. The purge job
+ * immediately locks the account (sets deletion_requested_at) then sleeps 7d.
+ * Signing back in during the grace window triggers cancelDeletionIfPending (D-09).
+ *
+ * SECURITY:
+ *   T-4-05-03: active-run gate enforced server-side; lock step in Inngest also aborts runs
+ *   T-4-05-04: purge scoped to userId only; cascades via auth.users FK
+ *
+ * @returns void on success, { error } on auth/gate failure
+ */
+export async function requestAccountDeletion(): Promise<
+  { error: string } | void
+> {
+  // 1. Get authenticated user claims (T-4-05-01)
+  const { claims, error } = await getValidatedClaims();
+  if (error || !claims) {
+    return { error: error ?? "Not authenticated." };
+  }
+  const userId = claims.sub as string;
+
+  // 2. Active-run gate (D-09, Pitfall 4): block if any run is mid-execution
+  const activeRuns = await serviceDb
+    .select({ id: workflowRuns.id })
+    .from(workflowRuns)
+    .where(
+      and(
+        eq(workflowRuns.user_id, userId),
+        inArray(workflowRuns.status, ["running", "paused_for_approval"])
+      )
+    )
+    .limit(1);
+
+  if (activeRuns.length > 0) {
+    return {
+      error:
+        "Cannot delete while a workflow run is in progress. Wait for all runs to complete and try again.",
+    };
+  }
+
+  // 3. Send Inngest event — purge job locks account immediately, then sleeps 7d
+  await inngest.send({ name: "account.deletion_requested", data: { userId } });
+
+  revalidatePath("/app/settings");
+}
+
+/**
+ * cancelDeletion — cancel a pending account deletion request.
+ *
+ * Sends account.deletion_cancelled to Inngest (which cancels the purge-account
+ * job via cancelOn CEL) and clears deletion_requested_at on the user profile.
+ *
+ * This is the in-app cancel variant. The sign-in path variant lives in
+ * lib/auth/session-registry.ts (cancelDeletionIfPending).
+ *
+ * @returns void on success, { error } on auth failure
+ */
+export async function cancelDeletion(): Promise<{ error: string } | void> {
+  // 1. Get authenticated user claims
+  const { claims, error } = await getValidatedClaims();
+  if (error || !claims) {
+    return { error: error ?? "Not authenticated." };
+  }
+  const userId = claims.sub as string;
+
+  // 2. Send Inngest cancellation event (purge-account cancelOn will pick this up)
+  await inngest.send({ name: "account.deletion_cancelled", data: { userId } });
+
+  // 3. Clear deletion_requested_at — shows the pending state is lifted in the UI
+  await serviceDb
+    .update(userProfiles)
+    .set({ deletion_requested_at: null, updated_at: new Date() })
+    .where(eq(userProfiles.user_id, userId));
+
+  revalidatePath("/app/settings");
 }
