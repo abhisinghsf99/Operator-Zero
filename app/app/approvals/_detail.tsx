@@ -20,7 +20,7 @@
  *   - Radix Dialog for reject-reason + snooze picker (focus-trapped)
  */
 
-import { useState, useEffect, useTransition, type RefObject } from "react";
+import { useState, useEffect, useTransition, useCallback, type RefObject } from "react";
 import { Brain, TriangleAlert, Clock, X, Edit, Check, RotateCcw } from "lucide-react";
 import {
   Dialog,
@@ -99,6 +99,21 @@ export function ApprovalDetail({ approval, onResolved, detailHeadingRef }: Appro
   // In production this would compare against a fresh Shopify fetch.
   const isDrifted = false; // Drift detection requires live Shopify comparison — stub for now
 
+  // ── Action handlers ────────────────────────────────────────────────────────
+  // WR-05: useCallback so handleApprove is stable across renders and can be
+  // safely listed in the useEffect dependency array without a stale closure.
+  const handleApprove = useCallback(() => {
+    startTransition(async () => {
+      setError(null);
+      const result = await approveItem(approval.id, "inbox");
+      if ("error" in result) {
+        setError(result.error);
+        return;
+      }
+      onResolved(approval.id);
+    });
+  }, [approval.id, startTransition, onResolved]);
+
   // ── Keyboard shortcuts (Pitfall 5: scoped to detail panel, skip inputs) ───
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -131,21 +146,7 @@ export function ApprovalDetail({ approval, onResolved, detailHeadingRef }: Appro
 
     document.addEventListener("keydown", handler);
     return () => document.removeEventListener("keydown", handler);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isPending, approval.id]);
-
-  // ── Action handlers ────────────────────────────────────────────────────────
-  const handleApprove = () => {
-    startTransition(async () => {
-      setError(null);
-      const result = await approveItem(approval.id, "inbox");
-      if ("error" in result) {
-        setError(result.error);
-        return;
-      }
-      onResolved(approval.id);
-    });
-  };
+  }, [isPending, handleApprove]);
 
   const handleReject = () => {
     startTransition(async () => {
