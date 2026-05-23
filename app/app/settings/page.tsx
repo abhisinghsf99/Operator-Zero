@@ -2,32 +2,43 @@
  * app/app/settings/page.tsx
  * Settings page — Server Component.
  *
- * Renders five Settings sections:
+ * Renders seven Settings sections:
  *   - Connections (SET-01, INTEG-06): Shopify + Gmail health badges
  *   - Brand Voice (SET-02): markdown editor + preview + encrypted save + regenerate-with-confirm
+ *   - Autonomy Thresholds (SET-03): default level + curated per-action overrides (D-05/D-06)
  *   - Memory (SET-04): categorized items with inline edit/add/soft-delete + undo toast
  *   - Profile (SET-05): name, email, password, avatar
+ *   - Sessions (AUTH-04/AUTH-05): active sessions list + revoke + sign-out-everywhere (D-10)
  *   - Notifications (SET-08): badge explainer + coming-soon placeholder (no functional toggles)
  *
  * SECURITY:
  *   T-2-08-04: Reads integration data via withUserRls (cross-user protection)
  *   T-2-08-05: Disconnect requires confirm dialog (enforced in ConnectionRow client component)
  *   T-4-03-01: getBrandVoice decrypts with legacy-plaintext fallback (A2)
+ *   T-4-04-03: listSessions filtered by userId — no cross-user session exposure
  *
  * WCAG 2.1 AA:
  *   - Status badges have text labels (not color alone)
  *   - Confirm dialog is focus-trapped (Radix Dialog handles this)
  *   - Reconnect + Disconnect buttons have descriptive aria-labels
+ *   - All interactive controls have focus-visible ring
  */
 import { redirect } from "next/navigation";
 import { getOrCreateProfile } from "@/lib/auth/profile";
 import { getIntegrationHealth } from "@/lib/integrations/health";
 import { ConnectionsSection } from "@/app/app/settings/_connections";
 import { BrandVoiceSection } from "@/app/app/settings/_brand-voice";
+import { AutonomySection } from "@/app/app/settings/_autonomy";
 import { MemorySection } from "@/app/app/settings/_memory";
 import { ProfileSection } from "@/app/app/settings/_profile";
+import { SessionsSection } from "@/app/app/settings/_sessions";
 import { NotificationsSection } from "@/app/app/settings/_notifications";
-import { getBrandVoice, getMemoryItems } from "@/app/app/settings/actions";
+import {
+  getBrandVoice,
+  getMemoryItems,
+  getAutonomyThresholds,
+  listSessions,
+} from "@/app/app/settings/actions";
 
 export default async function SettingsPage() {
   // 1. Validate session (middleware already guards /app/*)
@@ -40,13 +51,16 @@ export default async function SettingsPage() {
 
   const userId = profile.user_id;
 
-  // 3. Parallel data loads — integration health + brand voice + memory
-  const [shopifyHealth, gmailHealth, brandVoice, memoryItemsList] = await Promise.all([
-    getIntegrationHealth(userId, "shopify"),
-    getIntegrationHealth(userId, "gmail"),
-    getBrandVoice(userId),      // T-4-03-01: decrypt with legacy-plaintext fallback
-    getMemoryItems(userId),
-  ]);
+  // 3. Parallel data loads — integration health + brand voice + autonomy + memory + sessions
+  const [shopifyHealth, gmailHealth, brandVoice, autonomyThresholds, memoryItemsList, sessions] =
+    await Promise.all([
+      getIntegrationHealth(userId, "shopify"),
+      getIntegrationHealth(userId, "gmail"),
+      getBrandVoice(userId),              // T-4-03-01: decrypt with legacy-plaintext fallback
+      getAutonomyThresholds(userId),      // SET-03: default level + curated overrides
+      getMemoryItems(userId),
+      listSessions(userId),               // AUTH-04: non-revoked session rows (T-4-04-03)
+    ]);
 
   const initialMarkdown = brandVoice?.profile_markdown ?? "";
 
@@ -80,11 +94,17 @@ export default async function SettingsPage() {
           <BrandVoiceSection initialMarkdown={initialMarkdown} />
         </div>
 
+        {/* SET-03: Autonomy Thresholds — default level + curated per-action overrides (D-05/D-06) */}
+        <AutonomySection thresholds={autonomyThresholds} />
+
         {/* SET-04: Memory — categorized items with inline edit/add/soft-delete + undo */}
         <MemorySection items={memoryItemsList} />
 
         {/* SET-05: Profile — name, email, password, avatar */}
         <ProfileSection profile={profile} />
+
+        {/* AUTH-04/05: Active Sessions — session list + revoke + sign-out-everywhere (D-10) */}
+        <SessionsSection sessions={sessions} />
 
         {/* SET-08: Notifications — badge explainer + coming-soon placeholder (no functional toggles) */}
         <NotificationsSection />
