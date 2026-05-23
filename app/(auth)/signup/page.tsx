@@ -14,6 +14,7 @@ import Link from "next/link";
 import { useActionState, type CSSProperties } from "react";
 import { Button } from "@/components/design/primitives";
 import { Icons } from "@/components/design/icons";
+import { GoogleAuthButton, AuthDivider } from "@/components/auth/google-auth-button";
 
 type SignUpState = { error: string } | null;
 
@@ -175,6 +176,11 @@ export default function SignUpPage() {
             {isPending ? "Creating account…" : "Sign up"}
           </Button>
         </form>
+
+        <AuthDivider />
+
+        {/* New Google users have no onboarding_completed_at → routed to /onboarding */}
+        <GoogleAuthButton label="Sign up with Google" next="/onboarding" />
 
         <p style={{ marginTop: 20, textAlign: "center", fontSize: 13, color: "var(--text-tertiary)" }}>
           Already have an account?{" "}
