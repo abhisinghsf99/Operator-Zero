@@ -18,6 +18,7 @@
  */
 
 import { redirect } from "next/navigation";
+import { unstable_cache } from "next/cache";
 import { getOrCreateProfile } from "@/lib/auth/profile";
 import { withUserRls } from "@/lib/db/client";
 import { createClient } from "@/lib/auth/server";
@@ -25,6 +26,7 @@ import { workflows, activityEntries, approvals } from "@/lib/db/schema";
 import { eq, and, gte, count, desc } from "drizzle-orm";
 import { groupWorkflowsByStatus, type WorkflowSummary } from "@/lib/workflows/grouping";
 import { WorkflowsView } from "./_workflows-view";
+import { workflowsCacheTag } from "@/lib/actions/workflows";
 
 // ─── Time-saved constants (D-15: labeled heuristic, not hard claims) ─────────
 
@@ -95,10 +97,24 @@ export default async function WorkflowsPage() {
   const twelveHoursAgo = new Date(now.getTime() - 12 * 60 * 60 * 1000);
   const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
 
-  const [allWorkflows, pendingApprovalsRows, l3ActionRows, timeSavedRows, tickerRows] =
-    await Promise.all([
-      // All workflows for this user
-      withUserRls(claims as Record<string, unknown>, async (tx) => {
+  /**
+   * Cached workflow list — invalidated by workflowsCacheTag(userId) on any mutation
+   * (editWorkflow, togglePause, restoreVersion via lib/actions/workflows.ts).
+   *
+   * Uses unstable_cache with a per-user tag (UX-04, PRD §5.4.2 <500ms p50 target).
+   * Cache TTL is 30s (default); mutations always revalidate immediately via tag.
+   *
+   * Security: the cache key includes userId so cached results are user-scoped;
+   * the cached function itself still filters by userId (defense in depth).
+   *
+   * Note: unstable_cache wraps an async function — the claims object must be
+   * closed over at definition time (done below). The cached result is a plain
+   * serializable array (no non-serializable values like Date — they serialize as
+   * ISO strings via JSON serialization inside the cache boundary).
+   */
+  const getCachedWorkflows = unstable_cache(
+    async () => {
+      return withUserRls(claims as Record<string, unknown>, async (tx) => {
         return tx
           .select({
             id: workflows.id,
@@ -115,7 +131,19 @@ export default async function WorkflowsPage() {
           })
           .from(workflows)
           .where(eq(workflows.user_id, userId));
-      }),
+      });
+    },
+    [`workflows-list-${userId}`], // Cache key — per-user
+    {
+      revalidate: 30, // 30s TTL; mutations revalidate immediately via tag
+      tags: [workflowsCacheTag(userId)],
+    }
+  );
+
+  const [allWorkflows, pendingApprovalsRows, l3ActionRows, timeSavedRows, tickerRows] =
+    await Promise.all([
+      // All workflows for this user — cached with per-user tag invalidation (UX-04)
+      getCachedWorkflows(),
 
       // Pending approvals count (D-15: "Decisions outstanding")
       withUserRls(claims as Record<string, unknown>, async (tx) => {

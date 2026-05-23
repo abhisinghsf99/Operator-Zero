@@ -31,6 +31,18 @@ import { createWorkflowVersionWithRetry } from "@/lib/workflows/versions";
 import { toClientError } from "@/lib/errors";
 import { revalidatePath } from "next/cache";
 
+/**
+ * Tag helpers for unstable_cache invalidation (UX-04, PRD §5.4.2).
+ * Tag pattern: workflows-{userId} — per-user workflow list cache tag.
+ * Used in unstable_cache tags array on the workflows page.
+ * Cache is invalidated via revalidatePath("/app/workflows") on every mutation —
+ * revalidatePath invalidates both the Router Cache and any unstable_cache entries
+ * associated with that path when the page segment renders.
+ */
+export function workflowsCacheTag(userId: string): string {
+  return `workflows-${userId}`;
+}
+
 // ─── Input schemas ────────────────────────────────────────────────────────────
 
 const EditWorkflowSchema = z.object({
@@ -111,6 +123,7 @@ export async function editWorkflow(
 
     revalidatePath("/app/workflows");
     revalidatePath(`/app/workflows/${workflowId}`);
+    // unstable_cache is invalidated by revalidatePath("/app/workflows") above (UX-04)
     return { success: true };
   } catch (err) {
     return { error: toClientError(err, "editWorkflow") };
@@ -172,6 +185,7 @@ export async function togglePause(workflowId: string): Promise<TogglePauseResult
 
     revalidatePath("/app/workflows");
     revalidatePath(`/app/workflows/${workflowId}`);
+    // unstable_cache is invalidated by revalidatePath("/app/workflows") above (UX-04)
     return { success: true };
   } catch (err) {
     return { error: toClientError(err, "togglePause") };
@@ -256,6 +270,7 @@ export async function restoreVersion(
 
     revalidatePath("/app/workflows");
     revalidatePath(`/app/workflows/${workflowId}`);
+    // unstable_cache is invalidated by revalidatePath("/app/workflows") above (UX-04)
     return { success: true };
   } catch (err) {
     return { error: toClientError(err, "restoreVersion") };
