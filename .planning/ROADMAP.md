@@ -124,8 +124,8 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 04-02-PLAN.md — Approvals slice: Inbox (list + detail) + full-fidelity inline cards + snooze/edit/bulk/revert actions + reject→memory + drift handling + Realtime sync + sidebar badge (wave 2)
-- [ ] 04-03-PLAN.md — Settings slice A: Brand Voice (encrypt + regenerate-confirm) + Memory CRUD (soft-delete + undo) + Profile + Notifications placeholder (wave 2)
+- [x] 04-02-PLAN.md — Approvals slice: Inbox (list + detail) + full-fidelity inline cards + snooze/edit/bulk/revert actions + reject→memory + drift handling + Realtime sync + sidebar badge (wave 2)
+- [x] 04-03-PLAN.md — Settings slice A: Brand Voice (encrypt + regenerate-confirm) + Memory CRUD (soft-delete + undo) + Profile + Notifications placeholder (wave 2)
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
@@ -148,4 +148,4 @@ Plans:
 | 1. Infrastructure Foundation | 4/4 | Complete   | 2026-05-22 |
 | 2. Foundation — Prove the Agent | 8/8 | Complete   | 2026-05-22 |
 | 3. Ownership — The Portfolio | 4/4 | Complete   | 2026-05-22 |
-| 4. Polish — Effortless Daily Use | 1/6 | In Progress|  |
+| 4. Polish — Effortless Daily Use | 3/6 | In Progress|  |
