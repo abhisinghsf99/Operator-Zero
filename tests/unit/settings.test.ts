@@ -65,7 +65,10 @@ vi.mock("@/lib/db/client", () => ({
     select: mockSelect,
     insert: vi.fn().mockReturnValue({
       values: vi.fn().mockReturnValue({
+        // Support both .returning() (legacy) and .onConflictDoUpdate() (upsert — CR-01)
         returning: vi.fn().mockResolvedValue([{ id: "mem-id-1" }]),
+        onConflictDoUpdate: vi.fn().mockResolvedValue([]),
+        onConflictDoNothing: vi.fn().mockResolvedValue([]),
       }),
     }),
     delete: vi.fn().mockReturnValue({
@@ -139,12 +142,12 @@ describe("SET-02 — brand voice", () => {
     // encryptToken must have been called with the raw markdown
     expect(encryptToken).toHaveBeenCalledWith(testMarkdown);
 
-    // serviceDb.update must have been called (DB write happened)
-    expect(serviceDb.update).toHaveBeenCalled();
+    // serviceDb.insert must have been called (CR-01: upsert instead of bare UPDATE)
+    expect(serviceDb.insert).toHaveBeenCalled();
 
-    // The value passed to .set() should be the encrypted form (not raw markdown)
-    const setCallArg = (serviceDb.update as ReturnType<typeof vi.fn>).mock.results[0];
-    expect(setCallArg).toBeDefined();
+    // The value passed to .values() should include the encrypted form (not raw markdown)
+    const insertResult = (serviceDb.insert as ReturnType<typeof vi.fn>).mock.results[0];
+    expect(insertResult).toBeDefined();
   });
 
   it("regenerateBrandVoice exists and is exported from settings/actions", async () => {
