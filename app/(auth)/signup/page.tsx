@@ -1,25 +1,51 @@
 /**
  * app/(auth)/signup/page.tsx
- * Email + password sign-up form.
+ * Email + password sign-up — styled in the Operator Zero design language.
  *
  * ACCESSIBILITY (WCAG 2.1 AA):
  *   - All inputs have explicit <label htmlFor> associations.
- *   - Error messages are associated via aria-describedby.
- *   - Keyboard navigation: form elements in document order; submit via Enter or button.
- *   - Colour contrast ratios meet AA requirements for default Tailwind colours.
- *   - role="alert" on error banner for screen readers.
- *
- * SERVER ACTION: Form action is a bound signUp Server Action.
- * On error, the Server Action returns { error: string }; the page re-renders
- * with the error displayed.
+ *   - Error messages associated via aria-describedby + role="alert".
+ *   - Keyboard navigation: document order; submit via Enter or button.
  */
 "use client";
 
 import { signUp } from "./actions";
 import Link from "next/link";
-import { useActionState } from "react";
+import { useActionState, type CSSProperties } from "react";
+import { Button } from "@/components/design/primitives";
+import { Icons } from "@/components/design/icons";
 
 type SignUpState = { error: string } | null;
+
+const labelStyle: CSSProperties = {
+  display: "block",
+  fontSize: 11,
+  fontFamily: "var(--font-mono)",
+  letterSpacing: "0.04em",
+  textTransform: "uppercase",
+  color: "var(--text-tertiary)",
+  marginBottom: 6,
+};
+
+const inputStyle: CSSProperties = {
+  width: "100%",
+  height: 40,
+  padding: "0 12px",
+  fontSize: 14,
+  color: "var(--text)",
+  background: "var(--bg-subtle)",
+  border: "0.5px solid var(--border-strong)",
+  borderRadius: "var(--r-sm)",
+  outline: "none",
+  transition: "border-color 0.12s",
+};
+
+function fieldFocus(e: React.FocusEvent<HTMLInputElement>) {
+  e.currentTarget.style.borderColor = "var(--acc-chat-ink)";
+}
+function fieldBlur(e: React.FocusEvent<HTMLInputElement>) {
+  e.currentTarget.style.borderColor = "var(--border-strong)";
+}
 
 export default function SignUpPage() {
   const [state, formAction, isPending] = useActionState<SignUpState, FormData>(
@@ -30,31 +56,79 @@ export default function SignUpPage() {
   );
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-gray-50 p-4">
-      <div className="w-full max-w-md rounded-lg border border-gray-200 bg-white p-8 shadow-sm">
-        <h1 className="mb-6 text-2xl font-semibold text-gray-900">
+    <main
+      style={{
+        minHeight: "100vh",
+        display: "grid",
+        placeItems: "center",
+        background: "var(--bg)",
+        padding: 24,
+      }}
+    >
+      <div
+        style={{
+          width: "100%",
+          maxWidth: 400,
+          background: "var(--bg-elevated)",
+          border: "0.5px solid var(--border)",
+          borderRadius: "var(--r-lg)",
+          padding: 32,
+          boxShadow: "var(--shadow-md)",
+        }}
+      >
+        {/* Brand */}
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 24 }}>
+          <div
+            style={{
+              width: 32,
+              height: 32,
+              borderRadius: "50%",
+              display: "grid",
+              placeItems: "center",
+              background: "var(--text)",
+              color: "var(--bg)",
+            }}
+            aria-hidden="true"
+          >
+            <Icons.Logo size={18} strokeWidth={1.4} />
+          </div>
+          <span className="display" style={{ fontSize: 20, color: "var(--text)" }}>
+            Operator Zero
+          </span>
+        </div>
+
+        <h1
+          className="display"
+          style={{ fontSize: 30, margin: "0 0 4px", color: "var(--text)", letterSpacing: "-0.02em" }}
+        >
           Create your account
         </h1>
+        <p style={{ margin: "0 0 22px", fontSize: 13.5, color: "var(--text-tertiary)" }}>
+          Hand the day-to-day store operations to your agent.
+        </p>
 
-        {/* Error banner — id="form-error" matches aria-describedby on the inputs below. */}
         {state?.error && (
           <div
             id="form-error"
             role="alert"
             aria-live="polite"
-            className="mb-4 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700"
+            style={{
+              marginBottom: 16,
+              padding: "10px 12px",
+              borderRadius: "var(--r-sm)",
+              fontSize: 12.5,
+              color: "var(--danger)",
+              background: "color-mix(in oklch, var(--danger) 8%, var(--bg))",
+              border: "0.5px solid color-mix(in oklch, var(--danger) 30%, transparent)",
+            }}
           >
             {state.error}
           </div>
         )}
 
         <form action={formAction} noValidate>
-          {/* Email */}
-          <div className="mb-4">
-            <label
-              htmlFor="email"
-              className="mb-1 block text-sm font-medium text-gray-700"
-            >
+          <div style={{ marginBottom: 14 }}>
+            <label htmlFor="email" style={labelStyle}>
               Email address
             </label>
             <input
@@ -64,17 +138,15 @@ export default function SignUpPage() {
               autoComplete="email"
               required
               aria-describedby={state?.error ? "form-error" : undefined}
-              className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
               placeholder="you@example.com"
+              style={inputStyle}
+              onFocus={fieldFocus}
+              onBlur={fieldBlur}
             />
           </div>
 
-          {/* Password */}
-          <div className="mb-6">
-            <label
-              htmlFor="password"
-              className="mb-1 block text-sm font-medium text-gray-700"
-            >
+          <div style={{ marginBottom: 20 }}>
+            <label htmlFor="password" style={labelStyle}>
               Password
             </label>
             <input
@@ -85,27 +157,31 @@ export default function SignUpPage() {
               required
               minLength={8}
               aria-describedby={state?.error ? "form-error" : undefined}
-              className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
               placeholder="At least 8 characters"
+              style={inputStyle}
+              onFocus={fieldFocus}
+              onBlur={fieldBlur}
             />
           </div>
 
-          {/* Submit */}
-          <button
+          <Button
             type="submit"
+            variant="primary"
+            accent="chat"
+            size="lg"
             disabled={isPending}
-            aria-disabled={isPending}
-            className="w-full rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
+            style={{ width: "100%" }}
           >
-            {isPending ? "Creating account..." : "Sign up"}
-          </button>
+            {isPending ? "Creating account…" : "Sign up"}
+          </Button>
         </form>
 
-        <p className="mt-4 text-center text-sm text-gray-600">
+        <p style={{ marginTop: 20, textAlign: "center", fontSize: 13, color: "var(--text-tertiary)" }}>
           Already have an account?{" "}
           <Link
             href="/login"
-            className="font-medium text-blue-600 hover:text-blue-700 focus:outline-none focus:underline"
+            style={{ color: "var(--acc-chat-ink)", fontWeight: 500 }}
+            className="hover:underline focus-visible:underline focus-visible:outline-none"
           >
             Sign in
           </Link>
