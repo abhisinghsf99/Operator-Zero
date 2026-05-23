@@ -26,6 +26,7 @@ import {
   timestamp,
   pgPolicy,
   index,
+  unique,
 } from "drizzle-orm/pg-core";
 import { authenticatedRole } from "drizzle-orm/supabase";
 import { sql } from "drizzle-orm";
@@ -81,6 +82,13 @@ export const userExports = pgTable(
     completed_at: timestamp("completed_at", { withTimezone: true }),
   },
   (table) => [
+    /**
+     * One export record per user (WR-02): upsert in export-account-data.ts
+     * uses this constraint as the ON CONFLICT target. A new export replaces
+     * the previous one so the Settings UI always shows the latest status.
+     */
+    unique("user_exports_user_id_unique").on(table.user_id),
+
     /**
      * Primary query pattern: load exports by user + recency.
      * Settings UI shows most recent export first.

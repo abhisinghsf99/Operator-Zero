@@ -179,6 +179,10 @@ export const exportAccountData = inngest.createFunction(
     // ── Step 3: notify-user ────────────────────────────────────────────────────
     // Upsert a user_exports row with status=ready, signed_url, object_path.
     // This is what the Settings UI polls to surface the download link (A5).
+    //
+    // WR-02: use onConflictDoUpdate keyed on user_id (UNIQUE constraint added
+    // by migration 0008). Without this, onConflictDoNothing was a no-op (no
+    // unique constraint), causing unbounded row accumulation on retries/re-exports.
     await step.run("notify-user", async () => {
       await serviceDb
         .insert(userExports)
@@ -189,7 +193,15 @@ export const exportAccountData = inngest.createFunction(
           object_path: objectPath,
           completed_at: new Date(),
         })
-        .onConflictDoNothing();
+        .onConflictDoUpdate({
+          target: userExports.user_id,  // requires UNIQUE(user_id) — see migration 0008
+          set: {
+            status: "ready",
+            signed_url: signedUrl,
+            object_path: objectPath,
+            completed_at: new Date(),
+          },
+        });
     });
 
     console.log(
