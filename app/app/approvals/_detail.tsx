@@ -21,7 +21,7 @@
  */
 
 import { useState, useEffect, useTransition, useCallback, type RefObject } from "react";
-import { Brain, TriangleAlert, Clock, X, Edit, Check, RotateCcw } from "lucide-react";
+import { RotateCcw } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -31,10 +31,18 @@ import {
   DialogFooter,
   DialogClose,
 } from "@/components/ui/dialog";
-import { Button } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
+import { Button as ShadButton } from "@/components/ui/button";
 import { approveItem, rejectItem, snoozeItem, editItem, revertApproved } from "./actions";
 import type { PendingApproval } from "./actions";
+import {
+  Button,
+  Card,
+  SectionHeader,
+  StakesIndicator,
+  DomainBadge,
+  Kbd,
+} from "@/components/design/primitives";
+import { Icons } from "@/components/design/icons";
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
@@ -43,6 +51,16 @@ interface ApprovalDetailProps {
   onResolved: (approvalId: string) => void;
   /** Optional ref for the detail heading — receives focus on mobile drill-down open (D-11) */
   detailHeadingRef?: RefObject<HTMLHeadingElement | null>;
+}
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function getApprovalDomainLabel(actionType: string): string {
+  if (actionType.includes("product") || actionType.includes("catalog")) return "Catalog";
+  if (actionType.includes("meta") || actionType.includes("seo")) return "SEO";
+  if (actionType.includes("email") || actionType.includes("reply")) return "Q&A";
+  if (actionType.includes("inventory") || actionType.includes("stock")) return "Inventory";
+  return "Catalog";
 }
 
 // ─── Snooze presets ───────────────────────────────────────────────────────────
@@ -98,6 +116,12 @@ export function ApprovalDetail({ approval, onResolved, detailHeadingRef }: Appro
   // the underlying data changed since the approval was created.
   // In production this would compare against a fresh Shopify fetch.
   const isDrifted = false; // Drift detection requires live Shopify comparison — stub for now
+
+  const domainLabel = getApprovalDomainLabel(approval.action_type);
+  const stakesLevel =
+    approval.stakes === "med"
+      ? "medium"
+      : (approval.stakes as "low" | "medium" | "high");
 
   // ── Action handlers ────────────────────────────────────────────────────────
   // WR-05: useCallback so handleApprove is stable across renders and can be
@@ -216,138 +240,201 @@ export function ApprovalDetail({ approval, onResolved, detailHeadingRef }: Appro
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
     <div
-      className="h-full overflow-y-auto"
+      style={{ height: "100%", overflowY: "auto" }}
       data-approval-detail
       data-testid="approval-detail"
     >
-      <div className="mx-auto max-w-[720px] px-9 py-8 pb-[60px]">
+      <div style={{ maxWidth: 720, margin: "0 auto", padding: "32px 36px 60px" }}>
         {/* Drift banner (D-03) */}
         {isDrifted && (
           <div
-            className="mb-5 flex items-start gap-2.5 rounded-[var(--r-md)] border border-[var(--warning)] bg-[color-mix(in_oklch,var(--warning)_8%,var(--bg))] px-4 py-3 text-[13px]"
+            style={{
+              marginBottom: 20,
+              display: "flex",
+              alignItems: "flex-start",
+              gap: 10,
+              borderRadius: "var(--r-md)",
+              border: "0.5px solid",
+              borderColor: "color-mix(in oklch, var(--warning) 30%, transparent)",
+              background: "color-mix(in oklch, var(--warning) 8%, var(--bg))",
+              padding: "12px 14px",
+              fontSize: 13,
+              color: "var(--text)",
+            }}
             role="alert"
             aria-live="polite"
           >
-            <TriangleAlert size={14} className="mt-0.5 shrink-0 text-[var(--warning)]" aria-hidden="true" />
+            <Icons.Warning
+              size={14}
+              style={{ color: "var(--warning)", flexShrink: 0, marginTop: 2 }}
+              aria-hidden
+            />
             <span>
-              <strong className="font-medium">Data changed since proposed.</strong>{" "}
+              <strong style={{ fontWeight: 500 }}>Data changed since proposed.</strong>{" "}
               The underlying state may have changed. Re-confirm before approving.
             </span>
           </div>
         )}
 
         {/* Header */}
-        <div className="mb-[18px] flex flex-col gap-[6px]">
-          <div className="font-mono text-[11px] uppercase tracking-[0.06em] text-[var(--text-tertiary)]">
+        <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 18 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <DomainBadge domain={domainLabel} />
+          </div>
+          <div
+            style={{
+              fontSize: 11,
+              fontFamily: "var(--font-mono)",
+              color: "var(--text-tertiary)",
+              textTransform: "uppercase",
+              letterSpacing: "0.06em",
+            }}
+          >
             {approval.action_type}
           </div>
           <h2
             ref={detailHeadingRef}
-            className="display m-0 text-[32px] leading-[1.2] tracking-[-0.015em] focus:outline-none"
-            style={{ color: "var(--text)" }}
+            className="display"
+            style={{
+              fontSize: 32,
+              color: "var(--text)",
+              margin: 0,
+              letterSpacing: "-0.015em",
+              lineHeight: 1.2,
+            }}
             tabIndex={-1}
           >
             {approval.action_summary}
           </h2>
-          <div className="flex items-center gap-3 text-[12.5px] text-[var(--text-tertiary)]">
-            <span
-              className="font-mono text-[10px] uppercase tracking-[0.05em] font-semibold"
-              style={{
-                color:
-                  approval.stakes === "high"
-                    ? "var(--danger)"
-                    : approval.stakes === "med"
-                    ? "var(--warning)"
-                    : "var(--text-tertiary)",
-              }}
-            >
-              {approval.stakes} stakes
-            </span>
+          <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 4 }}>
+            <StakesIndicator level={stakesLevel} />
+            {approval.estimated_review_seconds && (
+              <span style={{ fontSize: 12.5, color: "var(--text-tertiary)" }}>
+                · est. review ~{Math.round(approval.estimated_review_seconds / 60)}m
+              </span>
+            )}
           </div>
         </div>
 
         {/* Reasoning (D-01) */}
-        <div className="mb-4 rounded-[var(--r-md)] border-[0.5px] border-[var(--border)] bg-[var(--bg-elevated)] p-4">
-          <div className="flex gap-[10px]">
-            <Brain
+        <Card padding={16} style={{ marginBottom: 16 }}>
+          <div style={{ display: "flex", gap: 10 }}>
+            <Icons.Brain
               size={16}
-              className="mt-0.5 shrink-0 text-[var(--text-tertiary)]"
-              aria-hidden="true"
+              style={{ color: "var(--text-tertiary)", flexShrink: 0, marginTop: 2 }}
+              aria-hidden
             />
             <div>
-              <div className="mb-1.5 font-mono text-[10.5px] uppercase tracking-[0.05em] text-[var(--text-tertiary)]">
-                The agent&apos;s reasoning
-              </div>
-              <p className="m-0 text-[13.5px] leading-[1.6] text-[var(--text-secondary)]">
+              <SectionHeader>The agent&apos;s reasoning</SectionHeader>
+              <p
+                style={{
+                  margin: 0,
+                  fontSize: 13.5,
+                  lineHeight: 1.6,
+                  color: "var(--text-secondary)",
+                }}
+              >
                 {approval.reasoning_summary}
               </p>
             </div>
           </div>
-        </div>
+        </Card>
 
         {/* Downstream impact warning */}
         {approval.downstream_impact && (
           <div
-            className="mb-4 flex items-start gap-[10px] rounded-[var(--r-md)] border-[0.5px] px-[14px] py-3 text-[13px]"
             style={{
+              padding: "12px 14px",
               background: "color-mix(in oklch, var(--warning) 8%, var(--bg))",
-              borderColor: "color-mix(in oklch, var(--warning) 30%, transparent)",
+              border: "0.5px solid color-mix(in oklch, var(--warning) 30%, transparent)",
+              borderRadius: "var(--r-md)",
+              fontSize: 13,
               color: "var(--text)",
+              display: "flex",
+              gap: 10,
+              marginBottom: 16,
             }}
           >
-            <TriangleAlert
+            <Icons.Warning
               size={14}
-              className="mt-0.5 shrink-0 text-[var(--warning)]"
-              aria-hidden="true"
+              style={{ color: "var(--warning)", flexShrink: 0, marginTop: 2 }}
+              aria-hidden
             />
             <span>
-              <strong className="font-medium">Downstream impact:</strong>{" "}
+              <strong style={{ fontWeight: 500 }}>Downstream impact:</strong>{" "}
               {approval.downstream_impact}
             </span>
           </div>
         )}
 
         {/* Preview */}
-        <div className="mb-1 font-mono text-[10.5px] uppercase tracking-[0.05em] text-[var(--text-tertiary)]">
-          Preview
-        </div>
-        <div className="mb-6 rounded-[var(--r-md)] border-[0.5px] border-[var(--border)] bg-[var(--bg-elevated)] p-4">
-          <pre className="m-0 overflow-x-auto whitespace-pre-wrap text-[12.5px] leading-[1.5] text-[var(--text-secondary)]">
+        <SectionHeader>Preview</SectionHeader>
+        <div
+          style={{
+            marginBottom: 24,
+            borderRadius: "var(--r-md)",
+            border: "0.5px solid var(--border)",
+            background: "var(--bg-elevated)",
+            padding: 16,
+          }}
+        >
+          <pre
+            style={{
+              margin: 0,
+              overflowX: "auto",
+              whiteSpace: "pre-wrap",
+              fontSize: 12.5,
+              lineHeight: 1.5,
+              color: "var(--text-secondary)",
+              fontFamily: "var(--font-mono)",
+            }}
+          >
             {JSON.stringify(approval.preview, null, 2)}
           </pre>
         </div>
 
         {/* Edit panel (D-01 — edit proposed_action in place) */}
         {editMode && (
-          <div
-            className="mb-6"
-            data-testid="edit-preview"
-          >
-            <div className="mb-1.5 font-mono text-[10.5px] uppercase tracking-[0.05em] text-[var(--text-tertiary)]">
-              Edit proposed action
-            </div>
+          <div style={{ marginBottom: 24 }} data-testid="edit-preview">
+            <SectionHeader>Edit proposed action</SectionHeader>
             <textarea
               value={editedPayload}
               onChange={(e) => setEditedPayload(e.target.value)}
-              className="w-full rounded-[var(--r-md)] border-[0.5px] border-[var(--border)] bg-[var(--bg-elevated)] px-4 py-3 font-mono text-[12.5px] leading-[1.5] text-[var(--text)] focus:outline-none focus:ring-2 focus:ring-[var(--acc-workflow)]"
+              style={{
+                width: "100%",
+                borderRadius: "var(--r-md)",
+                border: "0.5px solid var(--border)",
+                background: "var(--bg-elevated)",
+                padding: "12px 16px",
+                fontFamily: "var(--font-mono)",
+                fontSize: 12.5,
+                lineHeight: 1.5,
+                color: "var(--text)",
+                resize: "vertical",
+                boxSizing: "border-box",
+              }}
               rows={10}
               aria-label="Edit the proposed action JSON"
               spellCheck={false}
+              className="focus:outline-none focus:ring-2 focus:ring-[var(--acc-workflow)]"
             />
-            <div className="mt-2 flex justify-end gap-2">
+            <div style={{ marginTop: 8, display: "flex", justifyContent: "flex-end", gap: 8 }}>
               <Button
-                variant="secondary"
+                variant="ghost"
                 size="sm"
-                onClick={() => { setEditMode(false); setEditedPayload(JSON.stringify(approval.proposed_action, null, 2)); }}
+                onClick={() => {
+                  setEditMode(false);
+                  setEditedPayload(JSON.stringify(approval.proposed_action, null, 2));
+                }}
               >
                 Cancel
               </Button>
               <Button
-                variant="default"
+                variant="primary"
+                accent="approval"
                 size="sm"
                 onClick={handleEdit}
                 disabled={isPending}
-                aria-busy={isPending}
               >
                 {isPending ? "Saving…" : "Save & Approve"}
               </Button>
@@ -357,89 +444,125 @@ export function ApprovalDetail({ approval, onResolved, detailHeadingRef }: Appro
 
         {/* Error region */}
         {error && (
-          <p className="mb-4 text-[12.5px] text-[var(--danger)]" role="alert">
+          <p
+            style={{ marginBottom: 16, fontSize: 12.5, color: "var(--danger)" }}
+            role="alert"
+          >
             {error}
           </p>
         )}
       </div>
 
       {/* Sticky action bar */}
-      <div className="sticky bottom-0 bg-[var(--bg)]">
-        <div
-          className="mx-auto max-w-[720px] px-9 py-4"
-          style={{ boxShadow: "0 -1px 0 var(--border)" }}
-        >
-          <div className="flex items-center justify-between rounded-[var(--r-md)] border-[0.5px] border-[var(--border-strong)] bg-[var(--bg-elevated)] px-4 py-3 shadow-md">
+      <div style={{ position: "sticky", bottom: 0, background: "var(--bg-subtle)" }}>
+        <div style={{ maxWidth: 720, margin: "0 auto", padding: "0 36px 16px" }}>
+          <div
+            style={{
+              padding: "12px 16px",
+              background: "var(--bg-elevated)",
+              border: "0.5px solid var(--border-strong)",
+              borderRadius: "var(--r-md)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              boxShadow: "var(--shadow-md)",
+            }}
+          >
             {/* Snooze (left) */}
-            <button
+            <Button
+              variant="ghost"
+              size="md"
+              icon="Clock"
               onClick={() => setSnoozeOpen(true)}
               disabled={isPending}
-              className="flex items-center gap-1.5 rounded-[var(--r-sm)] px-3 py-1.5 text-[12.5px] text-[var(--text-secondary)] hover:bg-[var(--bg-subtle)] disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--acc-workflow)]"
               aria-label="Snooze (S)"
             >
-              <Clock size={13} aria-hidden="true" />
               Snooze
-            </button>
+            </Button>
 
             {/* Reject / Edit / Approve (right) */}
-            <div className="flex items-center gap-2">
-              <button
+            <div style={{ display: "flex", gap: 8 }}>
+              <Button
+                variant="ghost"
+                size="md"
+                icon="X"
                 onClick={() => setRejectOpen(true)}
                 disabled={isPending}
-                className="flex items-center gap-1.5 rounded-[var(--r-sm)] px-3 py-1.5 text-[12.5px] text-[var(--text-secondary)] hover:bg-[var(--bg-subtle)] disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--acc-workflow)]"
                 aria-label="Reject (R)"
               >
-                <X size={13} aria-hidden="true" />
                 Reject
-              </button>
-              <button
+              </Button>
+              <Button
+                variant="secondary"
+                size="md"
+                icon="Edit"
                 onClick={() => setEditMode((m) => !m)}
                 disabled={isPending}
-                className={cn(
-                  "flex items-center gap-1.5 rounded-[var(--r-sm)] px-3 py-1.5 text-[12.5px] disabled:opacity-50",
-                  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--acc-workflow)]",
-                  editMode
-                    ? "bg-[var(--acc-approval-bg)] text-[var(--acc-approval-ink)]"
-                    : "text-[var(--text-secondary)] hover:bg-[var(--bg-subtle)]"
-                )}
                 aria-label="Edit (E)"
                 aria-pressed={editMode}
+                style={
+                  editMode
+                    ? {
+                        background: "var(--acc-approval-bg)",
+                        color: "var(--acc-approval-ink)",
+                        border: "0.5px solid color-mix(in oklch, var(--acc-approval-ink) 25%, transparent)",
+                      }
+                    : undefined
+                }
               >
-                <Edit size={13} aria-hidden="true" />
                 Edit
-              </button>
-              <button
+              </Button>
+              <Button
+                variant="primary"
+                accent="approval"
+                size="md"
+                icon="Check"
                 onClick={handleApprove}
                 disabled={isPending || editMode}
-                aria-busy={isPending}
-                className="flex items-center gap-1.5 rounded-[var(--r-sm)] bg-[var(--acc-approval-ink,#4f6ef7)] px-4 py-1.5 text-[12.5px] font-medium text-white disabled:opacity-50 hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--acc-workflow)]"
                 aria-label={isDrifted ? "Approve (confirm data change) (A)" : "Approve (A)"}
                 data-testid="approve-btn"
               >
-                <Check size={13} aria-hidden="true" />
                 {isPending ? "Approving…" : isDrifted ? "Confirm & Approve" : "Approve"}
-              </button>
+              </Button>
             </div>
           </div>
 
           {/* Keyboard shortcuts hint */}
-          <div className="mt-2 text-center font-mono text-[11.5px] text-[var(--text-tertiary)]">
-            <kbd className="rounded border border-[var(--border)] px-1 text-[10px]">A</kbd> approve
-            {" · "}
-            <kbd className="rounded border border-[var(--border)] px-1 text-[10px]">R</kbd> reject
-            {" · "}
-            <kbd className="rounded border border-[var(--border)] px-1 text-[10px]">E</kbd> edit
-            {" · "}
-            <kbd className="rounded border border-[var(--border)] px-1 text-[10px]">S</kbd> snooze
+          <div
+            style={{
+              textAlign: "center",
+              marginTop: 10,
+              fontSize: 11.5,
+              color: "var(--text-tertiary)",
+              fontFamily: "var(--font-mono)",
+            }}
+          >
+            <Kbd>A</Kbd> approve{" · "}
+            <Kbd>R</Kbd> reject{" · "}
+            <Kbd>E</Kbd> edit{" · "}
+            <Kbd>S</Kbd> snooze
           </div>
 
           {/* Revert button for recently-approved — APRV-07 */}
           {approval.resolved_at && (
-            <div className="mt-3 flex justify-center">
+            <div style={{ marginTop: 12, display: "flex", justifyContent: "center" }}>
               <button
                 onClick={handleRevert}
                 disabled={isPending}
-                className="flex items-center gap-1.5 text-[12px] text-[var(--text-tertiary)] underline underline-offset-2 hover:text-[var(--text-secondary)] disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--acc-workflow)]"
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 6,
+                  background: "transparent",
+                  border: "none",
+                  cursor: isPending ? "not-allowed" : "pointer",
+                  fontSize: 12,
+                  color: "var(--text-tertiary)",
+                  textDecoration: "underline",
+                  textUnderlineOffset: 2,
+                  opacity: isPending ? 0.5 : 1,
+                }}
+                className="hover:text-[var(--text-secondary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--acc-approval-ink)]"
                 aria-label="Revert this approval"
               >
                 <RotateCcw size={12} aria-hidden="true" />
@@ -460,7 +583,10 @@ export function ApprovalDetail({ approval, onResolved, detailHeadingRef }: Appro
             </DialogDescription>
           </DialogHeader>
           <div className="px-0 py-2">
-            <label htmlFor="reject-reason" className="mb-1.5 block text-[12.5px] text-[var(--text-secondary)]">
+            <label
+              htmlFor="reject-reason"
+              className="mb-1.5 block text-[12.5px] text-[var(--text-secondary)]"
+            >
               Reason (optional)
             </label>
             <textarea
@@ -478,9 +604,9 @@ export function ApprovalDetail({ approval, onResolved, detailHeadingRef }: Appro
           </div>
           <DialogFooter>
             <DialogClose asChild>
-              <Button variant="secondary" size="sm">Cancel</Button>
+              <ShadButton variant="secondary" size="sm">Cancel</ShadButton>
             </DialogClose>
-            <Button
+            <ShadButton
               variant="danger"
               size="sm"
               onClick={handleReject}
@@ -489,12 +615,12 @@ export function ApprovalDetail({ approval, onResolved, detailHeadingRef }: Appro
               data-testid="confirm-reject-btn"
             >
               {isPending ? "Rejecting…" : "Reject"}
-            </Button>
+            </ShadButton>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* Snooze picker dialog (D-02 presets: 1h / this evening / tomorrow / pick-a-time) */}
+      {/* Snooze picker dialog (D-02 presets: 1h / this evening / tomorrow) */}
       <Dialog open={snoozeOpen} onOpenChange={setSnoozeOpen}>
         <DialogContent>
           <DialogHeader>
@@ -509,16 +635,35 @@ export function ApprovalDetail({ approval, onResolved, detailHeadingRef }: Appro
                 key={preset.isoString}
                 onClick={() => handleSnooze(preset.isoString)}
                 disabled={isPending}
-                className="flex items-center gap-3 rounded-[var(--r-md)] border-[0.5px] border-[var(--border)] bg-[var(--bg-elevated)] px-4 py-3 text-left text-[13.5px] text-[var(--text)] transition-colors hover:bg-[var(--bg-subtle)] disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--acc-workflow)]"
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 12,
+                  borderRadius: "var(--r-md)",
+                  border: "0.5px solid var(--border)",
+                  background: "var(--bg-elevated)",
+                  padding: "12px 16px",
+                  textAlign: "left",
+                  fontSize: 13.5,
+                  color: "var(--text)",
+                  cursor: isPending ? "not-allowed" : "pointer",
+                  opacity: isPending ? 0.5 : 1,
+                  transition: "background 0.12s",
+                }}
+                className="hover:bg-[var(--bg-subtle)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--acc-workflow)]"
               >
-                <Clock size={14} className="shrink-0 text-[var(--text-tertiary)]" aria-hidden="true" />
+                <Icons.Clock
+                  size={14}
+                  style={{ flexShrink: 0, color: "var(--text-tertiary)" }}
+                  aria-hidden
+                />
                 {preset.label}
               </button>
             ))}
           </div>
           <DialogFooter>
             <DialogClose asChild>
-              <Button variant="secondary" size="sm">Cancel</Button>
+              <ShadButton variant="secondary" size="sm">Cancel</ShadButton>
             </DialogClose>
           </DialogFooter>
         </DialogContent>

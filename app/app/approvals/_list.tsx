@@ -33,12 +33,20 @@
 
 import { useState, useTransition, useCallback, useMemo, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { Inbox, CheckSquare, Clock, ArrowLeft } from "lucide-react";
+import { ArrowLeft } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { bulkResolve } from "./actions";
 import { ApprovalDetail } from "./_detail";
 import { useApprovalsSync } from "./_realtime-sync";
 import type { PendingApproval } from "./actions";
+import {
+  SurfaceHeader,
+  StakesIndicator,
+  DomainBadge,
+  Button,
+  Kbd,
+} from "@/components/design/primitives";
+import { Icons } from "@/components/design/icons";
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
@@ -64,12 +72,6 @@ function formatAge(date: Date): string {
   return `${ageDay}d`;
 }
 
-function stakesColor(stakes: string) {
-  if (stakes === "high") return "var(--danger)";
-  if (stakes === "med") return "var(--warning)";
-  return "var(--text-tertiary)";
-}
-
 function getActionDomain(actionType: string): FilterId {
   if (actionType.includes("product") || actionType.includes("catalog")) return "catalog";
   if (actionType.includes("meta") || actionType.includes("seo")) return "seo";
@@ -78,49 +80,17 @@ function getActionDomain(actionType: string): FilterId {
   return "catalog";
 }
 
-// ─── SurfaceHeader ────────────────────────────────────────────────────────────
-
-function SurfaceHeader({
-  kicker,
-  title,
-  subtitle,
-  right,
-}: {
-  kicker: string;
-  title: string;
-  subtitle: string;
-  right?: React.ReactNode;
-}) {
-  return (
-    <header
-      className="shrink-0 border-b border-[var(--border)] bg-[var(--bg)]"
-      style={{ padding: "28px 40px 20px" }}
-    >
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <p
-            className="m-0 font-mono text-[11.5px] uppercase tracking-[0.06em] opacity-80"
-            style={{ color: "var(--acc-approval-ink)" }}
-          >
-            {kicker}
-          </p>
-          <h1
-            className="display mt-1 text-[28px] tracking-[-0.015em] leading-[1.2]"
-            style={{ color: "var(--text)" }}
-          >
-            {title}
-          </h1>
-          <p
-            className="mt-1 text-[13.5px] leading-[1.5]"
-            style={{ color: "var(--text-tertiary)" }}
-          >
-            {subtitle}
-          </p>
-        </div>
-        {right && <div className="flex shrink-0 items-center gap-2 pt-1">{right}</div>}
-      </div>
-    </header>
-  );
+/** Map FilterId back to domain label used by DomainBadge */
+function filterIdToDomainLabel(filterId: FilterId): string | null {
+  const map: Record<FilterId, string | null> = {
+    all: null,
+    high: null,
+    catalog: "Catalog",
+    seo: "SEO",
+    q_a: "Q&A",
+    inventory: "Inventory",
+  };
+  return map[filterId];
 }
 
 // ─── FilterChip ───────────────────────────────────────────────────────────────
@@ -139,27 +109,85 @@ function FilterChip({
   return (
     <button
       onClick={onClick}
-      className={cn(
-        "inline-flex cursor-pointer items-center gap-2 rounded-[var(--r-pill)] border-[0.5px] px-3 py-[5px] text-[12px] font-medium transition-colors",
-        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--acc-workflow)] focus-visible:ring-offset-1",
-        active
-          ? "border-[var(--text)] bg-[var(--text)] text-[var(--bg)]"
-          : "border-[var(--border-strong)] bg-transparent text-[var(--text-secondary)] hover:bg-[var(--bg-subtle)]"
-      )}
+      style={{
+        all: "unset" as unknown as undefined,
+        cursor: "pointer",
+        padding: "5px 12px",
+        background: active ? "var(--text)" : "transparent",
+        color: active ? "var(--bg)" : "var(--text-secondary)",
+        border: "0.5px solid",
+        borderColor: active ? "var(--text)" : "var(--border-strong)",
+        borderRadius: "var(--r-pill)",
+        fontSize: 12,
+        fontWeight: 500,
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 8,
+        transition: "background 0.12s, color 0.12s",
+        fontFamily: "inherit",
+      }}
       aria-pressed={active}
+      className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--acc-approval-ink)] focus-visible:ring-offset-1"
     >
       {label}
       {count > 0 && (
         <span
-          className={cn(
-            "font-mono text-[10.5px]",
-            active ? "opacity-70 text-[var(--bg)]" : "text-[var(--text-tertiary)]"
-          )}
+          style={{
+            fontFamily: "var(--font-mono)",
+            fontSize: 10.5,
+            color: active ? "var(--bg)" : "var(--text-tertiary)",
+            opacity: active ? 0.7 : 1,
+          }}
         >
           {count}
         </span>
       )}
     </button>
+  );
+}
+
+// ─── Checkbox ─────────────────────────────────────────────────────────────────
+
+function Checkbox({
+  checked,
+  onChange,
+  ariaLabel,
+}: {
+  checked: boolean;
+  onChange: () => void;
+  ariaLabel: string;
+}) {
+  return (
+    <div
+      role="checkbox"
+      aria-checked={checked}
+      aria-label={ariaLabel}
+      tabIndex={0}
+      onClick={(e) => { e.stopPropagation(); onChange(); }}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          e.stopPropagation();
+          onChange();
+        }
+      }}
+      style={{
+        width: 14,
+        height: 14,
+        borderRadius: "var(--r-xs)",
+        border: "0.5px solid",
+        borderColor: checked ? "var(--acc-approval-ink)" : "var(--border-strong)",
+        background: checked ? "var(--acc-approval-ink)" : "transparent",
+        color: "var(--bg)",
+        display: "grid",
+        placeItems: "center",
+        cursor: "pointer",
+        flexShrink: 0,
+      }}
+      className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--acc-approval-ink)]"
+    >
+      {checked && <Icons.Check size={10} strokeWidth={2.5} />}
+    </div>
   );
 }
 
@@ -183,6 +211,8 @@ function ApprovalRow({
   isLast: boolean;
 }) {
   const rowRef = useRef<HTMLDivElement>(null);
+  const domainLabel = filterIdToDomainLabel(getActionDomain(approval.action_type));
+
   return (
     <div
       ref={rowRef}
@@ -195,80 +225,72 @@ function ApprovalRow({
           onClick(rowRef.current);
         }
       }}
-      className={cn(
-        "flex cursor-pointer gap-[10px] px-5 py-[14px] transition-colors duration-[120ms]",
-        !isLast && "border-b border-[var(--border-hairline,var(--border))]",
-        isActive
-          ? "border-l-[3px] border-l-[var(--acc-approval-ink)] bg-[var(--acc-approval-bg)]"
-          : "border-l-[3px] border-l-transparent hover:bg-[var(--bg-subtle)]",
-        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--acc-workflow)] focus-visible:ring-offset-1"
-      )}
+      onMouseEnter={(e) => {
+        if (!isActive) (e.currentTarget as HTMLDivElement).style.background = "var(--bg-subtle)";
+      }}
+      onMouseLeave={(e) => {
+        if (!isActive) (e.currentTarget as HTMLDivElement).style.background = "transparent";
+      }}
+      style={{
+        padding: "14px 20px",
+        borderBottom: isLast ? "none" : "0.5px solid var(--border-hairline)",
+        borderLeft: "3px solid",
+        borderLeftColor: isActive ? "var(--acc-approval-ink)" : "transparent",
+        background: isActive ? "var(--acc-approval-bg)" : "transparent",
+        cursor: "pointer",
+        display: "flex",
+        gap: 10,
+        transition: "background 0.12s",
+      }}
       data-testid="approval-row"
       aria-label={`${approval.action_summary} — ${approval.stakes} stakes`}
       aria-current={isActive ? "true" : undefined}
+      className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--acc-approval-ink)] focus-visible:ring-inset"
     >
-      {/* Checkbox (select mode) */}
+      {/* Checkbox — always shown when selectMode is active */}
       {selectMode && (
-        <div
-          role="checkbox"
-          aria-checked={isSelected}
-          aria-label={`Select: ${approval.action_summary}`}
-          tabIndex={0}
-          onClick={(e) => { e.stopPropagation(); onToggleSelect(); }}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" || e.key === " ") {
-              e.preventDefault();
-              e.stopPropagation();
-              onToggleSelect();
-            }
-          }}
-          className={cn(
-            "mt-[3px] flex h-[14px] w-[14px] shrink-0 items-center justify-center rounded-[var(--r-xs)] border-[0.5px] cursor-pointer",
-            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--acc-workflow)]",
-            isSelected
-              ? "border-[var(--acc-approval-ink)] bg-[var(--acc-approval-ink)] text-[var(--bg)]"
-              : "border-[var(--border-strong)] bg-transparent"
-          )}
-        >
-          {isSelected && (
-            <svg width="10" height="10" viewBox="0 0 10 10" fill="none" aria-hidden="true">
-              <path d="M2 5l2 2 4-4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
-          )}
+        <div style={{ paddingTop: 2 }}>
+          <Checkbox
+            checked={isSelected}
+            onChange={onToggleSelect}
+            ariaLabel={`Select: ${approval.action_summary}`}
+          />
         </div>
       )}
 
       {/* Content */}
-      <div className="flex min-w-0 flex-1 flex-col gap-[5px]">
-        <div className="flex items-center gap-2">
-          {/* Stakes indicator */}
+      <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 5 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <StakesIndicator level={approval.stakes === "med" ? "medium" : (approval.stakes as "low" | "medium" | "high")} />
           <span
-            className="font-mono text-[10px] uppercase tracking-[0.05em] font-semibold"
-            style={{ color: stakesColor(approval.stakes) }}
-            aria-label={`Stakes: ${approval.stakes}`}
-          >
-            {approval.stakes}
-          </span>
-          <span
-            className="ml-auto font-mono text-[11px]"
-            style={{ color: "var(--text-faint,var(--text-tertiary))" }}
+            style={{
+              fontSize: 11,
+              color: "var(--text-faint)",
+              fontFamily: "var(--font-mono)",
+              marginLeft: "auto",
+            }}
             aria-label={`Age: ${formatAge(approval.created_at)}`}
           >
             {formatAge(approval.created_at)}
           </span>
         </div>
         <div
-          className="truncate text-[13.5px] font-medium"
-          style={{ color: "var(--text)" }}
+          style={{ fontSize: 13.5, color: "var(--text)", fontWeight: 500 }}
+          className="truncate"
         >
           {approval.action_summary}
         </div>
         <div
-          className="truncate font-mono text-[11.5px] uppercase tracking-[0.04em]"
-          style={{ color: "var(--text-tertiary)" }}
+          style={{ fontSize: 12.5, color: "var(--text-tertiary)" }}
+          className="truncate"
         >
           {approval.action_type}
         </div>
+        {domainLabel && (
+          <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 2 }}>
+            <DomainBadge domain={domainLabel} />
+          </div>
+        )}
       </div>
     </div>
   );
@@ -291,43 +313,52 @@ function BulkActionBar({
 }) {
   return (
     <div
-      className="flex items-center gap-3 border-t border-[var(--border)] bg-[var(--bg-elevated)] px-5 py-3"
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 12,
+        padding: "10px 20px",
+        borderTop: "0.5px solid var(--border)",
+        background: "var(--bg-elevated)",
+        boxShadow: "var(--shadow-md)",
+      }}
       role="toolbar"
       aria-label={`Bulk actions for ${count} selected approval${count !== 1 ? "s" : ""}`}
       data-testid="bulk-action-bar"
     >
-      <span className="text-[12.5px] text-[var(--text-secondary)]">
+      <span style={{ fontSize: 12.5, color: "var(--text-secondary)" }}>
         {count} selected
       </span>
-      <div className="ml-auto flex items-center gap-2">
-        <button
-          onClick={onCancel}
-          className="rounded-[var(--r-sm)] px-3 py-1.5 text-[12.5px] text-[var(--text-secondary)] hover:bg-[var(--bg-deeper)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--acc-workflow)]"
-          disabled={isPending}
-        >
-          Cancel
-        </button>
-        <button
-          onClick={onReject}
-          disabled={isPending}
-          aria-busy={isPending}
-          className="rounded-[var(--r-sm)] border border-[var(--border)] bg-transparent px-3 py-1.5 text-[12.5px] text-[var(--text-secondary)] hover:bg-[var(--bg-subtle)] disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--acc-workflow)]"
-          aria-label={`Reject ${count} selected`}
-          data-testid="bulk-reject-btn"
-        >
-          {isPending ? "Rejecting…" : `Reject (${count})`}
-        </button>
-        <button
-          onClick={onApprove}
-          disabled={isPending}
-          aria-busy={isPending}
-          className="rounded-[var(--r-sm)] bg-[var(--acc-approval-ink,#4f6ef7)] px-3 py-1.5 text-[12.5px] font-medium text-white disabled:opacity-50 hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--acc-workflow)]"
-          aria-label={`Approve ${count} selected`}
-          data-testid="bulk-approve-btn"
-        >
-          {isPending ? "Approving…" : `Approve (${count})`}
-        </button>
-      </div>
+      <span style={{ flex: 1 }} />
+      <Button
+        variant="ghost"
+        size="sm"
+        onClick={onCancel}
+        disabled={isPending}
+      >
+        Cancel
+      </Button>
+      <Button
+        variant="danger"
+        size="sm"
+        icon="X"
+        onClick={onReject}
+        disabled={isPending}
+        aria-label={`Reject ${count} selected`}
+      >
+        {isPending ? "Rejecting…" : `Reject (${count})`}
+      </Button>
+      <Button
+        variant="primary"
+        accent="approval"
+        size="sm"
+        icon="CheckDouble"
+        onClick={onApprove}
+        disabled={isPending}
+        aria-label={`Approve ${count} selected`}
+      >
+        {isPending ? "Approving…" : `Approve (${count})`}
+      </Button>
     </div>
   );
 }
@@ -338,40 +369,71 @@ function ApprovalsEmpty() {
   const router = useRouter();
 
   return (
-    <div className="flex h-full flex-col overflow-auto" data-testid="approvals-empty">
+    <div
+      style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "auto" }}
+      data-testid="approvals-empty"
+    >
       <SurfaceHeader
         kicker="Approval Inbox · 0 pending"
         title="All clear."
         subtitle="Nothing needs your approval right now. Empty is the goal state."
+        accent="approval"
       />
-      <div className="flex flex-1 items-center justify-center p-10">
-        <div className="flex max-w-[440px] flex-col items-center gap-[18px] text-center">
+      <div
+        style={{
+          flex: 1,
+          display: "grid",
+          placeItems: "center",
+          padding: 40,
+        }}
+      >
+        <div
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            gap: 18,
+            maxWidth: 440,
+            textAlign: "center",
+          }}
+        >
           <div
-            className="grid h-[72px] w-[72px] place-items-center rounded-full"
             style={{
+              width: 72,
+              height: 72,
+              borderRadius: "50%",
               background: "var(--acc-approval-bg)",
               color: "var(--acc-approval-ink)",
+              display: "grid",
+              placeItems: "center",
             }}
             aria-hidden="true"
           >
-            <Inbox size={28} />
+            <Icons.CheckDouble size={28} />
           </div>
-          <div className="display text-[28px] leading-[1.2]" style={{ color: "var(--text)" }}>
+          <div
+            className="display"
+            style={{ fontSize: 28, lineHeight: 1.2, color: "var(--text)" }}
+          >
             Inbox at zero.
           </div>
           <p
-            className="m-0 text-[13.5px] leading-[1.55]"
-            style={{ color: "var(--text-tertiary)" }}
+            style={{
+              color: "var(--text-tertiary)",
+              lineHeight: 1.55,
+              margin: 0,
+              fontSize: 13.5,
+            }}
           >
-            Your agent is running on its own. When something needs your judgment, you&apos;ll find it here — or inline in conversation, whichever you reach first.
+            Your agent is running on its own. When something needs your judgment,
+            you&apos;ll find it here — or inline in conversation, whichever you reach first.
           </p>
-          {/* Gentle navigation link — NO task CTA (APRV-08) */}
-          <button
+          <Button
+            variant="ghost"
             onClick={() => router.push("/app/activity")}
-            className="text-[13px] text-[var(--acc-chat-ink,#4f6ef7)] underline underline-offset-2 hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--acc-workflow)] focus-visible:ring-offset-1"
           >
             See what&apos;s been running →
-          </button>
+          </Button>
         </div>
       </div>
     </div>
@@ -412,9 +474,19 @@ export function ApprovalsView({
 
   // ── Filter + sort ──────────────────────────────────────────────────────────
   const filteredApprovals = useMemo(() => {
-    if (activeFilter === "all") return approvalsList;
-    if (activeFilter === "high") return approvalsList.filter((a) => a.stakes === "high");
-    return approvalsList.filter((a) => getActionDomain(a.action_type) === activeFilter);
+    let list = approvalsList;
+    if (activeFilter === "high") {
+      list = approvalsList.filter((a) => a.stakes === "high");
+    } else if (activeFilter !== "all") {
+      list = approvalsList.filter((a) => getActionDomain(a.action_type) === activeFilter);
+    }
+    // Sort by stakes (high > med > low) then recency
+    const stakesRank: Record<string, number> = { high: 0, med: 1, medium: 1, low: 2 };
+    return [...list].sort((a, b) => {
+      const sr = (stakesRank[a.stakes] ?? 2) - (stakesRank[b.stakes] ?? 2);
+      if (sr !== 0) return sr;
+      return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+    });
   }, [approvalsList, activeFilter]);
 
   // Count for each filter chip
@@ -512,50 +584,72 @@ export function ApprovalsView({
 
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
-    <div className="flex h-full flex-col overflow-hidden">
-      {/* Surface header */}
+    <div style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden" }}>
+      {/* Surface header — approval accent, real SurfaceHeader primitive */}
       <SurfaceHeader
         kicker={`Approval Inbox · ${approvalsList.length} pending`}
         title="Things waiting for your nod."
         subtitle="Batch through them, or approve inline next time you're in chat — same queue, two doors."
+        accent="approval"
         right={
-          <div className="flex items-center gap-2">
-            {/* Snooze toggle */}
-            <a
-              href={showSnoozed ? "/app/approvals" : "/app/approvals?showSnoozed=true"}
-              className="flex items-center gap-1.5 rounded-[var(--r-sm)] px-3 py-1.5 text-[12.5px] text-[var(--text-secondary)] hover:bg-[var(--bg-subtle)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--acc-workflow)]"
+          <>
+            {/* Snooze toggle (ghost) */}
+            <Button
+              variant="ghost"
+              size="md"
+              icon="Clock"
+              onClick={() => {
+                const url = showSnoozed ? "/app/approvals" : "/app/approvals?showSnoozed=true";
+                router.push(url);
+              }}
               aria-label={showSnoozed ? "Hide snoozed items" : "Show snoozed items"}
             >
-              <Clock size={13} aria-hidden="true" />
-              {showSnoozed ? "Hide snoozed" : "Show snoozed"}
-            </a>
-            {/* Select mode toggle */}
-            <button
+              {showSnoozed ? "Hide snoozed" : "Snoozed"}
+            </Button>
+            {/* Select/Approve selected (secondary) */}
+            <Button
+              variant="secondary"
+              size="md"
+              icon="CheckDouble"
               onClick={() => {
-                setSelectMode((s) => !s);
-                setSelectedIds(new Set());
+                if (selectMode && selectedIds.size > 0) {
+                  // approve selected
+                  handleBulkApprove();
+                } else {
+                  setSelectMode((s) => !s);
+                  setSelectedIds(new Set());
+                }
               }}
-              className={cn(
-                "flex items-center gap-1.5 rounded-[var(--r-sm)] px-3 py-1.5 text-[12.5px] transition-colors",
-                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--acc-workflow)]",
-                selectMode
-                  ? "bg-[var(--acc-approval-bg)] text-[var(--acc-approval-ink)]"
-                  : "text-[var(--text-secondary)] hover:bg-[var(--bg-subtle)]"
-              )}
               aria-pressed={selectMode}
-              aria-label={selectMode ? "Exit select mode" : "Enter select mode for bulk actions"}
+              aria-label={
+                selectMode
+                  ? selectedIds.size > 0
+                    ? `Approve ${selectedIds.size} selected`
+                    : "Exit select mode"
+                  : "Enter select mode for bulk actions"
+              }
               data-testid="select-mode-toggle"
             >
-              <CheckSquare size={13} aria-hidden="true" />
-              {selectMode ? "Cancel select" : "Select"}
-            </button>
-          </div>
+              {selectMode
+                ? selectedIds.size > 0
+                  ? `Approve (${selectedIds.size})`
+                  : "Cancel select"
+                : "Select"}
+            </Button>
+          </>
         }
       />
 
       {/* Filter chips */}
       <div
-        className="flex shrink-0 items-center gap-2 border-b border-[var(--border)] px-10 py-[14px]"
+        style={{
+          padding: "14px 40px",
+          display: "flex",
+          alignItems: "center",
+          gap: 8,
+          borderBottom: "0.5px solid var(--border)",
+          flexShrink: 0,
+        }}
         role="tablist"
         aria-label="Filter approvals"
       >
@@ -577,13 +671,20 @@ export function ApprovalsView({
             onClick={() => setActiveFilter(f.id)}
           />
         ))}
-        <span className="ml-auto font-mono text-[11.5px] text-[var(--text-tertiary)]">
+        <span style={{ flex: 1 }} />
+        <span
+          style={{
+            fontSize: 11.5,
+            color: "var(--text-tertiary)",
+            fontFamily: "var(--font-mono)",
+          }}
+        >
           stakes ↓ then recency ↓
         </span>
       </div>
 
       {/* Two-pane flex layout (PATTERNS.md) + mobile drill-down (D-11, UX-01) */}
-      <div className="flex flex-1 overflow-hidden">
+      <div style={{ flex: 1, display: "flex", overflow: "hidden" }}>
         {/*
           List panel:
             Desktop (md+): 380px fixed width, always visible.
@@ -592,17 +693,29 @@ export function ApprovalsView({
         */}
         <div
           className={cn(
-            "shrink-0 flex-col overflow-y-auto border-r border-[var(--border)]",
+            "shrink-0 overflow-y-auto",
             "md:flex md:w-[380px]",
             // Mobile: full width list, hidden when detail is open
             activeId ? "hidden md:flex" : "flex w-full"
           )}
+          style={{
+            flexDirection: "column",
+            borderRight: "0.5px solid var(--border)",
+            background: "var(--bg)",
+          }}
           role="list"
           aria-label="Pending approvals"
           data-testid="approvals-list"
         >
           {filteredApprovals.length === 0 ? (
-            <div className="p-8 text-center text-[13px] text-[var(--text-tertiary)]">
+            <div
+              style={{
+                padding: 32,
+                textAlign: "center",
+                fontSize: 13,
+                color: "var(--text-tertiary)",
+              }}
+            >
               No items for this filter.
             </div>
           ) : (
@@ -625,29 +738,53 @@ export function ApprovalsView({
           Detail panel:
             Desktop (md+): flex-1, always visible (shows "select an item" placeholder).
             Mobile (<md):  Full width, visible only when activeId is set.
-                           Shows ← Back affordance at top (aria-label="Back to approvals list").
+                           Shows Back affordance at top (aria-label="Back to approvals list").
         */}
         <div
           className={cn(
-            "flex-col overflow-hidden",
+            "overflow-hidden",
             "md:flex md:flex-1",
             // Mobile: full width detail, only visible when detail is open
             activeId ? "flex flex-1" : "hidden md:flex"
           )}
+          style={{ flexDirection: "column", background: "var(--bg-subtle)" }}
         >
           {/* Mobile-only Back affordance (D-11) */}
           {activeId && (
-            <div className="flex shrink-0 items-center border-b border-[var(--border)] bg-[var(--bg)] px-4 py-3 md:hidden">
+            <div
+              className="md:hidden"
+              style={{
+                display: "flex",
+                alignItems: "center",
+                borderBottom: "0.5px solid var(--border)",
+                background: "var(--bg)",
+                padding: "10px 16px",
+                flexShrink: 0,
+              }}
+            >
               <button
                 onClick={handleMobileBack}
                 aria-label="Back to approvals list"
-                className="flex items-center gap-2 rounded-[var(--r-sm)] px-2 py-1.5 text-[13px] text-[var(--text-secondary)] hover:bg-[var(--bg-subtle)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--acc-workflow)] focus-visible:ring-offset-1"
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 6,
+                  background: "transparent",
+                  border: "none",
+                  cursor: "pointer",
+                  fontSize: 13,
+                  color: "var(--text-secondary)",
+                  padding: "6px 8px",
+                  borderRadius: "var(--r-sm)",
+                }}
+                className="hover:bg-[var(--bg-subtle)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--acc-approval-ink)] focus-visible:ring-offset-1"
               >
                 <ArrowLeft size={15} aria-hidden="true" />
                 Back
               </button>
             </div>
           )}
+
           {activeApproval ? (
             <ApprovalDetail
               approval={activeApproval}
@@ -656,8 +793,16 @@ export function ApprovalsView({
             />
           ) : (
             <div
-              className="flex h-full items-center justify-center p-20 text-center text-[13.5px]"
-              style={{ color: "var(--text-tertiary)" }}
+              style={{
+                display: "flex",
+                height: "100%",
+                alignItems: "center",
+                justifyContent: "center",
+                padding: 80,
+                textAlign: "center",
+                color: "var(--text-tertiary)",
+                fontSize: 13.5,
+              }}
             >
               Select an item to review.
             </div>
@@ -665,7 +810,7 @@ export function ApprovalsView({
         </div>
       </div>
 
-      {/* Bulk action bar — appears when items are selected (D-12) */}
+      {/* Bulk action bar — appears when items are selected in select mode (D-12) */}
       {selectMode && selectedIds.size > 0 && (
         <BulkActionBar
           count={selectedIds.size}
@@ -679,7 +824,13 @@ export function ApprovalsView({
       {/* Bulk error */}
       {bulkError && (
         <div
-          className="border-t border-[var(--border)] bg-[var(--bg-elevated)] px-5 py-3 text-[12.5px] text-[var(--danger)]"
+          style={{
+            borderTop: "0.5px solid var(--border)",
+            background: "var(--bg-elevated)",
+            padding: "12px 20px",
+            fontSize: 12.5,
+            color: "var(--danger)",
+          }}
           role="alert"
         >
           {bulkError}
