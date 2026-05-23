@@ -243,21 +243,35 @@ export async function revokeSession(
     .set({ revoked_at: new Date() })
     .where(and(eq(userSessions.id, sessionId), eq(userSessions.user_id, userId)));
 
-  // 3. Revoke the refresh token via Supabase Admin API
-  //    supabase.auth.admin.signOut(uid, scope) revokes OTHER sessions.
-  //    T-4-04-04: JWT window — access token expires within ~15 min.
-  try {
-    const admin = getAdminClient();
-    await admin.auth.admin.signOut(userId, "others");
-  } catch (err) {
-    // Non-fatal — the row is already marked revoked. Log and continue.
-    console.error(JSON.stringify({
-      level: "warn",
-      event: "session.revoke.supabase_signout_failed",
-      userId,
-      sessionId,
-      error: String(err),
-    }));
+  // 3. Supabase Auth side-effect (CR-04).
+  //    The Supabase JS v2 admin API has no per-session revoke endpoint.
+  //    signOut(uid, "others") revokes ALL OTHER sessions for the user, not
+  //    just the targeted one — silent over-revocation. To honour the
+  //    per-session intent, we only call signOut when we have a
+  //    supabase_session_id (i.e. the token was available on login); when we
+  //    don't, the row is already marked revoked and the JWT naturally expires
+  //    within the ~15 min window (T-4-04-04). In both paths we skip the call
+  //    and let the DB revocation + JWT window be the enforcement mechanism,
+  //    which is the narrowest correct behaviour available with this API.
+  //
+  //    NOTE: because the admin JS client has no single-session revoke, we
+  //    deliberately do NOT call signOut here. The DB row is already revoked.
+  //    The UI surfaces the JWT-window caveat honestly (D-10 / T-4-04-04).
+  if (existing.supabase_session_id) {
+    try {
+      // Log that we recorded the Supabase session ID but cannot target it
+      // via the JS client's single-session revoke (no such endpoint in v2).
+      console.log(JSON.stringify({
+        level: "info",
+        event: "session.revoke.row_revoked",
+        userId,
+        sessionId,
+        supabase_session_id: existing.supabase_session_id,
+        note: "JWT window applies; no per-session admin signOut available in Supabase JS v2",
+      }));
+    } catch {
+      // swallow — logging is best-effort
+    }
   }
 
   return { success: true };
