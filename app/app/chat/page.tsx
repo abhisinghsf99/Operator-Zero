@@ -8,6 +8,9 @@
  *
  * SECURITY: Middleware has already validated the JWT before this renders.
  *   getOrCreateProfile() performs the live DB round-trip (RLS enforced).
+ *
+ * DESIGN: surface-conversation.jsx — the "select or create a thread" state
+ *   shows the same centered empty-state visual as ThreadEmptyState in message-stream.
  */
 
 import { redirect } from "next/navigation";
@@ -28,19 +31,67 @@ export default async function ChatPage() {
     "threads" in threadsResult ? threadsResult.threads : [];
 
   return (
-    <div className="flex h-full overflow-hidden" data-testid="chat-page">
+    <div style={{ display: "flex", height: "100%", overflow: "hidden" }} data-testid="chat-page">
       {/* Thread sidebar */}
       <ThreadSidebar threads={threads} activeThreadId={null} />
 
-      {/* Empty state — no active thread */}
-      <div className="flex flex-1 flex-col items-center justify-center gap-4 p-8 text-center">
-        <div className="max-w-sm">
-          <h2 className="mb-2 text-lg font-semibold text-[var(--text)]">
-            Start a conversation
-          </h2>
-          <p className="text-sm text-[var(--text-secondary)]">
-            Select a thread from the sidebar or create a new one to start
-            chatting with Operator Zero.
+      {/* No-thread empty state — centered, matches design language */}
+      <div
+        style={{
+          flex: 1,
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          justifyContent: "center",
+          background: "var(--bg)",
+        }}
+      >
+        <div
+          style={{
+            maxWidth: 480,
+            textAlign: "center",
+            display: "flex",
+            flexDirection: "column",
+            gap: 14,
+            alignItems: "center",
+          }}
+        >
+          {/* Logo icon in tinted circle */}
+          <div
+            style={{
+              width: 56,
+              height: 56,
+              borderRadius: "50%",
+              background: "var(--acc-chat-bg)",
+              color: "var(--acc-chat-ink)",
+              display: "grid",
+              placeItems: "center",
+            }}
+            aria-hidden="true"
+          >
+            <svg
+              width="24"
+              height="24"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.3"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <circle cx="12" cy="12" r="9" />
+              <circle cx="12" cy="12" r="3.5" />
+              <path d="M12 3v3M12 18v3M3 12h3M18 12h3" />
+            </svg>
+          </div>
+          <div
+            className="display"
+            style={{ fontSize: 28, color: "var(--text)", letterSpacing: "-0.02em" }}
+          >
+            Select a thread to continue
+          </div>
+          <p style={{ fontSize: 14, color: "var(--text-tertiary)", margin: 0, lineHeight: 1.5 }}>
+            Or create a new thread to start chatting with the Orchestrator.
           </p>
         </div>
       </div>

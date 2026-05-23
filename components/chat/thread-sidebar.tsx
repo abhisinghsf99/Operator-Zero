@@ -17,10 +17,10 @@
 
 import { useRouter } from "next/navigation";
 import { useTransition } from "react";
-import { Plus } from "lucide-react";
-import { cn } from "@/lib/utils";
 import { createThread } from "@/app/app/chat/actions";
 import type { ThreadListItem } from "@/app/app/chat/actions";
+import { Button, SectionHeader } from "@/components/design/primitives";
+import { Icons } from "@/components/design/icons";
 
 interface ThreadSidebarProps {
   threads: ThreadListItem[];
@@ -33,8 +33,6 @@ export function ThreadSidebar({ threads, activeThreadId }: ThreadSidebarProps) {
 
   const handleNewThread = () => {
     startTransition(async () => {
-      // Create a thread with an empty first message to get the ID
-      // The user's actual first message will be sent via the composer
       const result = await createThread("New conversation");
       if ("threadId" in result) {
         router.push(`/app/chat/${result.threadId}`);
@@ -59,42 +57,38 @@ export function ThreadSidebar({ threads, activeThreadId }: ThreadSidebarProps) {
 
   return (
     <aside
-      className={cn(
-        "flex w-[260px] flex-shrink-0 flex-col",
-        "border-r border-[var(--border)] bg-[var(--bg)]"
-      )}
+      style={{
+        width: 260,
+        flexShrink: 0,
+        borderRight: "0.5px solid var(--border)",
+        background: "var(--bg)",
+        display: "flex",
+        flexDirection: "column",
+      }}
       aria-label="Conversations"
     >
       {/* Header + New Thread button */}
-      <div className="flex flex-col gap-3 px-4 pb-3 pt-5">
-        <button
+      <div style={{ padding: "20px 16px 12px", display: "flex", flexDirection: "column", gap: 12 }}>
+        <Button
+          variant="secondary"
+          icon="Plus"
           onClick={handleNewThread}
           disabled={isPending}
           aria-label="New thread"
-          className={cn(
-            "flex w-full items-center gap-2 rounded-lg border border-[var(--border)]",
-            "bg-[var(--bg-subtle)] px-3 py-2 text-sm text-[var(--text-secondary)]",
-            "hover:bg-[var(--bg-deeper)] hover:text-[var(--text)]",
-            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--acc-chat-ink)]",
-            "disabled:opacity-50 disabled:cursor-not-allowed",
-            "transition-colors"
-          )}
+          style={{ justifyContent: "flex-start", width: "100%" }}
         >
-          <Plus size={14} aria-hidden="true" />
           New thread
-        </button>
+        </Button>
       </div>
 
       {/* Thread list */}
       <nav
-        className="flex flex-1 flex-col gap-0.5 overflow-y-auto px-2 pb-4"
+        style={{ padding: "0 8px 16px", overflowY: "auto", display: "flex", flexDirection: "column", gap: 2, flex: 1 }}
         aria-label="Thread list"
       >
         {threads.length > 0 && (
-          <div className="px-2 pb-1.5 pt-2">
-            <span className="text-[10px] font-medium uppercase tracking-wider text-[var(--text-tertiary)]">
-              Threads
-            </span>
+          <div style={{ padding: "10px 10px 6px" }}>
+            <SectionHeader>Threads</SectionHeader>
           </div>
         )}
 
@@ -105,27 +99,49 @@ export function ThreadSidebar({ threads, activeThreadId }: ThreadSidebarProps) {
               key={thread.id}
               onClick={() => router.push(`/app/chat/${thread.id}`)}
               aria-current={isActive ? "page" : undefined}
-              className={cn(
-                "flex w-full flex-col gap-0.5 rounded-md px-2.5 py-2.5",
-                "border-l-2 text-left",
-                isActive
-                  ? "border-l-[var(--acc-chat-ink)] bg-[var(--bg-subtle)]"
-                  : "border-l-transparent hover:bg-[var(--bg-subtle)]",
-                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--acc-chat-ink)]",
-                "transition-colors"
-              )}
+              style={{
+                all: "unset",
+                padding: "10px 10px",
+                cursor: "pointer",
+                borderRadius: "var(--r-sm)",
+                background: isActive ? "var(--bg-subtle)" : "transparent",
+                borderLeft: "2px solid",
+                borderLeftColor: isActive ? "var(--acc-chat-ink)" : "transparent",
+                display: "flex",
+                flexDirection: "column",
+                gap: 2,
+              }}
+              onMouseEnter={(e) => {
+                if (!isActive) e.currentTarget.style.background = "var(--bg-subtle)";
+              }}
+              onMouseLeave={(e) => {
+                if (!isActive) e.currentTarget.style.background = "transparent";
+              }}
+              // focus-visible ring via global :focus-visible rule (keyboard nav)
+              onFocus={(e) => {
+                e.currentTarget.style.outline = "2px solid var(--acc-chat-ink)";
+                e.currentTarget.style.outlineOffset = "-2px";
+              }}
+              onBlur={(e) => {
+                e.currentTarget.style.outline = "none";
+              }}
             >
               <span
-                className={cn(
-                  "truncate text-[13px]",
-                  isActive
-                    ? "font-medium text-[var(--text)]"
-                    : "font-normal text-[var(--text-secondary)]"
-                )}
+                style={{
+                  fontSize: 13,
+                  color: isActive ? "var(--text)" : "var(--text-secondary)",
+                  fontWeight: isActive ? 500 : 400,
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 6,
+                }}
               >
                 {thread.title ?? "Untitled thread"}
               </span>
-              <span className="font-mono text-[11px] text-[var(--text-tertiary)]">
+              <span style={{ fontSize: 11, color: "var(--text-tertiary)", fontFamily: "var(--font-mono)" }}>
                 {formatRelativeTime(thread.last_message_at)}
               </span>
             </button>
@@ -133,9 +149,19 @@ export function ThreadSidebar({ threads, activeThreadId }: ThreadSidebarProps) {
         })}
 
         {threads.length === 0 && (
-          <p className="px-2 py-4 text-center text-xs text-[var(--text-tertiary)]">
-            No threads yet. Start a new conversation.
-          </p>
+          <div
+            style={{
+              padding: "40px 16px",
+              textAlign: "center",
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              gap: 8,
+            }}
+          >
+            <Icons.Chat size={18} style={{ color: "var(--text-faint)" }} />
+            <span style={{ fontSize: 12, color: "var(--text-tertiary)" }}>No threads yet.</span>
+          </div>
         )}
       </nav>
     </aside>

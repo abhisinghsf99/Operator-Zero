@@ -22,16 +22,19 @@
  *   - Keyboard-operable retry button
  *   - Focus management: new messages auto-scroll (scrollIntoView)
  *   - reduced-motion: streaming indicator uses motion-reduce:animate-none
+ *
+ * DESIGN: surface-conversation.jsx — thread header, message bubbles,
+ *   streaming indicator, empty state, composer placement.
  */
 
 import { useState, useEffect, useRef, useCallback } from "react";
-import { cn } from "@/lib/utils";
 import { createBrowserClient } from "@/lib/auth/client";
 import { Composer } from "./composer";
 import { WorkflowVisualizer } from "./workflow-visualizer";
 import { ReasoningBlock } from "./reasoning-block";
 import { ContentPreview } from "./content-preview";
 import { InlineApprovalCard } from "./inline-approval-card";
+import { Avatar, IconButton } from "@/components/design/primitives";
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
@@ -258,77 +261,60 @@ export function ChatThreadView({ threadId }: ChatThreadViewProps) {
   );
 
   return (
-    <div className="flex flex-1 flex-col overflow-hidden">
-      {/* Thread header */}
-      <div className="flex items-center gap-3 border-b border-[var(--border)] bg-[var(--bg)] px-8 py-5">
-        <div
-          className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-[var(--acc-chat-ink)]"
-          aria-hidden="true"
-        >
-          <span className="text-xs font-semibold text-white">OZ</span>
-        </div>
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2">
-            <span className="text-sm font-medium text-[var(--text)]">
-              Orchestrator
-            </span>
+    <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0, background: "var(--bg)", overflow: "hidden" }}>
+      {/* Thread header — matches design ThreadHeader */}
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 12,
+          padding: "20px 32px",
+          borderBottom: "0.5px solid var(--border)",
+          background: "var(--bg)",
+        }}
+      >
+        <Avatar agent size={32} />
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <span style={{ fontSize: 14, fontWeight: 500, color: "var(--text)" }}>Orchestrator</span>
             <span
-              className="h-1.5 w-1.5 rounded-full bg-[var(--success)]"
+              style={{ width: 5, height: 5, borderRadius: "50%", background: "var(--success)" }}
               aria-hidden="true"
             />
-            <span className="text-xs text-[var(--text-tertiary)]">
-              here &amp; remembering
-            </span>
+            <span style={{ fontSize: 12, color: "var(--text-tertiary)" }}>here &amp; remembering</span>
           </div>
         </div>
+        <IconButton icon="Search" title="Search conversation" />
+        <IconButton icon="More" title="More options" />
       </div>
 
       {/* Messages area */}
       {messages.length > 0 ? (
         <div
-          className="flex-1 overflow-y-auto py-8"
+          style={{ flex: 1, overflowY: "auto", padding: "32px 0" }}
           role="log"
           aria-live="polite"
           aria-label="Conversation messages"
         >
-          <div className="mx-auto flex max-w-[760px] flex-col gap-7 px-8">
+          <div style={{ maxWidth: 760, margin: "0 auto", padding: "0 32px", display: "flex", flexDirection: "column", gap: 28 }}>
             {messages.map((message) => (
               <MessageBubble key={message.id} message={message} />
             ))}
 
-            {/* Streaming indicator */}
+            {/* Streaming "thinking" indicator — matches design exactly */}
             {isStreaming && (
               <div
-                className="flex gap-3"
+                className="anim-pop"
+                style={{ display: "flex", gap: 12 }}
                 aria-live="polite"
                 aria-label="Operator Zero is thinking"
               >
-                <div
-                  className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-[var(--acc-chat-ink)]"
-                  aria-hidden="true"
-                >
-                  <span className="text-[9px] font-semibold text-white">OZ</span>
-                </div>
-                <div className="flex items-center gap-1 pt-1.5 text-[13px] italic text-[var(--text-tertiary)]">
-                  <span>thinking</span>
-                  <span
-                    aria-hidden="true"
-                    className="animate-[blink_1.2s_infinite] motion-reduce:animate-none"
-                  >
-                    ·
-                  </span>
-                  <span
-                    aria-hidden="true"
-                    className="animate-[blink_1.2s_infinite_0.2s] motion-reduce:animate-none"
-                  >
-                    ·
-                  </span>
-                  <span
-                    aria-hidden="true"
-                    className="animate-[blink_1.2s_infinite_0.4s] motion-reduce:animate-none"
-                  >
-                    ·
-                  </span>
+                <Avatar agent size={28} />
+                <div style={{ display: "flex", alignItems: "center", gap: 4, paddingTop: 6, color: "var(--text-tertiary)", fontSize: 13 }}>
+                  <span className="display" style={{ fontStyle: "italic" }}>thinking</span>
+                  <span aria-hidden="true" style={{ animation: "blink 1.2s infinite", animationDelay: "0s" }}>·</span>
+                  <span aria-hidden="true" style={{ animation: "blink 1.2s infinite", animationDelay: "0.2s" }}>·</span>
+                  <span aria-hidden="true" style={{ animation: "blink 1.2s infinite", animationDelay: "0.4s" }}>·</span>
                 </div>
               </div>
             )}
@@ -344,12 +330,29 @@ export function ChatThreadView({ threadId }: ChatThreadViewProps) {
       {streamError && (
         <div
           role="alert"
-          className="mx-8 mb-2 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700"
+          style={{
+            margin: "0 32px 8px",
+            padding: "10px 14px",
+            background: "color-mix(in oklch, var(--danger) 8%, var(--bg))",
+            border: "0.5px solid color-mix(in oklch, var(--danger) 30%, transparent)",
+            borderRadius: "var(--r-sm)",
+            fontSize: 12.5,
+            color: "var(--danger)",
+            display: "flex",
+            alignItems: "center",
+            gap: 10,
+          }}
         >
-          <span>{streamError}</span>
+          <span style={{ flex: 1 }}>{streamError}</span>
           <button
             onClick={() => setStreamError(null)}
-            className="ml-2 underline focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-red-400"
+            style={{
+              all: "unset",
+              cursor: "pointer",
+              fontSize: 12,
+              color: "var(--danger)",
+              textDecoration: "underline",
+            }}
             aria-label="Dismiss error"
           >
             Dismiss
@@ -373,12 +376,18 @@ export function ChatThreadView({ threadId }: ChatThreadViewProps) {
 function MessageBubble({ message }: { message: StreamMessage }) {
   if (message.role === "user") {
     return (
-      <div className="flex justify-end">
+      <div className="anim-pop" style={{ display: "flex", justifyContent: "flex-end" }}>
         <div
-          className={cn(
-            "max-w-[78%] rounded-[var(--r-lg)] px-4 py-[11px]",
-            "bg-[var(--bg-deeper)] text-[13px] text-[var(--text)]"
-          )}
+          style={{
+            maxWidth: "78%",
+            padding: "11px 16px",
+            background: "var(--bg-deeper)",
+            borderRadius: "var(--r-lg)",
+            borderBottomRightRadius: "var(--r-xs)",
+            color: "var(--text)",
+            fontSize: 14,
+            lineHeight: 1.5,
+          }}
         >
           {message.content}
         </div>
@@ -388,29 +397,39 @@ function MessageBubble({ message }: { message: StreamMessage }) {
 
   // Assistant message
   return (
-    <div className="flex gap-3">
-      <div
-        className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-[var(--acc-chat-ink)]"
-        aria-hidden="true"
-      >
-        <span className="text-[9px] font-semibold text-white">OZ</span>
-      </div>
+    <div className="anim-pop" style={{ display: "flex", gap: 12 }}>
+      <Avatar agent size={28} />
 
-      <div className="flex min-w-0 flex-1 flex-col gap-3">
-        {/* Text content */}
+      <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 12, paddingTop: 2 }}>
+        {/* Text content with optional streaming cursor */}
         {(message.streamingContent || message.content) && (
           <div
-            className={cn(
-              "text-[13px] leading-relaxed text-[var(--text)]",
-              message.status === "streaming" &&
-                "after:ml-0.5 after:inline-block after:h-3.5 after:w-0.5 after:bg-[var(--text)] after:align-middle after:animate-[blink_1s_step-end_infinite] after:motion-reduce:animate-none"
-            )}
+            style={{
+              fontSize: 14,
+              lineHeight: 1.55,
+              color: "var(--text)",
+              whiteSpace: "pre-wrap",
+            }}
           >
             {message.streamingContent ?? message.content}
+            {message.status === "streaming" && (
+              <span
+                aria-hidden="true"
+                style={{
+                  display: "inline-block",
+                  width: 2,
+                  height: "0.875em",
+                  marginLeft: 2,
+                  background: "var(--text)",
+                  verticalAlign: "middle",
+                  animation: "blink 1s step-end infinite",
+                }}
+              />
+            )}
           </div>
         )}
 
-        {/* Inline blocks by type */}
+        {/* Inline blocks by type — only shown after streaming is done */}
         {message.inline_block_type && message.status !== "streaming" && (
           <InlineBlock
             type={message.inline_block_type}
@@ -423,7 +442,7 @@ function MessageBubble({ message }: { message: StreamMessage }) {
         {message.status === "errored" && (
           <div
             role="alert"
-            className="text-xs text-red-500"
+            style={{ fontSize: 12.5, color: "var(--danger)" }}
           >
             Message failed to send.
           </div>
@@ -497,14 +516,95 @@ function InlineBlock({ type, payload, messageId }: InlineBlockProps) {
 // ─── ThreadEmptyState ─────────────────────────────────────────────────────────
 
 function ThreadEmptyState() {
+  const suggestions = [
+    "Audit my catalog for missing meta titles",
+    "Find slow-moving inventory",
+    "Help me draft a Mother's Day collection page",
+    "Watch for low-stock bestsellers",
+  ];
+
   return (
-    <div className="flex flex-1 flex-col items-center justify-center gap-4 p-8 text-center">
-      <div className="max-w-sm">
-        <p className="text-sm text-[var(--text-secondary)]">
-          Start the conversation — ask about your store, request a workflow,
-          or explore what Operator Zero can do.
-        </p>
+    <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>
+      <div
+        style={{
+          maxWidth: 560,
+          textAlign: "center",
+          display: "flex",
+          flexDirection: "column",
+          gap: 18,
+          alignItems: "center",
+        }}
+      >
+        {/* Logo icon in tinted circle */}
+        <div
+          style={{
+            width: 56,
+            height: 56,
+            borderRadius: "50%",
+            background: "var(--acc-chat-bg)",
+            color: "var(--acc-chat-ink)",
+            display: "grid",
+            placeItems: "center",
+          }}
+          aria-hidden="true"
+        >
+          {/* Logo icon — inline to avoid import overhead */}
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="12" cy="12" r="9" />
+            <circle cx="12" cy="12" r="3.5" />
+            <path d="M12 3v3M12 18v3M3 12h3M18 12h3" />
+          </svg>
+        </div>
+
+        {/* Serif headline */}
+        <div className="display" style={{ fontSize: 36, color: "var(--text)", letterSpacing: "-0.02em" }}>
+          What do you want to <em>get off your plate?</em>
+        </div>
+
+        {/* Suggestion pills */}
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 8, justifyContent: "center", maxWidth: 480 }}>
+          {suggestions.map((s) => (
+            <SuggestionPill key={s} text={s} />
+          ))}
+        </div>
       </div>
     </div>
+  );
+}
+
+function SuggestionPill({ text }: { text: string }) {
+  return (
+    <button
+      style={{
+        all: "unset",
+        cursor: "pointer",
+        padding: "8px 14px",
+        background: "var(--bg-elevated)",
+        border: "0.5px solid var(--border)",
+        borderRadius: "var(--r-pill)",
+        fontSize: 13,
+        color: "var(--text-secondary)",
+        fontFamily: "var(--font-serif)",
+        fontStyle: "italic",
+        transition: "border-color 0.12s, color 0.12s",
+      }}
+      onMouseEnter={(e) => {
+        e.currentTarget.style.borderColor = "var(--acc-chat-ink)";
+        e.currentTarget.style.color = "var(--text)";
+      }}
+      onMouseLeave={(e) => {
+        e.currentTarget.style.borderColor = "var(--border)";
+        e.currentTarget.style.color = "var(--text-secondary)";
+      }}
+      onFocus={(e) => {
+        e.currentTarget.style.outline = "2px solid var(--acc-chat-ink)";
+        e.currentTarget.style.outlineOffset = "2px";
+      }}
+      onBlur={(e) => {
+        e.currentTarget.style.outline = "none";
+      }}
+    >
+      &ldquo;{text}&rdquo;
+    </button>
   );
 }

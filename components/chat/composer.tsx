@@ -19,12 +19,16 @@
  *   - Textarea is labeled via aria-label
  *   - Send button is keyboard-operable (type="submit")
  *   - reduced-motion respected (no transition on streaming indicator)
+ *
+ * DESIGN: surface-conversation.jsx Composer section.
+ *   Elevated card with border, textarea, keyboard hint row, Send button.
  */
 
 import { useEffect, useRef, useCallback } from "react";
 import { createStore, useStore } from "zustand";
 import { toast } from "sonner";
-import { cn } from "@/lib/utils";
+import { Button, Kbd } from "@/components/design/primitives";
+import { Icons } from "@/components/design/icons";
 
 // ─── Draft storage helpers ────────────────────────────────────────────────────
 
@@ -154,8 +158,7 @@ export function Composer({
   isStreaming,
   onStreamEnd,
   disabled = false,
-  placeholder = "Message Orchestrator…",
-  className,
+  placeholder = "Talk to the Orchestrator… describe what you want to automate.",
 }: ComposerProps) {
   // One store per Composer instance (fresh per thread mount)
   const storeRef = useRef(createComposerStore());
@@ -204,7 +207,7 @@ export function Composer({
     const ta = textareaRef.current;
     if (!ta) return;
     ta.style.height = "auto";
-    ta.style.height = `${Math.min(ta.scrollHeight, 200)}px`;
+    ta.style.height = `${Math.min(ta.scrollHeight, 140)}px`;
   }, [text]);
 
   const handleSend = useCallback(async () => {
@@ -253,124 +256,131 @@ export function Composer({
   const isDisabled = disabled || (streaming && queue.length >= 10);
 
   return (
-    <div
-      className={cn(
-        "border-t border-[var(--border)] bg-[var(--bg)] px-4 py-3",
-        className
-      )}
-    >
+    <div style={{ padding: "16px 32px 24px", background: "var(--bg)" }}>
       {/* Error banner */}
       {error && (
         <div
           role="alert"
-          className="mb-2 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700"
+          style={{
+            marginBottom: 8,
+            padding: "8px 12px",
+            background: "color-mix(in oklch, var(--danger) 8%, var(--bg))",
+            border: "0.5px solid color-mix(in oklch, var(--danger) 30%, transparent)",
+            borderRadius: "var(--r-sm)",
+            fontSize: 12.5,
+            color: "var(--danger)",
+          }}
         >
           {error}
         </div>
       )}
 
-      {/* Queue indicator — shown while streaming with queued messages */}
+      {/* Queue indicator */}
       {streaming && queue.length > 0 && (
         <div
           aria-live="polite"
-          className="mb-2 text-xs text-[var(--text-tertiary)]"
+          style={{ marginBottom: 8, fontSize: 11, color: "var(--text-tertiary)" }}
         >
           {queue.length} message{queue.length > 1 ? "s" : ""} queued — will send after response
         </div>
       )}
 
-      <form
-        onSubmit={(e) => {
-          e.preventDefault();
-          void handleSend();
-        }}
-        className="flex items-end gap-2"
-      >
-        <label htmlFor={`composer-${threadId}`} className="sr-only">
-          {placeholder}
-        </label>
-        <textarea
-          ref={textareaRef}
-          id={`composer-${threadId}`}
-          value={text}
-          onChange={(e) => store.getState().setText(e.target.value)}
-          onKeyDown={handleKeyDown}
-          placeholder={placeholder}
-          disabled={isDisabled}
-          rows={1}
-          aria-label={placeholder}
-          aria-describedby={streaming ? "streaming-indicator" : undefined}
-          className={cn(
-            "flex-1 resize-none rounded-lg border border-[var(--border)] bg-[var(--bg-subtle)]",
-            "px-3 py-2 text-sm text-[var(--text)] placeholder:text-[var(--text-tertiary)]",
-            "focus:outline-none focus:ring-2 focus:ring-[var(--acc-chat-ink)]",
-            "disabled:opacity-50 disabled:cursor-not-allowed",
-            "max-h-[200px] overflow-y-auto"
-          )}
-        />
-
-        <button
-          type="submit"
-          disabled={isDisabled || !text.trim()}
-          aria-label="Send message"
-          className={cn(
-            "flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg",
-            "bg-[var(--acc-chat-ink)] text-white",
-            "hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--acc-chat-ink)]",
-            "disabled:opacity-40 disabled:cursor-not-allowed",
-            "transition-opacity"
-          )}
-        >
-          <svg
-            viewBox="0 0 16 16"
-            fill="none"
-            xmlns="http://www.w3.org/2000/svg"
-            className="h-4 w-4"
-            aria-hidden="true"
-          >
-            <path
-              d="M8 2L8 14M8 2L4 6M8 2L12 6"
-              stroke="currentColor"
-              strokeWidth="1.5"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          </svg>
-        </button>
-      </form>
-
-      {/* Streaming indicator */}
-      {streaming && (
+      <div style={{ maxWidth: 760, margin: "0 auto" }}>
         <div
-          id="streaming-indicator"
-          aria-live="polite"
-          className={cn(
-            "mt-1.5 flex items-center gap-1.5 text-xs text-[var(--text-tertiary)]",
-            // Disable animation for reduced-motion
-            "motion-reduce:transition-none"
-          )}
+          style={{
+            background: "var(--bg-elevated)",
+            border: "0.5px solid var(--border-strong)",
+            borderRadius: "var(--r-lg)",
+            padding: "12px 14px",
+            display: "flex",
+            flexDirection: "column",
+            gap: 8,
+            transition: "border-color 0.15s",
+          }}
+          onFocusCapture={(e) => {
+            (e.currentTarget as HTMLElement).style.borderColor = "var(--acc-chat-ink)";
+          }}
+          onBlurCapture={(e) => {
+            (e.currentTarget as HTMLElement).style.borderColor = "var(--border-strong)";
+          }}
         >
-          <span className="italic">thinking</span>
-          <span
-            aria-hidden="true"
-            className="animate-[blink_1.2s_infinite] motion-reduce:animate-none"
-          >
-            ·
-          </span>
-          <span
-            aria-hidden="true"
-            className="animate-[blink_1.2s_infinite_0.2s] motion-reduce:animate-none"
-          >
-            ·
-          </span>
-          <span
-            aria-hidden="true"
-            className="animate-[blink_1.2s_infinite_0.4s] motion-reduce:animate-none"
-          >
-            ·
-          </span>
+          <label htmlFor={`composer-${threadId}`} className="sr-only">
+            {placeholder}
+          </label>
+          <textarea
+            ref={textareaRef}
+            id={`composer-${threadId}`}
+            value={text}
+            onChange={(e) => store.getState().setText(e.target.value)}
+            onKeyDown={handleKeyDown}
+            placeholder={placeholder}
+            disabled={isDisabled}
+            rows={1}
+            aria-label={placeholder}
+            aria-describedby={streaming ? "composer-streaming-indicator" : undefined}
+            style={{
+              all: "unset",
+              width: "100%",
+              minHeight: 40,
+              maxHeight: 140,
+              resize: "none",
+              fontSize: 14,
+              color: "var(--text)",
+              lineHeight: 1.5,
+              fontFamily: "inherit",
+              background: "transparent",
+              cursor: isDisabled ? "not-allowed" : "text",
+              opacity: isDisabled ? 0.5 : 1,
+            }}
+          />
+
+          {/* Bottom row: hints + send button */}
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+            {/* Left: memory indicator */}
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <span
+                style={{
+                  fontSize: 11,
+                  color: "var(--text-tertiary)",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 6,
+                }}
+              >
+                <Icons.Brain size={12} style={{ color: "var(--text-faint)" }} />
+                remembers your store
+              </span>
+            </div>
+
+            {/* Right: keyboard hints + send */}
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <span
+                style={{
+                  fontSize: 11,
+                  color: "var(--text-tertiary)",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 6,
+                }}
+              >
+                <Kbd>&#9166;</Kbd> send &middot; <Kbd>&#8679;&#9166;</Kbd> newline
+              </span>
+              <Button
+                variant="primary"
+                accent="chat"
+                size="sm"
+                type="submit"
+                onClick={() => void handleSend()}
+                disabled={isDisabled || !text.trim()}
+                icon="ArrowUp"
+                aria-label="Send message"
+              >
+                Send
+              </Button>
+            </div>
+          </div>
         </div>
-      )}
+      </div>
     </div>
   );
 }

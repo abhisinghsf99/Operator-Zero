@@ -24,12 +24,15 @@
  *
  * DESIGN CONTRACT:
  *   Follows "Operator Zero Design Files/surface-conversation.jsx" InlineApprovalCard
- *   visual specification — action type badge, summary, reasoning, preview, impact.
+ *   visual specification at full fidelity. Uses shared primitives from
+ *   components/design/primitives.tsx.
  */
 
 import { useState, useEffect, useCallback } from "react";
 import { createBrowserClient } from "@/lib/auth/client";
 import { approveItem, rejectItem } from "@/app/app/approvals/actions";
+import { Button, StakesIndicator } from "@/components/design/primitives";
+import { Icons } from "@/components/design/icons";
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
@@ -47,8 +50,8 @@ export interface InlineApprovalCardProps {
   actionType: string;
   /** One-line summary shown to the user */
   summary: string;
-  /** Risk level: 'low' | 'med' | 'high' */
-  stakes: "low" | "med" | "high";
+  /** Risk level: 'low' | 'med' | 'medium' | 'high' */
+  stakes: "low" | "med" | "medium" | "high";
   /** Structured preview data */
   preview?: Record<string, unknown>;
   /** Agent's reasoning summary */
@@ -61,42 +64,6 @@ export interface InlineApprovalCardProps {
   initialStatus?: ApprovalStatus;
   /** The Inngest event key for correlation */
   inngestEventKey?: string;
-}
-
-// ─── Stakes indicator ─────────────────────────────────────────────────────────
-
-function StakesIndicator({ level }: { level: "low" | "med" | "high" }) {
-  const colors: Record<string, string> = {
-    low: "var(--success, #22c55e)",
-    med: "var(--warning, #f59e0b)",
-    high: "var(--danger, #ef4444)",
-  };
-  return (
-    <span
-      style={{
-        display: "inline-flex",
-        alignItems: "center",
-        gap: 4,
-        fontSize: 11,
-        fontFamily: "var(--font-mono, monospace)",
-        color: colors[level],
-        textTransform: "uppercase",
-        letterSpacing: "0.06em",
-      }}
-      aria-label={`Stakes: ${level}`}
-    >
-      <span
-        style={{
-          width: 6,
-          height: 6,
-          borderRadius: "50%",
-          background: colors[level],
-          display: "inline-block",
-        }}
-      />
-      {level}
-    </span>
-  );
 }
 
 // ─── InlineApprovalCard ───────────────────────────────────────────────────────
@@ -123,7 +90,6 @@ export function InlineApprovalCard({
   impact,
   estTime,
   initialStatus = "pending",
-  inngestEventKey,
 }: InlineApprovalCardProps) {
   const [status, setStatus] = useState<ApprovalStatus>(initialStatus);
   const [isPending, setIsPending] = useState(false);
@@ -141,8 +107,6 @@ export function InlineApprovalCard({
     let cancelled = false;
 
     void (async () => {
-      // Required for { private: true }: scope the socket to the user JWT so the
-      // server-side realtime.messages authorization policy can verify ownership.
       const {
         data: { session },
       } = await supabase.auth.getSession();
@@ -226,34 +190,22 @@ export function InlineApprovalCard({
   if (status === "approved") {
     return (
       <div
-        className="inline-approval-card inline-approval-card--resolved"
+        className="anim-pop"
         role="status"
         aria-label="Approval confirmed"
         style={{
           padding: "10px 14px",
-          background: "var(--bg-subtle, #f9fafb)",
-          border: "0.5px solid var(--border, #e5e7eb)",
-          borderRadius: "var(--r-md, 8px)",
+          background: "var(--bg-subtle)",
+          border: "0.5px solid var(--border)",
+          borderRadius: "var(--r-md)",
           display: "flex",
           alignItems: "center",
           gap: 10,
           fontSize: 12.5,
-          color: "var(--text-tertiary, #6b7280)",
+          color: "var(--text-tertiary)",
         }}
       >
-        <svg
-          width="14"
-          height="14"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="var(--success, #22c55e)"
-          strokeWidth="2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          aria-hidden="true"
-        >
-          <polyline points="20 6 9 17 4 12" />
-        </svg>
+        <Icons.Check size={14} style={{ color: "var(--success)" }} />
         <span>Approved &middot; {summary}</span>
       </div>
     );
@@ -262,35 +214,22 @@ export function InlineApprovalCard({
   if (status === "rejected") {
     return (
       <div
-        className="inline-approval-card inline-approval-card--resolved"
+        className="anim-pop"
         role="status"
         aria-label="Approval rejected"
         style={{
           padding: "10px 14px",
-          background: "var(--bg-subtle, #f9fafb)",
-          border: "0.5px solid var(--border, #e5e7eb)",
-          borderRadius: "var(--r-md, 8px)",
+          background: "var(--bg-subtle)",
+          border: "0.5px solid var(--border)",
+          borderRadius: "var(--r-md)",
           display: "flex",
           alignItems: "center",
           gap: 10,
           fontSize: 12.5,
-          color: "var(--text-tertiary, #6b7280)",
+          color: "var(--text-tertiary)",
         }}
       >
-        <svg
-          width="14"
-          height="14"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="var(--danger, #ef4444)"
-          strokeWidth="2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          aria-hidden="true"
-        >
-          <line x1="18" y1="6" x2="6" y2="18" />
-          <line x1="6" y1="6" x2="18" y2="18" />
-        </svg>
+        <Icons.X size={14} style={{ color: "var(--danger)" }} />
         <span>Rejected &middot; {summary} &middot; the agent will remember.</span>
       </div>
     );
@@ -299,16 +238,16 @@ export function InlineApprovalCard({
   if (status === "expired") {
     return (
       <div
-        className="inline-approval-card inline-approval-card--resolved"
+        className="anim-pop"
         role="status"
         aria-label="Approval expired"
         style={{
           padding: "10px 14px",
-          background: "var(--bg-subtle, #f9fafb)",
-          border: "0.5px solid var(--border, #e5e7eb)",
-          borderRadius: "var(--r-md, 8px)",
+          background: "var(--bg-subtle)",
+          border: "0.5px solid var(--border)",
+          borderRadius: "var(--r-md)",
           fontSize: 12.5,
-          color: "var(--text-tertiary, #6b7280)",
+          color: "var(--text-tertiary)",
         }}
       >
         This approval request has expired.
@@ -320,50 +259,35 @@ export function InlineApprovalCard({
 
   return (
     <div
-      className="inline-approval-card"
       role="region"
       aria-label={`Approval needed: ${summary}`}
       style={{
-        border: "0.5px solid var(--border, #e5e7eb)",
-        borderRadius: "var(--r-lg, 12px)",
-        background: "var(--bg-elevated, #ffffff)",
+        border: "0.5px solid var(--border)",
+        borderRadius: "var(--r-lg)",
+        background: "var(--bg-elevated)",
         overflow: "hidden",
       }}
     >
-      {/* Header */}
+      {/* Header — approval accent */}
       <div
         style={{
           padding: "12px 16px",
-          background: "var(--acc-approval-bg, color-mix(in oklch, var(--approval, #f59e0b) 8%, var(--bg, #ffffff)))",
-          borderBottom: "0.5px solid var(--border-hairline, #f3f4f6)",
+          background: "var(--acc-approval-bg)",
+          borderBottom: "0.5px solid var(--border-hairline)",
           display: "flex",
           alignItems: "center",
           justifyContent: "space-between",
         }}
       >
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          {/* Inbox icon */}
-          <svg
-            width="14"
-            height="14"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="var(--acc-approval-ink, #d97706)"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            aria-hidden="true"
-          >
-            <polyline points="22 12 16 12 14 15 10 15 8 12 2 12" />
-            <path d="M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z" />
-          </svg>
+          <Icons.Inbox size={14} style={{ color: "var(--acc-approval-ink)" }} />
           <span
             style={{
               fontSize: 12,
-              fontFamily: "var(--font-mono, monospace)",
+              fontFamily: "var(--font-mono)",
               textTransform: "uppercase",
               letterSpacing: "0.06em",
-              color: "var(--acc-approval-ink, #d97706)",
+              color: "var(--acc-approval-ink)",
               fontWeight: 500,
             }}
           >
@@ -371,13 +295,13 @@ export function InlineApprovalCard({
           </span>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <StakesIndicator level={stakes} />
+          <StakesIndicator level={stakes === "med" ? "medium" : stakes} />
           {estTime && (
             <span
               style={{
                 fontSize: 11,
-                color: "var(--text-tertiary, #9ca3af)",
-                fontFamily: "var(--font-mono, monospace)",
+                color: "var(--text-tertiary)",
+                fontFamily: "var(--font-mono)",
               }}
             >
               ~{estTime}
@@ -395,13 +319,13 @@ export function InlineApprovalCard({
           gap: 14,
         }}
       >
-        {/* Action type + summary */}
+        {/* Action type + summary (display font) */}
         <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
           <div
             style={{
               fontSize: 11,
-              fontFamily: "var(--font-mono, monospace)",
-              color: "var(--text-tertiary, #9ca3af)",
+              fontFamily: "var(--font-mono)",
+              color: "var(--text-tertiary)",
               textTransform: "uppercase",
               letterSpacing: "0.05em",
             }}
@@ -409,89 +333,54 @@ export function InlineApprovalCard({
             {actionType}
           </div>
           <div
+            className="display"
             style={{
-              fontSize: 18,
-              color: "var(--text, #111827)",
+              fontSize: 22,
+              color: "var(--text)",
               letterSpacing: "-0.01em",
-              fontWeight: 500,
             }}
           >
             {summary}
           </div>
         </div>
 
-        {/* Reasoning */}
-        <div
-          style={{
-            padding: "10px 12px",
-            background: "var(--bg-subtle, #f9fafb)",
-            borderRadius: "var(--r-sm, 6px)",
-            fontSize: 13,
-            lineHeight: 1.5,
-            color: "var(--text-secondary, #4b5563)",
-            display: "flex",
-            gap: 10,
-            borderLeft: "2px solid var(--acc-workflow-ink, #6366f1)",
-          }}
-        >
-          {/* Brain icon */}
-          <svg
-            width="14"
-            height="14"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="var(--text-tertiary, #9ca3af)"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            style={{ flexShrink: 0, marginTop: 2 }}
-            aria-hidden="true"
-          >
-            <path d="M9.5 2A2.5 2.5 0 0 1 12 4.5v15a2.5 2.5 0 0 1-4.96-.46 2.5 2.5 0 0 1-2.96-3.08 3 3 0 0 1-.34-5.58 2.5 2.5 0 0 1 1.32-4.24 2.5 2.5 0 0 1 1.98-3A2.5 2.5 0 0 1 9.5 2Z" />
-            <path d="M14.5 2A2.5 2.5 0 0 0 12 4.5v15a2.5 2.5 0 0 0 4.96-.46 2.5 2.5 0 0 0 2.96-3.08 3 3 0 0 0 .34-5.58 2.5 2.5 0 0 0-1.32-4.24 2.5 2.5 0 0 0-1.98-3A2.5 2.5 0 0 0 14.5 2Z" />
-          </svg>
-          <div>
-            <span
-              style={{
-                fontSize: 11,
-                color: "var(--text-tertiary, #9ca3af)",
-                fontFamily: "var(--font-mono, monospace)",
-                textTransform: "uppercase",
-                letterSpacing: "0.05em",
-                marginRight: 8,
-              }}
-            >
-              Why
-            </span>
-            {reasoning}
-          </div>
-        </div>
-
-        {/* Preview */}
-        {preview && Object.keys(preview).length > 0 && (
+        {/* Reasoning block — left border accent */}
+        {reasoning && (
           <div
             style={{
               padding: "10px 12px",
-              background: "var(--bg-subtle, #f9fafb)",
-              borderRadius: "var(--r-sm, 6px)",
-              fontSize: 12.5,
-              color: "var(--text, #111827)",
+              background: "var(--bg-subtle)",
+              borderRadius: "var(--r-sm)",
+              fontSize: 13,
+              lineHeight: 1.5,
+              color: "var(--text-secondary)",
+              display: "flex",
+              gap: 10,
+              borderLeft: "2px solid var(--acc-workflow-ink)",
             }}
           >
-            <pre
-              style={{
-                margin: 0,
-                fontFamily: "var(--font-mono, monospace)",
-                fontSize: 12,
-                overflow: "auto",
-                maxHeight: 200,
-                whiteSpace: "pre-wrap",
-                wordBreak: "break-word",
-              }}
-            >
-              {JSON.stringify(preview, null, 2)}
-            </pre>
+            <Icons.Brain size={14} style={{ flexShrink: 0, marginTop: 2, color: "var(--text-tertiary)" }} />
+            <div>
+              <span
+                style={{
+                  fontSize: 11,
+                  color: "var(--text-tertiary)",
+                  fontFamily: "var(--font-mono)",
+                  textTransform: "uppercase",
+                  letterSpacing: "0.05em",
+                  marginRight: 8,
+                }}
+              >
+                Why
+              </span>
+              {reasoning}
+            </div>
           </div>
+        )}
+
+        {/* Preview */}
+        {preview && Object.keys(preview).length > 0 && (
+          <ApprovalPreview preview={preview} />
         )}
 
         {/* Downstream impact (high-stakes warning) */}
@@ -499,34 +388,16 @@ export function InlineApprovalCard({
           <div
             style={{
               padding: "10px 12px",
-              background:
-                "color-mix(in oklch, var(--warning, #f59e0b) 8%, var(--bg, #ffffff))",
-              border:
-                "0.5px solid color-mix(in oklch, var(--warning, #f59e0b) 30%, transparent)",
-              borderRadius: "var(--r-sm, 6px)",
+              background: "color-mix(in oklch, var(--warning) 8%, var(--bg))",
+              border: "0.5px solid color-mix(in oklch, var(--warning) 30%, transparent)",
+              borderRadius: "var(--r-sm)",
               fontSize: 12.5,
-              color: "var(--text, #111827)",
+              color: "var(--text)",
               display: "flex",
               gap: 8,
             }}
           >
-            {/* Warning icon */}
-            <svg
-              width="13"
-              height="13"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="var(--warning, #f59e0b)"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              style={{ flexShrink: 0, marginTop: 2 }}
-              aria-hidden="true"
-            >
-              <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
-              <line x1="12" y1="9" x2="12" y2="13" />
-              <line x1="12" y1="17" x2="12.01" y2="17" />
-            </svg>
+            <Icons.Warning size={13} style={{ color: "var(--warning)", flexShrink: 0, marginTop: 2 }} />
             <span>
               <strong style={{ fontWeight: 500 }}>Downstream impact:</strong>{" "}
               {impact}
@@ -540,11 +411,11 @@ export function InlineApprovalCard({
             role="alert"
             style={{
               padding: "8px 12px",
-              background: "color-mix(in oklch, var(--danger, #ef4444) 8%, var(--bg, #ffffff))",
-              border: "0.5px solid color-mix(in oklch, var(--danger, #ef4444) 30%, transparent)",
-              borderRadius: "var(--r-sm, 6px)",
+              background: "color-mix(in oklch, var(--danger) 8%, var(--bg))",
+              border: "0.5px solid color-mix(in oklch, var(--danger) 30%, transparent)",
+              borderRadius: "var(--r-sm)",
               fontSize: 12.5,
-              color: "var(--danger, #ef4444)",
+              color: "var(--danger)",
             }}
           >
             {error}
@@ -556,88 +427,236 @@ export function InlineApprovalCard({
       <div
         style={{
           padding: "10px 14px",
-          borderTop: "0.5px solid var(--border-hairline, #f3f4f6)",
-          background: "var(--bg, #ffffff)",
+          borderTop: "0.5px solid var(--border-hairline)",
+          background: "var(--bg)",
           display: "flex",
           alignItems: "center",
-          justifyContent: "flex-end",
-          gap: 6,
+          justifyContent: "space-between",
+          gap: 8,
         }}
       >
-        <button
-          type="button"
-          onClick={handleReject}
-          disabled={isPending}
-          aria-label={`Reject: ${summary}`}
-          style={{
-            padding: "6px 12px",
-            fontSize: 13,
-            fontWeight: 500,
-            borderRadius: "var(--r-sm, 6px)",
-            border: "0.5px solid var(--border, #e5e7eb)",
-            background: "transparent",
-            color: "var(--text, #111827)",
-            cursor: isPending ? "not-allowed" : "pointer",
-            opacity: isPending ? 0.5 : 1,
-            display: "inline-flex",
-            alignItems: "center",
-            gap: 6,
-            fontFamily: "inherit",
-          }}
-        >
-          <svg
-            width="12"
-            height="12"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            aria-hidden="true"
+        {/* Left: snooze */}
+        <div style={{ display: "flex", gap: 8 }}>
+          <Button
+            variant="ghost"
+            size="sm"
+            icon="Clock"
+            aria-label="Snooze approval"
           >
-            <line x1="18" y1="6" x2="6" y2="18" />
-            <line x1="6" y1="6" x2="18" y2="18" />
-          </svg>
-          Reject
-        </button>
+            Snooze
+          </Button>
+        </div>
 
-        <button
-          type="button"
-          onClick={handleApprove}
-          disabled={isPending}
-          aria-label={`Approve: ${summary}`}
+        {/* Right: reject / edit / approve */}
+        <div style={{ display: "flex", gap: 6 }}>
+          <Button
+            variant="ghost"
+            size="sm"
+            icon="X"
+            onClick={() => void handleReject()}
+            disabled={isPending}
+            aria-label={`Reject: ${summary}`}
+          >
+            Reject
+          </Button>
+          <Button
+            variant="secondary"
+            size="sm"
+            icon="Edit"
+            aria-label="Edit this action"
+          >
+            Edit
+          </Button>
+          <Button
+            variant="primary"
+            accent="approval"
+            size="sm"
+            icon="Check"
+            onClick={() => void handleApprove()}
+            disabled={isPending}
+            aria-label={`Approve: ${summary}`}
+          >
+            {isPending ? "Processing…" : "Approve"}
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── ApprovalPreview ──────────────────────────────────────────────────────────
+
+type PreviewPayload = Record<string, unknown>;
+
+function ApprovalPreview({ preview }: { preview: PreviewPayload }) {
+  const kind = preview.kind as string | undefined;
+
+  if (kind === "content-diff") {
+    return (
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        <PreviewRow label="From" body={String(preview.before ?? "")} tone="muted" />
+        <PreviewRow label="To" body={String(preview.after ?? "")} tone="primary" />
+      </div>
+    );
+  }
+
+  if (kind === "email") {
+    return (
+      <div
+        style={{
+          border: "0.5px solid var(--border)",
+          borderRadius: "var(--r-sm)",
+          overflow: "hidden",
+        }}
+      >
+        <div
           style={{
-            padding: "6px 14px",
-            fontSize: 13,
-            fontWeight: 500,
-            borderRadius: "var(--r-sm, 6px)",
-            border: "0.5px solid var(--acc-approval-ink, #d97706)",
-            background: "var(--acc-approval-bg, color-mix(in oklch, #f59e0b 15%, #ffffff))",
-            color: "var(--acc-approval-ink, #d97706)",
-            cursor: isPending ? "not-allowed" : "pointer",
-            opacity: isPending ? 0.5 : 1,
-            display: "inline-flex",
+            padding: "10px 14px",
+            background: "var(--bg-subtle)",
+            display: "flex",
             alignItems: "center",
-            gap: 6,
-            fontFamily: "inherit",
+            gap: 8,
+            borderBottom: "0.5px solid var(--border-hairline)",
           }}
         >
-          <svg
-            width="12"
-            height="12"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            aria-hidden="true"
+          <Icons.Gmail size={14} style={{ color: "var(--text-tertiary)" }} />
+          <div style={{ fontSize: 12, color: "var(--text-tertiary)", display: "flex", gap: 16, flex: 1 }}>
+            <span>
+              <strong style={{ color: "var(--text)", fontWeight: 500 }}>To:</strong>{" "}
+              {String(preview.to ?? "")}
+            </span>
+          </div>
+        </div>
+        <div style={{ padding: "10px 14px", background: "var(--bg-elevated)", borderBottom: "0.5px solid var(--border-hairline)" }}>
+          <div style={{ fontSize: 13, color: "var(--text)", fontWeight: 500 }}>
+            {String(preview.subject ?? "")}
+          </div>
+        </div>
+        <div
+          style={{
+            padding: "14px 16px",
+            fontSize: 13.5,
+            lineHeight: 1.6,
+            color: "var(--text)",
+            whiteSpace: "pre-wrap",
+            fontFamily: "var(--font-serif)",
+          }}
+        >
+          {String(preview.body ?? "")}
+        </div>
+      </div>
+    );
+  }
+
+  if (kind === "list" && Array.isArray(preview.items)) {
+    const items = preview.items as Array<{ from?: string; to?: string }>;
+    return (
+      <div style={{ border: "0.5px solid var(--border)", borderRadius: "var(--r-sm)", overflow: "hidden" }}>
+        {items.map((it, i) => (
+          <div
+            key={i}
+            style={{
+              padding: "9px 14px",
+              borderBottom: i === items.length - 1 ? "none" : "0.5px solid var(--border-hairline)",
+              display: "grid",
+              gridTemplateColumns: "1fr 16px 1.5fr",
+              alignItems: "center",
+              gap: 12,
+              fontSize: 12.5,
+            }}
           >
-            <polyline points="20 6 9 17 4 12" />
-          </svg>
-          {isPending ? "Processing…" : "Approve"}
-        </button>
+            <span
+              style={{
+                color: "var(--text-tertiary)",
+                textDecoration: it.to ? "line-through" : "none",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+              }}
+            >
+              {String(it.from ?? "")}
+            </span>
+            {it.to && <Icons.ArrowRight size={11} style={{ color: "var(--text-faint)" }} />}
+            <span
+              style={{
+                color: "var(--text)",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+              }}
+            >
+              {String(it.to ?? "")}
+            </span>
+          </div>
+        ))}
+      </div>
+    );
+  }
+
+  // Fallback: generic pre-formatted JSON preview
+  return (
+    <div
+      style={{
+        padding: "10px 12px",
+        background: "var(--bg-subtle)",
+        borderRadius: "var(--r-sm)",
+        fontSize: 12,
+        color: "var(--text)",
+      }}
+    >
+      <pre
+        style={{
+          margin: 0,
+          fontFamily: "var(--font-mono)",
+          fontSize: 12,
+          overflow: "auto",
+          maxHeight: 200,
+          whiteSpace: "pre-wrap",
+          wordBreak: "break-word",
+        }}
+      >
+        {JSON.stringify(preview, null, 2)}
+      </pre>
+    </div>
+  );
+}
+
+// ─── PreviewRow ───────────────────────────────────────────────────────────────
+
+function PreviewRow({ label, body, tone }: { label: string; body: string; tone: "primary" | "muted" }) {
+  return (
+    <div
+      style={{
+        display: "grid",
+        gridTemplateColumns: "44px 1fr",
+        gap: 12,
+        padding: "8px 12px",
+        background: tone === "primary" ? "var(--bg-elevated)" : "var(--bg-subtle)",
+        border: tone === "primary" ? "0.5px solid var(--acc-approval-ink)" : "0.5px solid var(--border)",
+        borderRadius: "var(--r-sm)",
+      }}
+    >
+      <div
+        style={{
+          fontSize: 10.5,
+          fontFamily: "var(--font-mono)",
+          color: tone === "primary" ? "var(--acc-approval-ink)" : "var(--text-tertiary)",
+          textTransform: "uppercase",
+          letterSpacing: "0.06em",
+          paddingTop: 4,
+        }}
+      >
+        {label}
+      </div>
+      <div
+        style={{
+          fontSize: 13.5,
+          color: tone === "primary" ? "var(--text)" : "var(--text-tertiary)",
+          lineHeight: 1.55,
+          fontFamily: tone === "primary" ? "var(--font-serif)" : "var(--font-sans)",
+        }}
+      >
+        {body}
       </div>
     </div>
   );
