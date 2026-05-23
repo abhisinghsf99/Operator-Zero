@@ -1,10 +1,10 @@
+import { redirect } from "next/navigation";
+
+/**
+ * Root entry. The product has no marketing landing page (per the design, the app
+ * opens to My Workflows). Route `/` into the app; middleware redirects to /login
+ * when unauthenticated.
+ */
 export default function Home() {
-  return (
-    <main className="flex min-h-screen flex-col items-center justify-center p-24">
-      <h1 className="text-4xl font-bold">Operator Zero</h1>
-      <p className="mt-4 text-lg text-gray-600">
-        Autonomous operations for your Shopify store.
-      </p>
-    </main>
-  );
+  redirect("/app/workflows");
 }
