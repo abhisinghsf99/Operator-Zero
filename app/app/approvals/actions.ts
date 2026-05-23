@@ -206,10 +206,16 @@ export async function rejectItem(
     };
   }
 
-  // 4. Store reject reason as durable memory BEFORE firing Inngest event (D-04)
-  //    This ensures the memory is persisted even if the event send fails.
+  // 4. Store reject reason as durable memory BEFORE firing Inngest event (D-04).
+  //    Best-effort: a memory-storage failure (e.g. embeddings provider down) must
+  //    NOT block the workflow resume below — the row is already marked rejected, so
+  //    swallowing the error here prevents a paused run from hanging forever.
   if (reason) {
-    await storeMemoryItem(userId, reason, "decision_history");
+    try {
+      await storeMemoryItem(userId, reason, "decision_history");
+    } catch (err) {
+      console.error("[rejectItem] failed to store reject reason as memory", err);
+    }
   }
 
   // 5. Fire Inngest resume event — resumes the paused workflow run with rejection
