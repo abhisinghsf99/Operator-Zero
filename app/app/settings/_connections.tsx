@@ -19,6 +19,7 @@
  *   - Status badges have text labels
  *   - Confirm dialog is focus-trapped (Radix Dialog)
  *   - All interactive elements have descriptive aria-labels
+ *   - Shop domain dialog: aria-label, aria-invalid, role="alert" on error
  */
 import { useState, useTransition } from "react";
 import { RefreshCw, ExternalLink } from "lucide-react";
@@ -37,6 +38,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { disconnectIntegration } from "@/app/app/settings/actions";
 import type { IntegrationHealth } from "@/lib/integrations/health";
+import { normalizeShopDomain } from "@/lib/integrations/shopify/shop-domain";
 
 interface ConnectionsSectionProps {
   shopifyHealth: IntegrationHealth;
@@ -120,13 +122,42 @@ function ConnectionRow({
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
+  // Shop domain dialog state (Shopify only)
+  const [shopDialogOpen, setShopDialogOpen] = useState(false);
+  const [shopInput, setShopInput] = useState("");
+  const [shopError, setShopError] = useState<string | null>(null);
+
   const isConnected = health.status === "healthy" || health.status === "stale";
   const needsReconnect = health.status === "needs_reconnect";
 
   const ProviderIcon = provider === "shopify" ? Icons.Shopify : Icons.Gmail;
 
   function handleReconnect() {
-    window.location.href = connectPath;
+    if (provider === "shopify") {
+      // Open domain dialog instead of redirecting immediately
+      setShopInput("");
+      setShopError(null);
+      setShopDialogOpen(true);
+    } else {
+      // Gmail: direct redirect with no dialog (unchanged behavior)
+      window.location.href = connectPath;
+    }
+  }
+
+  function handleShopConnect() {
+    const domain = normalizeShopDomain(shopInput);
+    if (!domain) {
+      setShopError("Enter your store as my-store.myshopify.com");
+      return;
+    }
+    window.location.href = `${connectPath}?shop=${encodeURIComponent(domain)}`;
+  }
+
+  function handleShopDialogKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      handleShopConnect();
+    }
   }
 
   function handleDisconnect() {
@@ -273,6 +304,83 @@ function ConnectionRow({
           </p>
         )}
       </Card>
+
+      {/* Shop domain dialog — Shopify only (separate from disconnect dialog) */}
+      {provider === "shopify" && (
+        <Dialog open={shopDialogOpen} onOpenChange={(open) => {
+          setShopDialogOpen(open);
+          if (!open) {
+            setShopInput("");
+            setShopError(null);
+          }
+        }}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Connect your Shopify store</DialogTitle>
+              <DialogDescription>
+                Enter your Shopify store domain to start the OAuth handshake. You can use just
+                your store handle (e.g. my-store) or the full domain.
+              </DialogDescription>
+            </DialogHeader>
+            <div style={{ padding: "4px 0 8px", display: "flex", flexDirection: "column", gap: 8 }}>
+              <input
+                type="text"
+                value={shopInput}
+                onChange={(e) => {
+                  setShopInput(e.target.value);
+                  if (shopError) setShopError(null);
+                }}
+                onKeyDown={handleShopDialogKeyDown}
+                placeholder="my-store.myshopify.com"
+                aria-label="Shopify store domain"
+                aria-invalid={shopError ? true : undefined}
+                data-testid="shopify-shop-input"
+                autoFocus
+                style={{
+                  width: "100%",
+                  padding: "8px 12px",
+                  borderRadius: "var(--r-sm)",
+                  border: `1px solid ${shopError ? "var(--danger)" : "var(--border-strong)"}`,
+                  background: "var(--bg-subtle)",
+                  color: "var(--text)",
+                  fontFamily: "var(--font-mono)",
+                  fontSize: 13,
+                  outline: "none",
+                  boxSizing: "border-box",
+                }}
+              />
+              {shopError && (
+                <p
+                  role="alert"
+                  style={{
+                    margin: 0,
+                    fontSize: 12.5,
+                    color: "var(--danger)",
+                    lineHeight: 1.4,
+                  }}
+                >
+                  {shopError}
+                </p>
+              )}
+            </div>
+            <DialogFooter>
+              <DialogClose asChild>
+                <Button variant="secondary" size="sm">
+                  Cancel
+                </Button>
+              </DialogClose>
+              <Button
+                size="sm"
+                onClick={handleShopConnect}
+                data-testid="shopify-connect-submit"
+                aria-label="Connect to Shopify with this store"
+              >
+                Connect store
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
 
       {/* Disconnect confirm dialog — T-2-08-05 */}
       <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>

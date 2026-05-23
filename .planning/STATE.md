@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-05-21)
 Phase: 04
 Plan: Not started
 Status: Milestone complete
-Last activity: 2026-05-23
+Last activity: 2026-05-23 - Completed quick task 260523-1jq: Fix Shopify Connect button to collect myshopify store domain before OAuth redirect
 
 Progress: [██████████] 95%
 
@@ -129,6 +129,12 @@ None yet.
 - Pricing required before beta (PRD §8.3 open item — out of scope for build but needed pre-GA)
 - Mobile detailed design pass still needed (PRD flag — Phase 4 work will unblock this)
 - SOC 2 / threat model / pen test tracked separately, required before GA
+
+### Quick Tasks Completed
+
+| # | Description | Date | Commit | Directory |
+|---|-------------|------|--------|-----------|
+| 260523-1jq | Fix Shopify Connect button to collect myshopify store domain before OAuth redirect | 2026-05-23 | 4851b5b | [260523-1jq-fix-shopify-connect-button-to-collect-my](./quick/260523-1jq-fix-shopify-connect-button-to-collect-my/) |
 
 ## Session Continuity
 
