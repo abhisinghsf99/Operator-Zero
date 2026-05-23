@@ -389,3 +389,58 @@ export async function saveWorkflowFromPlan(
     return { error: toClientError(err, "saveWorkflowFromPlan") };
   }
 }
+
+// ─── listMessages ───────────────────────────────────────────────────────────────
+
+export interface ThreadMessage {
+  id: string;
+  role: "user" | "assistant" | "tool";
+  content: string | null;
+  status: string;
+  inline_block_type: string | null;
+  inline_block_payload: unknown;
+  created_at: Date | string;
+}
+
+/**
+ * listMessages — load a thread's persisted messages in chronological order so the
+ * Conversation surface can render history on open/reload (CONV-01).
+ *
+ * RLS scopes rows to the current user; the explicit thread_id filter scopes to the
+ * thread. Tool rows are excluded — only user/assistant messages render in the UI.
+ */
+export async function listMessages(
+  threadId: string
+): Promise<{ messages: ThreadMessage[] } | { error: string }> {
+  const parsed = z.string().uuid("threadId must be a UUID").safeParse(threadId);
+  if (!parsed.success) return { error: "invalid threadId" };
+
+  const supabase = await createClient();
+  const { data } = await supabase.auth.getClaims();
+  const claims = data?.claims ?? null;
+  if (!claims?.sub) return { error: "unauthenticated" };
+
+  try {
+    const rows = (await withUserRls(claims as Record<string, unknown>, async (tx) => {
+      return tx
+        .select({
+          id: messages.id,
+          role: messages.role,
+          content: messages.content,
+          status: messages.status,
+          inline_block_type: messages.inline_block_type,
+          inline_block_payload: messages.inline_block_payload,
+          created_at: messages.created_at,
+        })
+        .from(messages)
+        .where(eq(messages.thread_id, parsed.data))
+        .orderBy(messages.created_at);
+    })) as ThreadMessage[];
+
+    return {
+      messages: rows.filter((m) => m.role === "user" || m.role === "assistant"),
+    };
+  } catch (err) {
+    return { error: toClientError(err, "listMessages") };
+  }
+}

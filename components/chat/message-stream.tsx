@@ -55,8 +55,20 @@ interface StreamMessage extends Message {
 
 // ─── ChatThreadView ────────────────────────────────────────────────────────────
 
+interface InitialMessage {
+  id: string;
+  role: "user" | "assistant" | "tool";
+  content: string | null;
+  status: string;
+  inline_block_type?: string | null;
+  inline_block_payload?: unknown;
+  created_at?: Date | string;
+}
+
 interface ChatThreadViewProps {
   threadId: string;
+  /** Persisted messages loaded server-side, rendered as history on open. */
+  initialMessages?: InitialMessage[];
 }
 
 /**
@@ -65,8 +77,22 @@ interface ChatThreadViewProps {
  * Renders the message list and composer in a flex column.
  * The SSE stream is initiated per-send from the Composer.
  */
-export function ChatThreadView({ threadId }: ChatThreadViewProps) {
-  const [messages, setMessages] = useState<StreamMessage[]>([]);
+export function ChatThreadView({ threadId, initialMessages = [] }: ChatThreadViewProps) {
+  const [messages, setMessages] = useState<StreamMessage[]>(() =>
+    initialMessages
+      .filter((m) => m.role === "user" || m.role === "assistant")
+      .map((m) => ({
+        id: m.id,
+        role: m.role as "user" | "assistant",
+        content: m.content ?? "",
+        status: (m.status === "streaming" || m.status === "errored"
+          ? m.status
+          : "complete") as Message["status"],
+        inline_block_type: m.inline_block_type ?? null,
+        inline_block_payload: m.inline_block_payload,
+        created_at: m.created_at ? new Date(m.created_at) : undefined,
+      }))
+  );
   const [isStreaming, setIsStreaming] = useState(false);
   const [streamError, setStreamError] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);

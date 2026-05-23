@@ -12,7 +12,7 @@
 
 import { redirect } from "next/navigation";
 import { getOrCreateProfile } from "@/lib/auth/profile";
-import { listThreads } from "../actions";
+import { listThreads, listMessages } from "../actions";
 import { ThreadSidebar } from "@/components/chat/thread-sidebar";
 import { ChatThreadView } from "@/components/chat/message-stream";
 
@@ -30,10 +30,15 @@ export default async function ChatThreadPage({ params }: ChatThreadPageProps) {
   // 2. Await params (Next.js 15)
   const { threadId } = await params;
 
-  // 3. Load threads for sidebar
-  const threadsResult = await listThreads();
+  // 3. Load threads for sidebar + this thread's persisted messages (history)
+  const [threadsResult, messagesResult] = await Promise.all([
+    listThreads(),
+    listMessages(threadId),
+  ]);
   const threads =
     "threads" in threadsResult ? threadsResult.threads : [];
+  const initialMessages =
+    "messages" in messagesResult ? messagesResult.messages : [];
 
   return (
     <div className="flex h-full overflow-hidden" data-testid="chat-thread-page">
@@ -41,7 +46,7 @@ export default async function ChatThreadPage({ params }: ChatThreadPageProps) {
       <ThreadSidebar threads={threads} activeThreadId={threadId} />
 
       {/* Active thread view — SSE consumer + composer */}
-      <ChatThreadView threadId={threadId} />
+      <ChatThreadView key={threadId} threadId={threadId} initialMessages={initialMessages} />
     </div>
   );
 }
