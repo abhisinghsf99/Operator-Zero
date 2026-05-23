@@ -21,9 +21,10 @@
  *   - All interactive elements have descriptive aria-labels
  */
 import { useState, useTransition } from "react";
-import { Check, AlertCircle, Clock, RefreshCw, Trash2, ExternalLink } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
+import { RefreshCw, ExternalLink } from "lucide-react";
+import { Button as DesignButton } from "@/components/design/primitives";
+import { StatusDot, Card, Badge } from "@/components/design/primitives";
+import { Icons } from "@/components/design/icons";
 import {
   Dialog,
   DialogContent,
@@ -33,6 +34,7 @@ import {
   DialogFooter,
   DialogClose,
 } from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
 import { disconnectIntegration } from "@/app/app/settings/actions";
 import type { IntegrationHealth } from "@/lib/integrations/health";
 
@@ -44,19 +46,21 @@ interface ConnectionsSectionProps {
 export function ConnectionsSection({ shopifyHealth, gmailHealth }: ConnectionsSectionProps) {
   return (
     <section aria-labelledby="connections-heading">
-      <div className="mb-5">
+      {/* SectionTitle — matches design SectionTitle helper */}
+      <div style={{ marginBottom: 22 }}>
         <h2
           id="connections-heading"
-          className="display text-[28px] tracking-[-0.015em] text-[var(--text)]"
+          className="display"
+          style={{ fontSize: 28, color: "var(--text)", margin: 0, letterSpacing: "-0.015em" }}
         >
           Connections
         </h2>
-        <p className="mt-1 text-[13.5px] leading-[1.5] text-[var(--text-tertiary)]">
+        <p style={{ margin: "4px 0 0", color: "var(--text-tertiary)", fontSize: 13.5, lineHeight: 1.5, maxWidth: 580 }}>
           The systems the agent has access to. Connect what you want it to operate on.
         </p>
       </div>
 
-      <div className="flex flex-col gap-2.5">
+      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
         <ConnectionRow
           provider="shopify"
           name="Shopify"
@@ -73,6 +77,23 @@ export function ConnectionsSection({ shopifyHealth, gmailHealth }: ConnectionsSe
           connectPath="/api/integrations/gmail/connect"
           testIdPrefix="gmail"
         />
+        {/* Meta — coming soon (v2) */}
+        <Card padding={18} style={{ opacity: 0.7 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+            <div style={{ width: 36, height: 36, borderRadius: "var(--r-sm)", background: "var(--bg-subtle)", display: "grid", placeItems: "center", color: "var(--text)" }}>
+              <Icons.Meta size={18} aria-hidden={true} />
+            </div>
+            <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 2 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <span style={{ fontSize: 14, fontWeight: 500, color: "var(--text)" }}>Meta · Instagram</span>
+                <Badge size="sm" accent="experiment">v2</Badge>
+              </div>
+              <span style={{ fontSize: 12, color: "var(--text-tertiary)" }}>DMs · Comments · Posting</span>
+            </div>
+            <span style={{ fontSize: 12, color: "var(--text-tertiary)", fontFamily: "var(--font-mono)" }}>—</span>
+            <DesignButton variant="secondary" size="sm" disabled>Coming soon</DesignButton>
+          </div>
+        </Card>
       </div>
     </section>
   );
@@ -95,13 +116,14 @@ function ConnectionRow({
   connectPath,
   testIdPrefix,
 }: ConnectionRowProps) {
-  const [isDisconnecting, setIsDisconnecting] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
   const isConnected = health.status === "healthy" || health.status === "stale";
   const needsReconnect = health.status === "needs_reconnect";
+
+  const ProviderIcon = provider === "shopify" ? Icons.Shopify : Icons.Gmail;
 
   function handleReconnect() {
     window.location.href = connectPath;
@@ -135,91 +157,122 @@ function ConnectionRow({
 
   return (
     <>
-      <div
-        className="rounded-[var(--r-lg)] border-[0.5px] border-[var(--border)] bg-[var(--bg-elevated)] px-[18px] py-[18px]"
-        data-testid={`connection-row-${testIdPrefix}`}
-      >
-        <div className="flex items-center gap-3.5">
-          {/* Icon */}
+      <Card padding={18} style={{}}>
+        <div
+          style={{ display: "flex", alignItems: "center", gap: 14 }}
+          data-testid={`connection-row-${testIdPrefix}`}
+        >
+          {/* Provider icon */}
           <div
-            className="flex h-9 w-9 items-center justify-center rounded-[var(--r-sm)] bg-[var(--bg-subtle)] text-[var(--text)]"
+            style={{ width: 36, height: 36, borderRadius: "var(--r-sm)", background: "var(--bg-subtle)", display: "grid", placeItems: "center", color: "var(--text)", flexShrink: 0 }}
             aria-hidden="true"
           >
-            {provider === "shopify" ? <ShopifyIcon /> : <GmailIcon />}
+            <ProviderIcon size={18} />
           </div>
 
           {/* Info */}
-          <div className="flex flex-1 flex-col gap-0.5">
-            <div className="flex items-center gap-2">
-              <span className="text-[14px] font-medium text-[var(--text)]">{name}</span>
-              {/* Health status badge */}
-              <StatusBadge
-                status={health.status}
-                data-testid={`${testIdPrefix}-status-badge`}
-              />
+          <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 2 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <span style={{ fontSize: 14, fontWeight: 500, color: "var(--text)" }}>{name}</span>
+              {/* Health status indicator */}
+              {isConnected && (
+                <span
+                  style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 11.5, color: "var(--success)" }}
+                  role="status"
+                  aria-label="Connected and healthy"
+                  data-testid={`${testIdPrefix}-status-badge`}
+                >
+                  <StatusDot status={health.status === "stale" ? "partial" : "active"} size={6} />
+                  {health.status === "stale" ? "stale" : "connected"}
+                </span>
+              )}
+              {needsReconnect && (
+                <span
+                  style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 11.5, color: "var(--danger)" }}
+                  role="status"
+                  aria-label="Connection requires reconnect"
+                  data-testid={`${testIdPrefix}-status-badge`}
+                >
+                  <StatusDot status="error" size={6} />
+                  disconnected
+                </span>
+              )}
+              {!isConnected && !needsReconnect && (
+                <span
+                  style={{ fontSize: 11.5, color: "var(--text-tertiary)" }}
+                  role="status"
+                  aria-label="Not connected"
+                  data-testid={`${testIdPrefix}-status-badge`}
+                >
+                  not connected
+                </span>
+              )}
             </div>
-            <span className="text-[12px] text-[var(--text-tertiary)]">{scope}</span>
+            <span style={{ fontSize: 12, color: "var(--text-tertiary)" }}>{scope}</span>
           </div>
 
-          {/* Last sync */}
+          {/* Last sync — mono */}
           <span
-            className="font-mono text-[12px] text-[var(--text-tertiary)]"
+            style={{ fontSize: 12, color: "var(--text-tertiary)", fontFamily: "var(--font-mono)", flexShrink: 0 }}
             aria-label={`Last synced: ${health.last_synced_at ? health.last_synced_at.toLocaleString() : "never"}`}
           >
             {formatLastSync(health.last_synced_at)}
           </span>
 
           {/* Actions */}
-          <div className="flex items-center gap-2">
-            {(isConnected || needsReconnect) && (
-              <Button
+          <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
+            {isConnected && (
+              <>
+                <DesignButton
+                  variant="ghost"
+                  size="sm"
+                  onClick={handleReconnect}
+                  aria-label={`Re-authenticate ${name}`}
+                  data-testid={`reconnect-${testIdPrefix}`}
+                >
+                  Manage
+                </DesignButton>
+                <DesignButton
+                  variant="danger"
+                  size="sm"
+                  onClick={() => setConfirmOpen(true)}
+                  aria-label={`Disconnect ${name}`}
+                  data-testid={`disconnect-${testIdPrefix}`}
+                >
+                  Disconnect
+                </DesignButton>
+              </>
+            )}
+            {needsReconnect && (
+              <DesignButton
                 variant="secondary"
                 size="sm"
                 onClick={handleReconnect}
                 aria-label={`Reconnect ${name}`}
                 data-testid={`reconnect-${testIdPrefix}`}
               >
-                <RefreshCw className="h-3 w-3" aria-hidden="true" />
-                {needsReconnect ? "Reconnect" : "Re-auth"}
-              </Button>
+                Reconnect
+              </DesignButton>
             )}
-
-            {isConnected && (
-              <Button
-                variant="danger"
-                size="sm"
-                onClick={() => setConfirmOpen(true)}
-                aria-label={`Disconnect ${name}`}
-                data-testid={`disconnect-${testIdPrefix}`}
-              >
-                <Trash2 className="h-3 w-3" aria-hidden="true" />
-                Disconnect
-              </Button>
-            )}
-
             {!isConnected && !needsReconnect && (
-              <Button
+              <DesignButton
                 variant="secondary"
                 size="sm"
                 onClick={handleReconnect}
                 aria-label={`Connect ${name}`}
               >
-                <ExternalLink className="h-3 w-3" aria-hidden="true" />
                 Connect
-              </Button>
+              </DesignButton>
             )}
           </div>
         </div>
 
         {error && (
-          <p
-            className="mt-3 text-[12.5px] text-[var(--danger)]"
-            role="alert"
-          >
+          <p style={{ marginTop: 12, fontSize: 12.5, color: "var(--danger)" }} role="alert">
             {error}
           </p>
         )}
-      </div>
+      </Card>
 
       {/* Disconnect confirm dialog — T-2-08-05 */}
       <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
@@ -252,70 +305,5 @@ function ConnectionRow({
         </DialogContent>
       </Dialog>
     </>
-  );
-}
-
-// ─── Status badge ─────────────────────────────────────────────────────────────
-
-interface StatusBadgeProps extends React.HTMLAttributes<HTMLSpanElement> {
-  status: IntegrationHealth["status"];
-}
-
-function StatusBadge({ status, ...props }: StatusBadgeProps) {
-  if (status === "healthy") {
-    return (
-      <span
-        className="inline-flex items-center gap-1 text-[11.5px] text-[var(--success)]"
-        role="status"
-        aria-label="Connected and healthy"
-        {...props}
-      >
-        <Check className="h-3 w-3" aria-hidden="true" />
-        connected
-      </span>
-    );
-  }
-
-  if (status === "stale") {
-    return (
-      <Badge variant="warning" size="sm" role="status" aria-label="Connection is stale — data may be outdated" {...props}>
-        <Clock className="h-2.5 w-2.5" aria-hidden="true" />
-        stale
-      </Badge>
-    );
-  }
-
-  // needs_reconnect
-  return (
-    <Badge variant="danger" size="sm" role="status" aria-label="Connection requires reconnect" {...props}>
-      <AlertCircle className="h-2.5 w-2.5" aria-hidden="true" />
-      disconnected
-    </Badge>
-  );
-}
-
-// ─── Simple provider icons ────────────────────────────────────────────────────
-
-function ShopifyIcon() {
-  return (
-    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" aria-hidden="true">
-      <path
-        d="M15.337 21.76l5.31-1.149S18.433 7.5 18.42 7.404c-.015-.094-.097-.158-.19-.158-.093 0-1.72-.034-1.72-.034s-1.143-1.107-1.266-1.231V21.76z"
-        fill="currentColor" fillOpacity="0.7"
-      />
-      <path
-        d="M11.13 5.25s-.372-.102-.975-.102c-.975 0-1.44.602-1.61 1.004-.178.43-.24.858-.24 1.288v.252H7.17l-.428 2.82h1.135L7.1 17.5h2.895l.78-7h.876l.426-2.82h-1.302V9.44c0-.63.133-.938.86-.938h.655L11.13 5.25z"
-        fill="currentColor"
-      />
-    </svg>
-  );
-}
-
-function GmailIcon() {
-  return (
-    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" aria-hidden="true">
-      <path d="M2 6a2 2 0 012-2h16a2 2 0 012 2v12a2 2 0 01-2 2H4a2 2 0 01-2-2V6z" stroke="currentColor" strokeWidth="1.5" />
-      <path d="M2 7l10 7 10-7" stroke="currentColor" strokeWidth="1.5" />
-    </svg>
   );
 }

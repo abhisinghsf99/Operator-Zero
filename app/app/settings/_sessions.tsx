@@ -22,8 +22,7 @@
  */
 
 import { useState, useTransition } from "react";
-import { LogOut, Monitor } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { Badge, Button, Card } from "@/components/design/primitives";
 import {
   Dialog,
   DialogContent,
@@ -33,6 +32,7 @@ import {
   DialogFooter,
   DialogClose,
 } from "@/components/ui/dialog";
+import { Button as ShadcnButton } from "@/components/ui/button";
 import { revokeSession, signOutEverywhere } from "@/app/app/settings/actions";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -65,7 +65,7 @@ function relativeTime(date: Date): string {
   return `${diffDay}d ago`;
 }
 
-// ── SessionRow component ──────────────────────────────────────────────────────
+// ── SessionItem component ─────────────────────────────────────────────────────
 
 function SessionItem({
   session,
@@ -79,6 +79,8 @@ function SessionItem({
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [confirmOpen, setConfirmOpen] = useState(false);
+
+  const isCurrentSession = !!(new Date().getTime() - new Date(session.last_seen_at).getTime() < 60_000);
 
   function handleRevoke() {
     startTransition(async () => {
@@ -97,48 +99,58 @@ function SessionItem({
   return (
     <>
       <div
-        className={[
-          "flex items-center gap-[16px] px-[18px] py-[14px]",
-          isLast ? "" : "border-b-[0.5px] border-[var(--border-hairline,var(--border))]",
-        ].join(" ")}
+        style={{
+          padding: "14px 18px",
+          borderBottom: !isLast ? "0.5px solid var(--border-hairline)" : "none",
+          display: "flex",
+          alignItems: "center",
+          gap: 16,
+        }}
         data-testid="session-row"
       >
-        {/* Device icon */}
-        <Monitor
-          className="h-4 w-4 shrink-0 text-[var(--text-tertiary)]"
-          aria-hidden="true"
-        />
-
         {/* Session info */}
-        <div className="flex-1">
-          <div className="text-[13.5px] font-medium text-[var(--text)]">
+        <div style={{ flex: 1 }}>
+          <div
+            style={{
+              fontSize: 13.5,
+              color: "var(--text)",
+              fontWeight: 500,
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+            }}
+          >
             {session.device_label}
+            {isCurrentSession && (
+              <Badge size="sm" accent="chat" soft>this device</Badge>
+            )}
           </div>
-          <div className="mt-[2px] text-[12px] text-[var(--text-tertiary)]">
+          <div style={{ fontSize: 12, color: "var(--text-tertiary)", marginTop: 2 }}>
             {session.ip_geo_label ?? "Unknown location (approximate)"}
             {" · "}
             {relativeTime(new Date(session.last_seen_at))}
           </div>
           {error && (
-            <p className="mt-1 text-[12px] text-[var(--danger)]" role="alert">
+            <p style={{ marginTop: 4, fontSize: 12, color: "var(--danger)" }} role="alert">
               {error}
             </p>
           )}
         </div>
 
-        {/* Revoke button */}
-        <Button
-          variant="ghost"
-          size="sm"
-          aria-label={`Revoke session: ${session.device_label}`}
-          aria-busy={isPending}
-          disabled={isPending}
-          onClick={() => setConfirmOpen(true)}
-          className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--acc-workflow)] focus-visible:ring-offset-1"
-          data-testid="revoke-session-btn"
-        >
-          {isPending ? "Revoking…" : "Revoke"}
-        </Button>
+        {/* Revoke button — only for non-current sessions */}
+        {!isCurrentSession && (
+          <Button
+            variant="ghost"
+            size="sm"
+            aria-label={`Revoke session: ${session.device_label}`}
+            aria-busy={isPending}
+            disabled={isPending}
+            onClick={() => setConfirmOpen(true)}
+            data-testid="revoke-session-btn"
+          >
+            {isPending ? "Revoking…" : "Revoke"}
+          </Button>
+        )}
       </div>
 
       {/* Confirm dialog */}
@@ -155,11 +167,11 @@ function SessionItem({
           </DialogHeader>
           <DialogFooter>
             <DialogClose asChild>
-              <Button variant="secondary" size="sm">
+              <ShadcnButton variant="secondary" size="sm">
                 Cancel
-              </Button>
+              </ShadcnButton>
             </DialogClose>
-            <Button
+            <ShadcnButton
               variant="danger"
               size="sm"
               onClick={handleRevoke}
@@ -167,7 +179,7 @@ function SessionItem({
               aria-busy={isPending}
             >
               {isPending ? "Revoking…" : "Revoke session"}
-            </Button>
+            </ShadcnButton>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -209,33 +221,34 @@ export function SessionsSection({ sessions: initialSessions }: SessionsSectionPr
   }
 
   return (
-    <section aria-labelledby="sessions-heading" className="mt-8">
-      {/* Section header */}
-      <div className="mb-5">
+    <section aria-labelledby="sessions-heading">
+      {/* SectionTitle — matches design SectionTitle helper */}
+      <div style={{ marginBottom: 22 }}>
         <h2
           id="sessions-heading"
-          className="display text-[28px] tracking-[-0.015em] text-[var(--text)]"
+          className="display"
+          style={{ fontSize: 28, color: "var(--text)", margin: 0, letterSpacing: "-0.015em" }}
         >
           Active sessions
         </h2>
-        <p className="mt-1 text-[13.5px] leading-[1.5] text-[var(--text-tertiary)]">
+        <p style={{ margin: "4px 0 0", color: "var(--text-tertiary)", fontSize: 13.5, lineHeight: 1.5, maxWidth: 580 }}>
           Devices currently signed in. Revoke any you don&rsquo;t recognize.
         </p>
       </div>
 
       {/* JWT honesty note (T-4-04-04) */}
-      <p className="mb-4 text-[12.5px] text-[var(--text-tertiary)]">
+      <p style={{ marginBottom: 16, fontSize: 12.5, color: "var(--text-tertiary)" }}>
         Revocation takes effect immediately for new requests, but existing access tokens may
         remain valid for up to <strong>~15 minutes</strong>.
       </p>
 
       {/* Session list */}
       {sessions.length === 0 ? (
-        <div className="rounded-[var(--r-lg)] border-[0.5px] border-[var(--border)] bg-[var(--bg-elevated)] px-[18px] py-[18px]">
-          <p className="text-[13.5px] text-[var(--text-tertiary)]">No active sessions.</p>
-        </div>
+        <Card padding={18}>
+          <p style={{ fontSize: 13.5, color: "var(--text-tertiary)" }}>No active sessions.</p>
+        </Card>
       ) : (
-        <div className="rounded-[var(--r-lg)] border-[0.5px] border-[var(--border)] bg-[var(--bg-elevated)]">
+        <Card padding={0}>
           {sessions.map((session, idx) => (
             <SessionItem
               key={session.id}
@@ -244,28 +257,26 @@ export function SessionsSection({ sessions: initialSessions }: SessionsSectionPr
               onRevoked={handleRevoked}
             />
           ))}
-        </div>
+        </Card>
       )}
 
       {/* Sign out everywhere */}
-      <div className="mt-[14px]">
+      <div style={{ marginTop: 14 }}>
         <Button
           variant="danger"
-          size="sm"
+          size="md"
           aria-label="Sign out of all devices"
           aria-busy={isSigningOut}
           disabled={isSigningOut}
           onClick={() => setSignOutOpen(true)}
-          className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--danger)] focus-visible:ring-offset-1"
           data-testid="sign-out-everywhere-btn"
         >
-          <LogOut className="mr-1.5 h-3.5 w-3.5" aria-hidden="true" />
           {isSigningOut ? "Signing out…" : "Sign out everywhere"}
         </Button>
       </div>
 
       {signOutError && (
-        <p className="mt-2 text-[12.5px] text-[var(--danger)]" role="alert">
+        <p style={{ marginTop: 8, fontSize: 12.5, color: "var(--danger)" }} role="alert">
           {signOutError}
         </p>
       )}
@@ -283,11 +294,11 @@ export function SessionsSection({ sessions: initialSessions }: SessionsSectionPr
           </DialogHeader>
           <DialogFooter>
             <DialogClose asChild>
-              <Button variant="secondary" size="sm">
+              <ShadcnButton variant="secondary" size="sm">
                 Cancel
-              </Button>
+              </ShadcnButton>
             </DialogClose>
-            <Button
+            <ShadcnButton
               variant="danger"
               size="sm"
               onClick={handleSignOutEverywhere}
@@ -296,7 +307,7 @@ export function SessionsSection({ sessions: initialSessions }: SessionsSectionPr
               data-testid="confirm-sign-out-everywhere"
             >
               {isSigningOut ? "Signing out…" : "Sign out everywhere"}
-            </Button>
+            </ShadcnButton>
           </DialogFooter>
         </DialogContent>
       </Dialog>

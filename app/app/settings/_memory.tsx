@@ -18,8 +18,8 @@
  *   - focus-visible ring on all interactive elements
  */
 import { useState, useTransition, useId } from "react";
-import { Pencil, Plus, Trash2, Check, X } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { Check, X } from "lucide-react";
+import { IconButton } from "@/components/design/primitives";
 import { toast } from "sonner";
 import {
   addMemoryItem,
@@ -96,22 +96,23 @@ export function MemorySection({ items: initialItems }: MemorySectionProps) {
     <section
       aria-labelledby={headingId}
       data-testid="memory-section"
-      className="mt-8"
     >
-      <div className="mb-5">
+      {/* SectionTitle — matches design SectionTitle helper */}
+      <div style={{ marginBottom: 22 }}>
         <h2
           id={headingId}
-          className="display text-[28px] tracking-[-0.015em] text-[var(--text)]"
+          className="display"
+          style={{ fontSize: 28, color: "var(--text)", margin: 0, letterSpacing: "-0.015em" }}
         >
           What I remember about you
         </h2>
-        <p className="mt-1 max-w-[580px] text-[13.5px] leading-[1.5] text-[var(--text-tertiary)]">
+        <p style={{ margin: "4px 0 0", color: "var(--text-tertiary)", fontSize: 13.5, lineHeight: 1.5, maxWidth: 580 }}>
           Everything the agent thinks it knows. Edit any line. Delete what&apos;s wrong.
           Add what&apos;s missing.
         </p>
       </div>
 
-      <div className="flex flex-col gap-3.5">
+      <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
         {categoriesToShow.map((category) => {
           const categoryItems = items.filter((i) => i.category === category);
           return (
@@ -184,19 +185,42 @@ function CategoryCard({
   }
 
   return (
-    <div className="rounded-[var(--r-lg)] border-[0.5px] border-[var(--border)] bg-[var(--bg-elevated)]">
+    <div
+      style={{
+        borderRadius: "var(--r-lg)",
+        border: "0.5px solid var(--border)",
+        background: "var(--bg-elevated)",
+      }}
+    >
       {/* Category header */}
-      <div className="flex items-center justify-between border-b-[0.5px] border-[var(--border)] px-4 py-3">
-        <span className="font-mono text-[11px] font-medium uppercase tracking-[0.06em] text-[var(--text-tertiary)]">
+      <div
+        style={{
+          padding: "12px 16px",
+          borderBottom: "0.5px solid var(--border-hairline)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+        }}
+      >
+        <span
+          style={{
+            fontSize: 11,
+            fontFamily: "var(--font-mono)",
+            color: "var(--text-tertiary)",
+            textTransform: "uppercase",
+            letterSpacing: "0.06em",
+            fontWeight: 500,
+          }}
+        >
           {label}
         </span>
-        <button
+        <IconButton
+          icon="Plus"
+          size={24}
           onClick={() => setIsAdding(true)}
+          title={`Add ${label} memory item`}
           aria-label={`Add ${label} memory item`}
-          className="flex h-6 w-6 items-center justify-center rounded-[var(--r-sm)] text-[var(--text-tertiary)] hover:bg-[var(--bg-subtle)] hover:text-[var(--text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--acc-workflow)] focus-visible:ring-offset-1"
-        >
-          <Plus className="h-3.5 w-3.5" aria-hidden="true" />
-        </button>
+        />
       </div>
 
       {/* Items */}
@@ -212,20 +236,46 @@ function CategoryCard({
 
       {/* Empty state when no items and not adding */}
       {items.length === 0 && !isAdding && (
-        <div className="px-4 py-3 text-[12.5px] text-[var(--text-faint)] italic">
+        <div
+          style={{
+            padding: "12px 16px",
+            fontSize: 12.5,
+            color: "var(--text-faint)",
+            fontStyle: "italic",
+          }}
+        >
           Nothing yet — click + to add.
         </div>
       )}
 
       {/* Add new item row */}
       {isAdding && (
-        <div className="border-t-[0.5px] border-[var(--border)] px-4 py-3">
+        <div
+          style={{
+            borderTop: "0.5px solid var(--border)",
+            padding: "12px 16px",
+          }}
+        >
           <textarea
             value={newContent}
             onChange={(e) => setNewContent(e.target.value)}
             placeholder={`Add a ${label.toLowerCase()} note…`}
             aria-label={`New ${label} memory item`}
-            className="w-full resize-none rounded-[var(--r-sm)] border-[0.5px] border-[var(--border)] bg-[var(--bg-subtle)] p-2.5 text-[13.5px] leading-[1.55] text-[var(--text)] placeholder:text-[var(--text-faint)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--acc-workflow)] focus-visible:ring-offset-1"
+            style={{
+              width: "100%",
+              resize: "none" as "none",
+              borderRadius: "var(--r-sm)",
+              border: "0.5px solid var(--border)",
+              background: "var(--bg-subtle)",
+              padding: "10px",
+              fontSize: 13.5,
+              lineHeight: 1.55,
+              color: "var(--text)",
+              outline: "none",
+              fontFamily: "inherit",
+              boxSizing: "border-box" as "border-box",
+            }}
+            className="focus-visible:ring-2 focus-visible:ring-[var(--acc-workflow)] focus-visible:ring-offset-1"
             rows={2}
             autoFocus
             onKeyDown={(e) => {
@@ -237,28 +287,60 @@ function CategoryCard({
             }}
           />
           {addError && (
-            <p className="mt-1.5 text-[12px] text-[var(--danger)]" role="alert">
+            <p style={{ marginTop: 6, fontSize: 12, color: "var(--danger)" }} role="alert">
               {addError}
             </p>
           )}
-          <div className="mt-2 flex gap-2">
-            <Button
-              variant="default"
-              size="sm"
+          <div style={{ marginTop: 8, display: "flex", gap: 8 }}>
+            <button
               onClick={handleAddSubmit}
               disabled={isAddPending || !newContent.trim()}
               aria-busy={isAddPending}
+              aria-label="Save new memory item"
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                height: 28,
+                padding: "0 12px",
+                borderRadius: "var(--r-sm)",
+                background: "var(--acc-workflow-ink)",
+                color: "white",
+                border: "none",
+                fontSize: 12.5,
+                fontWeight: 500,
+                cursor: isAddPending || !newContent.trim() ? "not-allowed" : "pointer",
+                opacity: isAddPending || !newContent.trim() ? 0.5 : 1,
+                fontFamily: "inherit",
+              }}
+              className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--acc-workflow)] focus-visible:ring-offset-1"
             >
               {isAddPending ? "Adding…" : "Add"}
-            </Button>
-            <Button
-              variant="secondary"
-              size="sm"
+            </button>
+            <button
               onClick={handleAddCancel}
               disabled={isAddPending}
+              aria-label="Cancel adding memory item"
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                height: 28,
+                padding: "0 12px",
+                borderRadius: "var(--r-sm)",
+                background: "var(--bg-elevated)",
+                color: "var(--text-secondary)",
+                border: "0.5px solid var(--border-strong)",
+                fontSize: 12.5,
+                fontWeight: 500,
+                cursor: isAddPending ? "not-allowed" : "pointer",
+                opacity: isAddPending ? 0.5 : 1,
+                fontFamily: "inherit",
+              }}
+              className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--acc-workflow)] focus-visible:ring-offset-1"
             >
               Cancel
-            </Button>
+            </button>
           </div>
         </div>
       )}
@@ -338,25 +420,50 @@ function MemoryItemRow({ item, isLast, onDeleted, onEdited }: MemoryItemRowProps
 
   return (
     <div
-      className={`flex items-start gap-3 px-4 py-3 ${
-        !isLast ? "border-b-[0.5px] border-[var(--border)]" : ""
-      }`}
+      style={{
+        padding: "12px 16px",
+        borderBottom: !isLast ? "0.5px solid var(--border-hairline)" : "none",
+        display: "flex",
+        alignItems: "flex-start",
+        gap: 12,
+      }}
     >
       {/* Bullet dot */}
       <div
-        className="mt-[7px] h-1 w-1 flex-shrink-0 rounded-full bg-[var(--text-faint)]"
+        style={{
+          width: 4,
+          height: 4,
+          borderRadius: "50%",
+          background: "var(--text-faint)",
+          marginTop: 8,
+          flexShrink: 0,
+        }}
         aria-hidden="true"
       />
 
       {/* Content — editable or display */}
-      <div className="flex-1">
+      <div style={{ flex: 1 }}>
         {isEditing ? (
           <div>
             <textarea
               value={editContent}
               onChange={(e) => setEditContent(e.target.value)}
               aria-label="Edit memory item"
-              className="w-full resize-none rounded-[var(--r-sm)] border-[0.5px] border-[var(--border)] bg-[var(--bg-subtle)] p-2 text-[13.5px] leading-[1.55] text-[var(--text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--acc-workflow)] focus-visible:ring-offset-1"
+              style={{
+                width: "100%",
+                resize: "none" as "none",
+                borderRadius: "var(--r-sm)",
+                border: "0.5px solid var(--border)",
+                background: "var(--bg-subtle)",
+                padding: "8px",
+                fontSize: 13.5,
+                lineHeight: 1.55,
+                color: "var(--text)",
+                outline: "none",
+                fontFamily: "inherit",
+                boxSizing: "border-box" as "border-box",
+              }}
+              className="focus-visible:ring-2 focus-visible:ring-[var(--acc-workflow)] focus-visible:ring-offset-1"
               rows={2}
               autoFocus
               onKeyDown={(e) => {
@@ -372,17 +479,30 @@ function MemoryItemRow({ item, isLast, onDeleted, onEdited }: MemoryItemRowProps
               }}
             />
             {editError && (
-              <p className="mt-1 text-[12px] text-[var(--danger)]" role="alert">
+              <p style={{ marginTop: 4, fontSize: 12, color: "var(--danger)" }} role="alert">
                 {editError}
               </p>
             )}
-            <div className="mt-2 flex gap-1.5">
+            <div style={{ marginTop: 8, display: "flex", gap: 6 }}>
               <button
                 onClick={handleEditSubmit}
                 disabled={isEditPending}
                 aria-busy={isEditPending}
                 aria-label="Save edit"
-                className="flex h-6 w-6 items-center justify-center rounded-[var(--r-sm)] bg-[var(--acc-workflow-ink)] text-white hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--acc-workflow)] focus-visible:ring-offset-1 disabled:opacity-50"
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  width: 24,
+                  height: 24,
+                  borderRadius: "var(--r-sm)",
+                  background: "var(--acc-workflow-ink)",
+                  color: "white",
+                  border: "none",
+                  cursor: isEditPending ? "not-allowed" : "pointer",
+                  opacity: isEditPending ? 0.5 : 1,
+                }}
+                className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--acc-workflow)] focus-visible:ring-offset-1"
               >
                 <Check className="h-3 w-3" aria-hidden="true" />
               </button>
@@ -393,14 +513,26 @@ function MemoryItemRow({ item, isLast, onDeleted, onEdited }: MemoryItemRowProps
                   setEditError(null);
                 }}
                 aria-label="Cancel edit"
-                className="flex h-6 w-6 items-center justify-center rounded-[var(--r-sm)] bg-[var(--bg-subtle)] text-[var(--text-tertiary)] hover:bg-[var(--bg-deeper)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--acc-workflow)] focus-visible:ring-offset-1"
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  width: 24,
+                  height: 24,
+                  borderRadius: "var(--r-sm)",
+                  background: "var(--bg-subtle)",
+                  color: "var(--text-tertiary)",
+                  border: "none",
+                  cursor: "pointer",
+                }}
+                className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--acc-workflow)] focus-visible:ring-offset-1"
               >
                 <X className="h-3 w-3" aria-hidden="true" />
               </button>
             </div>
           </div>
         ) : (
-          <span className="text-[13.5px] leading-[1.55] text-[var(--text)]">
+          <span style={{ fontSize: 13.5, lineHeight: 1.55, color: "var(--text)" }}>
             {item.content}
           </span>
         )}
@@ -408,30 +540,36 @@ function MemoryItemRow({ item, isLast, onDeleted, onEdited }: MemoryItemRowProps
 
       {/* Timestamp */}
       {!isEditing && (
-        <span className="mt-0.5 flex-shrink-0 font-mono text-[11px] text-[var(--text-tertiary)]">
+        <span
+          style={{
+            marginTop: 2,
+            flexShrink: 0,
+            fontFamily: "var(--font-mono)",
+            fontSize: 11,
+            color: "var(--text-tertiary)",
+          }}
+        >
           {formatRelativeDate(item.updated_at)}
         </span>
       )}
 
       {/* Actions */}
       {!isEditing && (
-        <div className="flex flex-shrink-0 items-center gap-1">
-          <button
+        <div style={{ display: "flex", flexShrink: 0, alignItems: "center", gap: 2 }}>
+          <IconButton
+            icon="Edit"
+            size={24}
             onClick={() => setIsEditing(true)}
+            title="Edit memory item"
             aria-label="Edit memory item"
-            className="flex h-6 w-6 items-center justify-center rounded-[var(--r-sm)] text-[var(--text-tertiary)] hover:bg-[var(--bg-subtle)] hover:text-[var(--text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--acc-workflow)] focus-visible:ring-offset-1"
-          >
-            <Pencil className="h-3 w-3" aria-hidden="true" />
-          </button>
-          <button
+          />
+          <IconButton
+            icon="Trash"
+            size={24}
             onClick={handleDelete}
-            disabled={isDeletePending}
-            aria-busy={isDeletePending}
+            title="Delete memory item"
             aria-label="Delete memory item"
-            className="flex h-6 w-6 items-center justify-center rounded-[var(--r-sm)] text-[var(--text-tertiary)] hover:bg-[var(--bg-subtle)] hover:text-[var(--danger)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--acc-workflow)] focus-visible:ring-offset-1 disabled:opacity-50"
-          >
-            <Trash2 className="h-3 w-3" aria-hidden="true" />
-          </button>
+          />
         </div>
       )}
     </div>

@@ -21,13 +21,35 @@
  *   - focus-visible ring on all interactive elements
  */
 import { useState, useTransition, useId } from "react";
-import { Button } from "@/components/ui/button";
+import { Avatar, Button, Card } from "@/components/design/primitives";
 import { updateProfile, updateEmail, updatePassword } from "@/app/app/settings/actions";
 import type { UserProfileRow } from "@/lib/auth/profile";
 
 interface ProfileSectionProps {
   profile: UserProfileRow;
 }
+
+// Shared input style matching the design's Input helper
+const inputStyle = {
+  all: "unset" as "unset",
+  display: "block" as "block",
+  width: "100%",
+  padding: "10px 12px",
+  background: "var(--bg-subtle)",
+  border: "0.5px solid var(--border)",
+  borderRadius: "var(--r-sm)",
+  fontSize: 13.5,
+  color: "var(--text)",
+  boxSizing: "border-box" as "border-box",
+};
+
+const labelStyle = {
+  fontSize: 11.5,
+  fontFamily: "var(--font-mono)",
+  color: "var(--text-tertiary)",
+  textTransform: "uppercase" as "uppercase",
+  letterSpacing: "0.05em",
+};
 
 export function ProfileSection({ profile }: ProfileSectionProps) {
   const headingId = useId();
@@ -36,39 +58,66 @@ export function ProfileSection({ profile }: ProfileSectionProps) {
     <section
       aria-labelledby={headingId}
       data-testid="profile-section"
-      className="mt-8"
     >
-      <div className="mb-5">
+      {/* SectionTitle — matches design SectionTitle helper */}
+      <div style={{ marginBottom: 22 }}>
         <h2
           id={headingId}
-          className="display text-[28px] tracking-[-0.015em] text-[var(--text)]"
+          className="display"
+          style={{ fontSize: 28, color: "var(--text)", margin: 0, letterSpacing: "-0.015em" }}
         >
           Profile
         </h2>
-        <p className="mt-1 text-[13.5px] leading-[1.5] text-[var(--text-tertiary)]">
+        <p style={{ margin: "4px 0 0", color: "var(--text-tertiary)", fontSize: 13.5, lineHeight: 1.5 }}>
           Your account details.
         </p>
       </div>
 
-      <div className="rounded-[var(--r-lg)] border-[0.5px] border-[var(--border)] bg-[var(--bg-elevated)]">
-        {/* Avatar + Name + Avatar URL */}
+      <Card padding={24}>
+        {/* Avatar row */}
+        <div style={{ display: "flex", alignItems: "center", gap: 18, marginBottom: 24 }}>
+          {profile.avatar_url ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={profile.avatar_url}
+              alt="Profile avatar"
+              style={{ width: 56, height: 56, borderRadius: "50%", objectFit: "cover" }}
+              onError={(e) => (e.currentTarget.style.display = "none")}
+            />
+          ) : (
+            <Avatar
+              name={profile.display_name ?? "?"}
+              size={56}
+            />
+          )}
+          <div>
+            <Button variant="secondary" size="sm">Upload photo</Button>
+            <div style={{ fontSize: 11.5, color: "var(--text-tertiary)", marginTop: 6 }}>
+              PNG or JPG, up to 2MB.
+            </div>
+          </div>
+        </div>
+
+        {/* Profile details form */}
         <ProfileDetailsForm profile={profile} />
 
-        <div className="border-t-[0.5px] border-[var(--border)] px-[18px] py-[18px]">
-          {/* Email change */}
-          <EmailChangeForm />
-        </div>
+        {/* Divider */}
+        <div style={{ borderTop: "0.5px solid var(--border-hairline)", margin: "22px 0 18px" }} />
 
-        <div className="border-t-[0.5px] border-[var(--border)] px-[18px] py-[18px]">
-          {/* Password change */}
-          <PasswordChangeForm />
-        </div>
-      </div>
+        {/* Email change */}
+        <EmailChangeForm />
+
+        {/* Divider */}
+        <div style={{ borderTop: "0.5px solid var(--border-hairline)", margin: "18px 0" }} />
+
+        {/* Password change */}
+        <PasswordSection profile={profile} />
+      </Card>
     </section>
   );
 }
 
-// ─── Profile details (name + avatar) ─────────────────────────────────────────
+// ─── Profile details (name + avatar URL) ─────────────────────────────────────
 
 function ProfileDetailsForm({ profile }: { profile: UserProfileRow }) {
   const [displayName, setDisplayName] = useState(profile.display_name ?? "");
@@ -98,41 +147,11 @@ function ProfileDetailsForm({ profile }: { profile: UserProfileRow }) {
   }
 
   return (
-    <div className="px-[18px] py-[18px]">
-      {/* Avatar preview */}
-      <div className="mb-5 flex items-center gap-4">
-        {avatarUrl ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={avatarUrl}
-            alt="Profile avatar"
-            className="h-14 w-14 rounded-full object-cover"
-            onError={(e) => (e.currentTarget.style.display = "none")}
-          />
-        ) : (
-          <div
-            className="flex h-14 w-14 items-center justify-center rounded-full bg-[var(--bg-subtle)] text-[20px] text-[var(--text-secondary)]"
-            aria-hidden="true"
-          >
-            {(displayName || "?")[0]?.toUpperCase()}
-          </div>
-        )}
-        <div>
-          <p className="text-[12px] text-[var(--text-tertiary)]">
-            Paste an image URL below to update your avatar.
-          </p>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-2 gap-4">
+    <div>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
         {/* Display name */}
-        <div className="flex flex-col gap-1.5">
-          <label
-            htmlFor={nameId}
-            className="font-mono text-[11.5px] uppercase tracking-[0.05em] text-[var(--text-tertiary)]"
-          >
-            Name
-          </label>
+        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          <label htmlFor={nameId} style={labelStyle}>Name</label>
           <input
             id={nameId}
             type="text"
@@ -143,18 +162,14 @@ function ProfileDetailsForm({ profile }: { profile: UserProfileRow }) {
             }}
             aria-describedby={error ? nameErrorId : undefined}
             placeholder="Your name"
-            className="rounded-[var(--r-sm)] border-[0.5px] border-[var(--border)] bg-[var(--bg-subtle)] px-3 py-2.5 text-[13.5px] text-[var(--text)] placeholder:text-[var(--text-faint)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--acc-workflow)] focus-visible:ring-offset-1"
+            style={inputStyle}
+            className="focus-visible:ring-2 focus-visible:ring-[var(--acc-workflow)] focus-visible:ring-offset-1"
           />
         </div>
 
         {/* Avatar URL */}
-        <div className="flex flex-col gap-1.5">
-          <label
-            htmlFor={avatarId}
-            className="font-mono text-[11.5px] uppercase tracking-[0.05em] text-[var(--text-tertiary)]"
-          >
-            Avatar URL
-          </label>
+        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          <label htmlFor={avatarId} style={labelStyle}>Avatar URL</label>
           <input
             id={avatarId}
             type="url"
@@ -164,7 +179,8 @@ function ProfileDetailsForm({ profile }: { profile: UserProfileRow }) {
               setSuccess(false);
             }}
             placeholder="https://…"
-            className="rounded-[var(--r-sm)] border-[0.5px] border-[var(--border)] bg-[var(--bg-subtle)] px-3 py-2.5 text-[13.5px] text-[var(--text)] placeholder:text-[var(--text-faint)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--acc-workflow)] focus-visible:ring-offset-1"
+            style={inputStyle}
+            className="focus-visible:ring-2 focus-visible:ring-[var(--acc-workflow)] focus-visible:ring-offset-1"
           />
         </div>
       </div>
@@ -172,16 +188,22 @@ function ProfileDetailsForm({ profile }: { profile: UserProfileRow }) {
       {error && (
         <p
           id={nameErrorId}
-          className="mt-3 text-[12.5px] text-[var(--danger)]"
+          style={{ marginTop: 12, fontSize: 12.5, color: "var(--danger)" }}
           role="alert"
         >
           {error}
         </p>
       )}
+      {success && (
+        <p style={{ marginTop: 12, fontSize: 12.5, color: "var(--success)" }} role="status">
+          Profile saved.
+        </p>
+      )}
 
-      <div className="mt-4">
+      <div style={{ marginTop: 16 }}>
         <Button
-          variant="default"
+          variant="primary"
+          accent="chat"
           size="sm"
           onClick={handleSave}
           disabled={isPending}
@@ -223,17 +245,15 @@ function EmailChangeForm() {
 
   return (
     <div>
-      <p className="mb-3 text-[13px] font-medium text-[var(--text)]">
+      <p style={{ marginBottom: 12, fontSize: 13, fontWeight: 500, color: "var(--text)" }}>
         Change email
       </p>
-      <p className="mb-3 text-[12.5px] text-[var(--text-tertiary)]">
+      <p style={{ marginBottom: 12, fontSize: 12.5, color: "var(--text-tertiary)" }}>
         A confirmation link will be sent to the new address.
       </p>
-      <div className="flex items-start gap-3">
-        <div className="flex flex-1 flex-col gap-1.5">
-          <label htmlFor={emailId} className="sr-only">
-            New email address
-          </label>
+      <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
+        <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 6 }}>
+          <label htmlFor={emailId} className="sr-only">New email address</label>
           <input
             id={emailId}
             type="email"
@@ -244,19 +264,20 @@ function EmailChangeForm() {
             }}
             aria-describedby={error ? emailErrorId : undefined}
             placeholder="new@example.com"
-            className="rounded-[var(--r-sm)] border-[0.5px] border-[var(--border)] bg-[var(--bg-subtle)] px-3 py-2.5 text-[13.5px] text-[var(--text)] placeholder:text-[var(--text-faint)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--acc-workflow)] focus-visible:ring-offset-1"
+            style={inputStyle}
+            className="focus-visible:ring-2 focus-visible:ring-[var(--acc-workflow)] focus-visible:ring-offset-1"
           />
           {error && (
             <p
               id={emailErrorId}
-              className="text-[12px] text-[var(--danger)]"
+              style={{ fontSize: 12, color: "var(--danger)" }}
               role="alert"
             >
               {error}
             </p>
           )}
           {success && (
-            <p className="text-[12px] text-[var(--success)]" role="status">
+            <p style={{ fontSize: 12, color: "var(--success)" }} role="status">
               Confirmation email sent. Check your inbox.
             </p>
           )}
@@ -268,7 +289,7 @@ function EmailChangeForm() {
           disabled={isPending || !email.trim()}
           aria-busy={isPending}
           data-testid="profile-update-email"
-          className="mt-0.5"
+          style={{ marginTop: 2 }}
         >
           {isPending ? "Sending…" : "Update email"}
         </Button>
@@ -277,7 +298,18 @@ function EmailChangeForm() {
   );
 }
 
-// ─── Password change ──────────────────────────────────────────────────────────
+// ─── Password section ─────────────────────────────────────────────────────────
+
+function PasswordSection({ profile: _ }: { profile: UserProfileRow }) {
+  return (
+    <div>
+      <p style={{ marginBottom: 12, fontSize: 13, fontWeight: 500, color: "var(--text)" }}>
+        Change password
+      </p>
+      <PasswordChangeForm />
+    </div>
+  );
+}
 
 function PasswordChangeForm() {
   const [password, setPassword] = useState("");
@@ -312,17 +344,9 @@ function PasswordChangeForm() {
 
   return (
     <div>
-      <p className="mb-3 text-[13px] font-medium text-[var(--text)]">
-        Change password
-      </p>
-      <div className="grid grid-cols-2 gap-3">
-        <div className="flex flex-col gap-1.5">
-          <label
-            htmlFor={passwordId}
-            className="font-mono text-[11.5px] uppercase tracking-[0.05em] text-[var(--text-tertiary)]"
-          >
-            New password
-          </label>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          <label htmlFor={passwordId} style={labelStyle}>New password</label>
           <input
             id={passwordId}
             type="password"
@@ -334,16 +358,12 @@ function PasswordChangeForm() {
             }}
             aria-describedby={error ? passwordErrorId : undefined}
             placeholder="Min 8 characters"
-            className="rounded-[var(--r-sm)] border-[0.5px] border-[var(--border)] bg-[var(--bg-subtle)] px-3 py-2.5 text-[13.5px] text-[var(--text)] placeholder:text-[var(--text-faint)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--acc-workflow)] focus-visible:ring-offset-1"
+            style={inputStyle}
+            className="focus-visible:ring-2 focus-visible:ring-[var(--acc-workflow)] focus-visible:ring-offset-1"
           />
         </div>
-        <div className="flex flex-col gap-1.5">
-          <label
-            htmlFor={confirmId}
-            className="font-mono text-[11.5px] uppercase tracking-[0.05em] text-[var(--text-tertiary)]"
-          >
-            Confirm password
-          </label>
+        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          <label htmlFor={confirmId} style={labelStyle}>Confirm password</label>
           <input
             id={confirmId}
             type="password"
@@ -354,7 +374,8 @@ function PasswordChangeForm() {
               setError(null);
             }}
             placeholder="Repeat password"
-            className="rounded-[var(--r-sm)] border-[0.5px] border-[var(--border)] bg-[var(--bg-subtle)] px-3 py-2.5 text-[13.5px] text-[var(--text)] placeholder:text-[var(--text-faint)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--acc-workflow)] focus-visible:ring-offset-1"
+            style={inputStyle}
+            className="focus-visible:ring-2 focus-visible:ring-[var(--acc-workflow)] focus-visible:ring-offset-1"
           />
         </div>
       </div>
@@ -362,22 +383,23 @@ function PasswordChangeForm() {
       {error && (
         <p
           id={passwordErrorId}
-          className="mt-2 text-[12px] text-[var(--danger)]"
+          style={{ marginTop: 8, fontSize: 12, color: "var(--danger)" }}
           role="alert"
         >
           {error}
         </p>
       )}
       {success && (
-        <p className="mt-2 text-[12px] text-[var(--success)]" role="status">
+        <p style={{ marginTop: 8, fontSize: 12, color: "var(--success)" }} role="status">
           Password updated successfully.
         </p>
       )}
 
-      <div className="mt-4">
+      <div style={{ marginTop: 16 }}>
         <Button
           variant="secondary"
           size="sm"
+          icon="Lock"
           onClick={handleSave}
           disabled={isPending || !password.trim() || !confirm.trim()}
           aria-busy={isPending}

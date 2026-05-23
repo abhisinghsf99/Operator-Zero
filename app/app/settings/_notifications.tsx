@@ -13,7 +13,8 @@
  */
 
 import { useId } from "react";
-import { Bell } from "lucide-react";
+import { Icons } from "@/components/design/icons";
+import { Card, Badge } from "@/components/design/primitives";
 
 export function NotificationsSection() {
   const headingId = useId();
@@ -22,34 +23,45 @@ export function NotificationsSection() {
     <section
       aria-labelledby={headingId}
       data-testid="notifications-section"
-      className="mt-8"
     >
-      <div className="mb-5">
+      {/* SectionTitle — matches design SectionTitle helper */}
+      <div style={{ marginBottom: 22 }}>
         <h2
           id={headingId}
-          className="display text-[28px] tracking-[-0.015em] text-[var(--text)]"
+          className="display"
+          style={{ fontSize: 28, color: "var(--text)", margin: 0, letterSpacing: "-0.015em" }}
         >
           Notifications
         </h2>
-        <p className="mt-1 text-[13.5px] leading-[1.5] text-[var(--text-tertiary)]">
+        <p style={{ margin: "4px 0 0", color: "var(--text-tertiary)", fontSize: 13.5, lineHeight: 1.5, maxWidth: 580 }}>
           How Operator Zero surfaces things that need your attention.
         </p>
       </div>
 
-      <div className="rounded-[var(--r-lg)] border-[0.5px] border-[var(--border)] bg-[var(--bg-elevated)] px-[18px] py-[18px]">
+      <Card padding={18}>
         {/* Sidebar badge explainer */}
-        <div className="flex items-start gap-3.5">
+        <div style={{ display: "flex", alignItems: "flex-start", gap: 14 }}>
           <div
-            className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-[var(--r-sm)] bg-[var(--bg-subtle)] text-[var(--text-secondary)]"
+            style={{
+              width: 36,
+              height: 36,
+              flexShrink: 0,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              borderRadius: "var(--r-sm)",
+              background: "var(--bg-subtle)",
+              color: "var(--text-secondary)",
+            }}
             aria-hidden="true"
           >
-            <Bell className="h-4 w-4" />
+            <Icons.Inbox size={16} />
           </div>
           <div>
-            <p className="text-[14px] font-medium text-[var(--text)]">
+            <p style={{ fontSize: 14, fontWeight: 500, color: "var(--text)", margin: 0 }}>
               In-app sidebar badge
             </p>
-            <p className="mt-1 max-w-[520px] text-[13px] leading-[1.55] text-[var(--text-tertiary)]">
+            <p style={{ marginTop: 4, maxWidth: 520, fontSize: 13, lineHeight: 1.55, color: "var(--text-tertiary)" }}>
               The badge on the Approvals item in the left sidebar shows how many
               workflow actions are waiting for your review. It updates in real time
               as approvals come in and are resolved. No settings needed — it&apos;s always on.
@@ -58,32 +70,40 @@ export function NotificationsSection() {
         </div>
 
         {/* Divider */}
-        <div className="my-4 border-t-[0.5px] border-[var(--border)]" />
+        <div style={{ margin: "16px 0", borderTop: "0.5px solid var(--border)" }} />
 
         {/* Coming soon placeholder — SET-08: no functional toggles, honest about v1 scope */}
-        <div className="flex items-start gap-3.5">
+        <div style={{ display: "flex", alignItems: "flex-start", gap: 14 }}>
           <div
-            className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-[var(--r-sm)] bg-[var(--bg-subtle)] text-[var(--text-faint)]"
+            style={{
+              width: 36,
+              height: 36,
+              flexShrink: 0,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              borderRadius: "var(--r-sm)",
+              background: "var(--bg-subtle)",
+              color: "var(--text-faint)",
+            }}
             aria-hidden="true"
           >
-            <Bell className="h-4 w-4" />
+            <Icons.Sparkles size={16} />
           </div>
           <div>
-            <div className="flex items-center gap-2">
-              <p className="text-[14px] font-medium text-[var(--text-secondary)]">
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <p style={{ fontSize: 14, fontWeight: 500, color: "var(--text-secondary)", margin: 0 }}>
                 Email &amp; push notifications
               </p>
-              <span className="inline-flex items-center rounded-full bg-[var(--bg-subtle)] px-2 py-0.5 font-mono text-[10.5px] uppercase tracking-[0.06em] text-[var(--text-tertiary)]">
-                coming soon
-              </span>
+              <Badge size="sm" accent="experiment">v2</Badge>
             </div>
-            <p className="mt-1 max-w-[520px] text-[13px] leading-[1.55] text-[var(--text-tertiary)]">
+            <p style={{ marginTop: 4, maxWidth: 520, fontSize: 13, lineHeight: 1.55, color: "var(--text-tertiary)" }}>
               Per-workflow email and push delivery for approvals and activity
               digests — shipping in v2 (NOTIF-01). No toggles yet.
             </p>
           </div>
         </div>
-      </div>
+      </Card>
     </section>
   );
 }

@@ -15,7 +15,7 @@
  * Mobile drill-down (D-11, UX-01):
  *   SettingsShell handles mobile-first section navigation:
  *   - Mobile: section nav list → tap → full-screen section with ← Back affordance
- *   - Desktop: all sections in a scrollable single column (unchanged layout)
+ *   - Desktop: sidebar nav (240px) + content panel per design
  *
  * SECURITY:
  *   T-2-08-04: Reads integration data via withUserRls (cross-user protection)
@@ -43,6 +43,7 @@ import { SessionsSection } from "@/app/app/settings/_sessions";
 import { NotificationsSection } from "@/app/app/settings/_notifications";
 import { DangerSection } from "@/app/app/settings/_danger";
 import { SettingsShell } from "@/app/app/settings/_settings-shell";
+import { SurfaceHeader } from "@/components/design/primitives";
 import {
   getBrandVoice,
   getMemoryItems,
@@ -76,11 +77,12 @@ export default async function SettingsPage() {
 
   const initialMarkdown = brandVoice?.profile_markdown ?? "";
 
-  // 4. Build section definitions for the SettingsShell (mobile drill-down)
+  // 4. Build section definitions for the SettingsShell (mobile drill-down + desktop sidebar)
   const sections = [
     {
       id: "connections",
       label: "Connections",
+      icon: "Plus" as const,
       description: "Shopify and Gmail integration status",
       content: (
         <ConnectionsSection
@@ -91,43 +93,50 @@ export default async function SettingsPage() {
     },
     {
       id: "brand-voice",
-      label: "Brand Voice",
+      label: "Brand voice",
+      icon: "Sparkles" as const,
       description: "Your store's tone, style, and voice profile",
       content: <BrandVoiceSection initialMarkdown={initialMarkdown} />,
     },
     {
       id: "autonomy",
-      label: "Autonomy",
+      label: "Autonomy thresholds",
+      icon: "Bolt" as const,
       description: "Trust levels and per-action overrides",
       content: <AutonomySection thresholds={autonomyThresholds} />,
     },
     {
       id: "memory",
-      label: "Memory",
+      label: "What I remember",
+      icon: "Brain" as const,
       description: "What the agent has learned and remembered",
       content: <MemorySection items={memoryItemsList} />,
     },
     {
       id: "profile",
       label: "Profile",
+      icon: "Edit" as const,
       description: "Name, email, password, and avatar",
       content: <ProfileSection profile={profile} />,
     },
     {
       id: "sessions",
       label: "Sessions",
+      icon: "Lock" as const,
       description: "Active sessions and device management",
       content: <SessionsSection sessions={sessions} />,
     },
     {
       id: "notifications",
       label: "Notifications",
+      icon: "Sparkles" as const,
       description: "How the agent surfaces updates",
       content: <NotificationsSection />,
     },
     {
       id: "danger",
-      label: "Danger Zone",
+      label: "Export & delete",
+      icon: "Trash" as const,
       description: "Export data, delete account",
       content: (
         <DangerSection
@@ -139,26 +148,20 @@ export default async function SettingsPage() {
   ];
 
   return (
-    <div className="h-full overflow-y-auto bg-[var(--bg)]" data-testid="settings-page">
-      {/* Page header */}
-      <div className="border-b-[0.5px] border-[var(--border)] bg-[var(--bg)] px-5 py-6 md:px-10 md:py-7">
-        <div className="mx-auto max-w-[800px]">
-          <div className="font-mono text-[11.5px] uppercase tracking-[0.06em] text-[var(--text-tertiary)]">
-            Settings
-          </div>
-          <h1 className="display mt-1 text-[28px] tracking-[-0.015em] text-[var(--text)] md:text-[36px]">
-            Tune the operator.
-          </h1>
-          <p className="mt-1 text-[13.5px] leading-[1.5] text-[var(--text-tertiary)]">
-            Connections, voice, autonomy, memory. Everything the agent uses to do its job.
-          </p>
-        </div>
-      </div>
+    <div
+      style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden" }}
+      data-testid="settings-page"
+    >
+      {/* Page header — matches design SurfaceHeader */}
+      <SurfaceHeader
+        kicker="Settings"
+        title="Tune the operator."
+        subtitle="Connections, voice, autonomy, memory. Everything the agent uses to do its job — visible and yours to change."
+        accent="activity"
+      />
 
-      {/* Content — SettingsShell handles mobile drill-down / desktop single-column */}
-      <div className="mx-auto max-w-[800px] px-4 py-6 md:px-10 md:py-8">
-        <SettingsShell sections={sections} />
-      </div>
+      {/* Content — SettingsShell handles desktop sidebar + mobile drill-down */}
+      <SettingsShell sections={sections} />
     </div>
   );
 }

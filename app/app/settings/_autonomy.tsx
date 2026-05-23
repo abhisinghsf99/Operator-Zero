@@ -24,6 +24,8 @@
  */
 
 import { useState, useTransition } from "react";
+import { LevelToggle, Card, SectionHeader } from "@/components/design/primitives";
+import type { Level } from "@/components/design/primitives";
 import { saveAutonomyThresholds } from "@/app/app/settings/actions";
 
 // ── D-05 curated override rows ────────────────────────────────────────────────
@@ -71,55 +73,6 @@ interface AutonomySectionProps {
   thresholds: { default_level: string; per_action_overrides: Record<string, string> } | null;
 }
 
-// ── LevelToggle ───────────────────────────────────────────────────────────────
-
-const LEVEL_META: Record<AutomationLevel, string> = {
-  L1: "Manual — agent prepares, you trigger",
-  L2: "Approval-gated — agent proposes, you approve",
-  L3: "Autonomous — agent acts, you observe",
-};
-
-function LevelToggle({
-  value,
-  onChange,
-}: {
-  value: AutomationLevel;
-  onChange: (v: AutomationLevel) => void;
-}) {
-  const levels: AutomationLevel[] = ["L1", "L2", "L3"];
-  return (
-    <div
-      className="inline-flex gap-[1px] rounded-[var(--r-sm)] border-[0.5px] border-[var(--border)] bg-[var(--bg-subtle)] p-[2px]"
-      role="radiogroup"
-      aria-label="Automation level"
-    >
-      {levels.map((l) => {
-        const active = value === l;
-        return (
-          <button
-            key={l}
-            type="button"
-            role="radio"
-            aria-checked={active}
-            title={LEVEL_META[l]}
-            aria-label={`${l}: ${LEVEL_META[l]}`}
-            onClick={() => onChange(l)}
-            className={[
-              "rounded-[var(--r-xs)] border-[0.5px] px-[10px] py-[3px] font-mono text-[12px] font-medium tracking-[0.02em] transition-all duration-[0.12s]",
-              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--acc-workflow)] focus-visible:ring-offset-1",
-              active
-                ? "border-[var(--border-strong)] bg-[var(--bg-elevated)] text-[var(--text)] shadow-[var(--shadow-sm)]"
-                : "border-transparent bg-transparent text-[var(--text-tertiary)]",
-            ].join(" ")}
-          >
-            {l}
-          </button>
-        );
-      })}
-    </div>
-  );
-}
-
 // ── ToggleSwitch ──────────────────────────────────────────────────────────────
 
 function ToggleSwitch({
@@ -138,17 +91,32 @@ function ToggleSwitch({
       aria-checked={on}
       aria-label={ariaLabel}
       onClick={onToggle}
-      className={[
-        "relative h-[22px] w-[36px] cursor-pointer rounded-[var(--r-pill)] transition-colors duration-[0.2s]",
-        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--acc-workflow)] focus-visible:ring-offset-1",
-        on ? "bg-[var(--acc-workflow-ink)]" : "bg-[var(--bg-deeper)]",
-      ].join(" ")}
+      style={{
+        position: "relative",
+        width: 36,
+        height: 22,
+        borderRadius: "var(--r-pill)",
+        background: on ? "var(--acc-workflow-ink)" : "var(--bg-deeper)",
+        cursor: "pointer",
+        border: "none",
+        transition: "background 0.2s",
+        flexShrink: 0,
+        outline: "none",
+      }}
+      className="focus-visible:ring-2 focus-visible:ring-[var(--acc-workflow)] focus-visible:ring-offset-1"
     >
       <span
-        className={[
-          "absolute top-[2px] h-[18px] w-[18px] rounded-full bg-white shadow-[0_1px_2px_rgba(0,0,0,0.15)] transition-[left] duration-[0.2s]",
-          on ? "left-[16px]" : "left-[2px]",
-        ].join(" ")}
+        style={{
+          position: "absolute",
+          top: 2,
+          left: on ? 16 : 2,
+          width: 18,
+          height: 18,
+          borderRadius: "50%",
+          background: "white",
+          transition: "left 0.2s",
+          boxShadow: "0 1px 2px rgba(0,0,0,0.15)",
+        }}
         aria-hidden="true"
       />
     </button>
@@ -178,9 +146,9 @@ export function AutonomySection({ thresholds }: AutonomySectionProps) {
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
 
-  function handleLevelChange(level: AutomationLevel) {
-    setDefaultLevel(level);
-    persistThresholds(level, overrides);
+  function handleLevelChange(level: Level) {
+    setDefaultLevel(level as AutomationLevel);
+    persistThresholds(level as AutomationLevel, overrides);
   }
 
   function handleOverrideToggle(key: string, currentlyOn: boolean) {
@@ -210,59 +178,58 @@ export function AutonomySection({ thresholds }: AutonomySectionProps) {
   }
 
   return (
-    <section aria-labelledby="autonomy-heading" className="mt-8">
-      {/* Section header */}
-      <div className="mb-5">
+    <section aria-labelledby="autonomy-heading">
+      {/* SectionTitle — matches design SectionTitle helper */}
+      <div style={{ marginBottom: 22 }}>
         <h2
           id="autonomy-heading"
-          className="display text-[28px] tracking-[-0.015em] text-[var(--text)]"
+          className="display"
+          style={{ fontSize: 28, color: "var(--text)", margin: 0, letterSpacing: "-0.015em" }}
         >
           Autonomy thresholds
         </h2>
-        <p className="mt-1 text-[13.5px] leading-[1.5] text-[var(--text-tertiary)]">
+        <p style={{ margin: "4px 0 0", color: "var(--text-tertiary)", fontSize: 13.5, lineHeight: 1.5, maxWidth: 580 }}>
           Where the agent acts on its own, where it pauses for you.
           Overrides can only <em>add</em> friction — they cannot loosen a workflow&rsquo;s own gate.
         </p>
       </div>
 
       {/* Default level card */}
-      <div className="mb-[18px] rounded-[var(--r-lg)] border-[0.5px] border-[var(--border)] bg-[var(--bg-elevated)] px-[20px] py-[20px]">
-        <div className="mb-[6px] text-[12px] font-mono uppercase tracking-[0.05em] text-[var(--text-tertiary)]">
-          Default for new workflows
-        </div>
-        <div className="flex items-center gap-[14px]">
+      <Card padding={20} style={{ marginBottom: 18 }}>
+        <SectionHeader>Default for new workflows</SectionHeader>
+        <div style={{ display: "flex", alignItems: "center", gap: 14, marginTop: 6 }}>
           <LevelToggle value={defaultLevel} onChange={handleLevelChange} />
-          <span className="text-[12.5px] text-[var(--text-tertiary)]">
+          <span style={{ fontSize: 12.5, color: "var(--text-tertiary)" }}>
             Applies to new workflows only — existing workflows keep their own level.
           </span>
         </div>
-      </div>
+      </Card>
 
       {/* Per-action overrides card (D-05 curated set) */}
-      <div className="rounded-[var(--r-lg)] border-[0.5px] border-[var(--border)] bg-[var(--bg-elevated)] px-[20px] py-[20px]">
-        <div className="mb-[6px] text-[12px] font-mono uppercase tracking-[0.05em] text-[var(--text-tertiary)]">
-          Always require approval, regardless of workflow level
-        </div>
-        <p className="mb-[10px] text-[12.5px] leading-[1.5] text-[var(--text-tertiary)]">
+      <Card padding={20}>
+        <SectionHeader>Always require approval, regardless of workflow level</SectionHeader>
+        <p style={{ marginBottom: 10, fontSize: 12.5, lineHeight: 1.5, color: "var(--text-tertiary)" }}>
           These override any workflow-level setting — forcing a human approval before
           the action runs. They cannot make an action <em>more</em> autonomous.
         </p>
-
-        <div className="flex flex-col gap-0">
+        <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
           {OVERRIDE_ROWS.map((row, idx) => {
             const isOn = row.key in overrides && overrides[row.key] === "L2";
             const isLast = idx === OVERRIDE_ROWS.length - 1;
             return (
               <div
                 key={row.key}
-                className={[
-                  "flex items-center gap-[16px] py-[14px]",
-                  isLast ? "" : "border-b-[0.5px] border-[var(--border-hairline,var(--border))]",
-                ].join(" ")}
+                style={{
+                  padding: "14px 0",
+                  borderBottom: isLast ? "none" : "0.5px solid var(--border-hairline)",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 16,
+                }}
               >
-                <div className="flex-1">
-                  <div className="text-[13.5px] font-medium text-[var(--text)]">{row.label}</div>
-                  <div className="mt-[2px] text-[12.5px] text-[var(--text-tertiary)]">{row.desc}</div>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 13.5, fontWeight: 500, color: "var(--text)" }}>{row.label}</div>
+                  <div style={{ fontSize: 12.5, color: "var(--text-tertiary)", marginTop: 2 }}>{row.desc}</div>
                 </div>
                 <ToggleSwitch
                   on={isOn}
@@ -273,21 +240,21 @@ export function AutonomySection({ thresholds }: AutonomySectionProps) {
             );
           })}
         </div>
-      </div>
+      </Card>
 
       {/* Feedback */}
       {isPending && (
-        <p className="mt-2 text-[12.5px] text-[var(--text-tertiary)]" aria-live="polite">
+        <p style={{ marginTop: 8, fontSize: 12.5, color: "var(--text-tertiary)" }} aria-live="polite">
           Saving…
         </p>
       )}
       {!isPending && saved && (
-        <p className="mt-2 text-[12.5px] text-[var(--success)]" aria-live="polite">
+        <p style={{ marginTop: 8, fontSize: 12.5, color: "var(--success)" }} aria-live="polite">
           Saved.
         </p>
       )}
       {error && (
-        <p className="mt-2 text-[12.5px] text-[var(--danger)]" role="alert">
+        <p style={{ marginTop: 8, fontSize: 12.5, color: "var(--danger)" }} role="alert">
           {error}
         </p>
       )}

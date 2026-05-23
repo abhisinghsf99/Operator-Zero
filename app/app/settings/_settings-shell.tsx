@@ -2,11 +2,16 @@
 
 /**
  * app/app/settings/_settings-shell.tsx
- * Settings mobile drill-down shell (D-11, UX-01).
+ * Settings shell — desktop sidebar nav + mobile drill-down (D-11, UX-01).
  *
- * Desktop (md+):  All sections rendered in a single scrollable column.
- * Mobile (<md):   Section nav list first. Tapping a section pushes a full-screen
- *                 view of that section with a ← Back affordance.
+ * Desktop (md+):
+ *   Left sidebar (240px) with section nav buttons.
+ *   Right content panel (flex-1, max-w 720) — shows the active section.
+ *   Matches surface-settings.jsx design: sidebar + content side-by-side.
+ *
+ * Mobile (<md):
+ *   Section nav list first. Tapping a section pushes a full-screen
+ *   view of that section with a ← Back affordance.
  *
  * All section content (edit, save, toggle) is fully functional at 375px —
  * no read-only stripping (D-11, UX-01 constraint).
@@ -15,10 +20,12 @@
  *   - Back button has aria-label="Back to settings"
  *   - Section nav items have role="button" + aria-label
  *   - Focus moves to section heading on open; back to nav item on back (D-11)
+ *   - Active nav item has aria-current="page"
  */
 
 import { useState, useRef, useCallback, type ReactNode } from "react";
 import { ArrowLeft, ChevronRight } from "lucide-react";
+import { Icons, type IconName } from "@/components/design/icons";
 import { cn } from "@/lib/utils";
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
@@ -26,6 +33,7 @@ import { cn } from "@/lib/utils";
 interface SettingsSection {
   id: string;
   label: string;
+  icon: IconName;
   description: string;
   content: ReactNode;
 }
@@ -37,52 +45,123 @@ interface SettingsShellProps {
 // ─── SettingsShell ─────────────────────────────────────────────────────────────
 
 /**
- * SettingsShell — handles mobile section drill-down.
+ * SettingsShell — handles desktop sidebar + mobile section drill-down.
  *
- * On desktop: renders all sections as a scrollable list.
- * On mobile: shows section nav; tapping a section pushes the full-screen content.
+ * Desktop: sidebar nav with section buttons + content panel side-by-side.
+ * Mobile: shows section nav; tapping a section pushes the full-screen content.
  */
 export function SettingsShell({ sections }: SettingsShellProps) {
-  const [activeSectionId, setActiveSectionId] = useState<string | null>(null);
+  // Desktop: which section is active in the sidebar
+  const [activeDesktopId, setActiveDesktopId] = useState<string>(sections[0]?.id ?? "");
 
-  // Ref to the last activated nav row — for returning focus on Back (D-11)
+  // Mobile: which section is drilled into (null = nav list)
+  const [activeMobileId, setActiveMobileId] = useState<string | null>(null);
+
+  // Ref to the last activated mobile nav row — for returning focus on Back (D-11)
   const lastActivatedNavRef = useRef<HTMLButtonElement | null>(null);
   // Ref to the section heading — for moving focus on open (D-11)
   const sectionHeadingRef = useRef<HTMLHeadingElement | null>(null);
 
-  const handleSectionActivate = useCallback((id: string, el: HTMLButtonElement | null) => {
+  const handleMobileSectionActivate = useCallback((id: string, el: HTMLButtonElement | null) => {
     lastActivatedNavRef.current = el;
-    setActiveSectionId(id);
-    // Move focus to section heading after render
+    setActiveMobileId(id);
     requestAnimationFrame(() => {
       sectionHeadingRef.current?.focus();
     });
   }, []);
 
-  const handleBack = useCallback(() => {
-    setActiveSectionId(null);
+  const handleMobileBack = useCallback(() => {
+    setActiveMobileId(null);
     requestAnimationFrame(() => {
       lastActivatedNavRef.current?.focus();
     });
   }, []);
 
-  const activeSection = sections.find((s) => s.id === activeSectionId) ?? null;
+  const activeMobileSection = sections.find((s) => s.id === activeMobileId) ?? null;
+  const activeDesktopSection = sections.find((s) => s.id === activeDesktopId) ?? sections[0];
 
   return (
     <>
-      {/* ── Desktop layout: all sections in one scrollable column ──────────── */}
-      <div className="hidden md:block">
-        {sections.map((section) => (
-          <div key={section.id} className="mt-8 first:mt-0">
-            {section.content}
+      {/* ── Desktop layout: sidebar + content panel ───────────────────────── */}
+      <div
+        className="hidden md:flex"
+        style={{ flex: 1, overflow: "hidden" }}
+      >
+        {/* Sidebar nav */}
+        <aside
+          style={{
+            width: 240,
+            flexShrink: 0,
+            borderRight: "0.5px solid var(--border)",
+            padding: "24px 16px",
+            background: "var(--bg)",
+            overflowY: "auto",
+          }}
+        >
+          <div style={{ display: "flex", flexDirection: "column", gap: 1 }}>
+            {sections.map((s) => {
+              const Ic = Icons[s.icon];
+              const active = s.id === activeDesktopId;
+              return (
+                <button
+                  key={s.id}
+                  onClick={() => setActiveDesktopId(s.id)}
+                  aria-current={active ? "page" : undefined}
+                  aria-label={`Open ${s.label} settings`}
+                  style={{
+                    all: "unset",
+                    padding: "9px 12px",
+                    cursor: "pointer",
+                    borderRadius: "var(--r-sm)",
+                    background: active ? "var(--bg-subtle)" : "transparent",
+                    color: active ? "var(--text)" : "var(--text-secondary)",
+                    fontWeight: active ? 500 : 400,
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 10,
+                    fontSize: 13,
+                    transition: "background 0.12s, color 0.12s",
+                  }}
+                  onMouseEnter={(e) => {
+                    if (!active) {
+                      (e.currentTarget as HTMLButtonElement).style.background = "var(--bg-subtle)";
+                      (e.currentTarget as HTMLButtonElement).style.color = "var(--text)";
+                    }
+                  }}
+                  onMouseLeave={(e) => {
+                    if (!active) {
+                      (e.currentTarget as HTMLButtonElement).style.background = "transparent";
+                      (e.currentTarget as HTMLButtonElement).style.color = "var(--text-secondary)";
+                    }
+                  }}
+                >
+                  <Ic size={14} aria-hidden={true} />
+                  {s.label}
+                </button>
+              );
+            })}
           </div>
-        ))}
+        </aside>
+
+        {/* Content panel */}
+        <div
+          style={{
+            flex: 1,
+            overflow: "auto",
+            padding: "32px 48px 60px",
+            background: "var(--bg)",
+          }}
+        >
+          <div style={{ maxWidth: 720 }}>
+            {activeDesktopSection?.content}
+          </div>
+        </div>
       </div>
 
       {/* ── Mobile layout: section nav → full-screen section ──────────────── */}
-      <div className="md:hidden">
+      <div className="md:hidden" style={{ flex: 1, overflow: "auto", padding: "16px" }}>
         {/* Section nav list — visible when no section is active */}
-        {!activeSectionId && (
+        {!activeMobileId && (
           <nav
             aria-label="Settings sections"
             data-testid="settings-nav"
@@ -95,7 +174,7 @@ export function SettingsShell({ sections }: SettingsShellProps) {
                   key={section.id}
                   section={section}
                   isLast={isLast}
-                  onActivate={handleSectionActivate}
+                  onActivate={handleMobileSectionActivate}
                 />
               );
             })}
@@ -103,12 +182,12 @@ export function SettingsShell({ sections }: SettingsShellProps) {
         )}
 
         {/* Section detail — visible when a section is active */}
-        {activeSectionId && activeSection && (
+        {activeMobileId && activeMobileSection && (
           <div>
             {/* Back affordance */}
             <div className="mb-4 flex items-center">
               <button
-                onClick={handleBack}
+                onClick={handleMobileBack}
                 aria-label="Back to settings"
                 className="flex items-center gap-2 rounded-[var(--r-sm)] px-2 py-1.5 text-[13px] text-[var(--text-secondary)] hover:bg-[var(--bg-subtle)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--acc-workflow)] focus-visible:ring-offset-1"
               >
@@ -123,11 +202,11 @@ export function SettingsShell({ sections }: SettingsShellProps) {
               tabIndex={-1}
               className="mb-4 text-[22px] font-semibold tracking-[-0.01em] text-[var(--text)] focus:outline-none"
             >
-              {activeSection.label}
+              {activeMobileSection.label}
             </h2>
 
             {/* Section content — fully functional on mobile */}
-            {activeSection.content}
+            {activeMobileSection.content}
           </div>
         )}
       </div>

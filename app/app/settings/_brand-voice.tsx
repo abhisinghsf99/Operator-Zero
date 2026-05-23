@@ -16,7 +16,7 @@
  */
 import { useState, useTransition, useId } from "react";
 import ReactMarkdown from "react-markdown";
-import { Button } from "@/components/ui/button";
+import { Button } from "@/components/design/primitives";
 import { saveBrandVoice, regenerateBrandVoice } from "@/app/app/settings/actions";
 import {
   Dialog,
@@ -27,6 +27,7 @@ import {
   DialogFooter,
   DialogClose,
 } from "@/components/ui/dialog";
+import { Button as ShadcnButton } from "@/components/ui/button";
 
 interface BrandVoiceSectionProps {
   initialMarkdown: string;
@@ -87,28 +88,52 @@ export function BrandVoiceSection({ initialMarkdown }: BrandVoiceSectionProps) {
 
   return (
     <section aria-labelledby={headingId} data-testid="brand-voice-section">
-      <div className="mb-5">
+      {/* SectionTitle — matches design SectionTitle helper */}
+      <div style={{ marginBottom: 22 }}>
         <h2
           id={headingId}
-          className="display text-[28px] tracking-[-0.015em] text-[var(--text)]"
+          className="display"
+          style={{ fontSize: 28, color: "var(--text)", margin: 0, letterSpacing: "-0.015em" }}
         >
           Brand voice profile
         </h2>
-        <p className="mt-1 max-w-[580px] text-[13.5px] leading-[1.5] text-[var(--text-tertiary)]">
+        <p style={{ margin: "4px 0 0", color: "var(--text-tertiary)", fontSize: 13.5, lineHeight: 1.5, maxWidth: 580 }}>
           The reference document the agent reads before every content-generating action.
           Write it like you&apos;d brief a new contractor.
         </p>
       </div>
 
       {/* Editor + Preview — two-column layout per design */}
-      <div className="grid grid-cols-2 gap-3.5">
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
         {/* Editor pane */}
-        <div className="rounded-[var(--r-lg)] border-[0.5px] border-[var(--border)] bg-[var(--bg-elevated)]">
-          <div className="flex items-center justify-between border-b-[0.5px] border-[var(--border)] px-3.5 py-2.5">
-            <span className="font-mono text-[11px] uppercase tracking-[0.06em] text-[var(--text-tertiary)]">
+        <div
+          style={{
+            borderRadius: "var(--r-lg)",
+            border: "0.5px solid var(--border)",
+            background: "var(--bg-elevated)",
+          }}
+        >
+          <div
+            style={{
+              padding: "10px 14px",
+              borderBottom: "0.5px solid var(--border-hairline)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+            }}
+          >
+            <span
+              style={{
+                fontSize: 11,
+                fontFamily: "var(--font-mono)",
+                color: "var(--text-tertiary)",
+                textTransform: "uppercase",
+                letterSpacing: "0.06em",
+              }}
+            >
               Markdown
             </span>
-            <span className="text-[11px] text-[var(--text-tertiary)]">
+            <span style={{ fontSize: 11, color: "var(--text-tertiary)" }}>
               {markdown.length} chars
             </span>
           </div>
@@ -120,31 +145,65 @@ export function BrandVoiceSection({ initialMarkdown }: BrandVoiceSectionProps) {
             }}
             aria-label="Brand voice markdown editor"
             aria-multiline="true"
-            className="block w-full resize-y bg-transparent p-3.5 font-mono text-[12.5px] leading-[1.7] text-[var(--text)] focus-visible:outline-none"
-            style={{ minHeight: 460 }}
+            style={{
+              all: "unset" as "unset",
+              display: "block",
+              width: "100%",
+              padding: "14px 16px",
+              minHeight: 460,
+              fontFamily: "var(--font-mono)",
+              fontSize: 12.5,
+              lineHeight: 1.7,
+              color: "var(--text)",
+              resize: "vertical" as "vertical",
+              boxSizing: "border-box" as "border-box",
+            }}
             spellCheck={false}
           />
         </div>
 
         {/* Preview pane */}
-        <div className="rounded-[var(--r-lg)] border-[0.5px] border-[var(--border)] bg-[var(--bg-elevated)]">
-          <div className="border-b-[0.5px] border-[var(--border)] px-3.5 py-2.5">
-            <span className="font-mono text-[11px] uppercase tracking-[0.06em] text-[var(--text-tertiary)]">
+        <div
+          style={{
+            borderRadius: "var(--r-lg)",
+            border: "0.5px solid var(--border)",
+            background: "var(--bg-elevated)",
+          }}
+        >
+          <div
+            style={{
+              padding: "10px 14px",
+              borderBottom: "0.5px solid var(--border-hairline)",
+            }}
+          >
+            <span
+              style={{
+                fontSize: 11,
+                fontFamily: "var(--font-mono)",
+                color: "var(--text-tertiary)",
+                textTransform: "uppercase",
+                letterSpacing: "0.06em",
+              }}
+            >
               Preview
             </span>
           </div>
           {/* T-4-03-03: react-markdown without rehype-raw — no raw HTML passthrough */}
-          <div className="prose prose-sm max-w-none p-4 text-[13.5px] leading-[1.65] text-[var(--text)] [&_h1]:display [&_h1]:text-[20px] [&_h1]:tracking-[-0.01em] [&_h2]:text-[14px] [&_h2]:font-medium [&_li]:text-[var(--text-secondary)] [&_p]:text-[var(--text-secondary)]">
+          <div
+            style={{ padding: "16px 18px", fontSize: 13.5, lineHeight: 1.65, color: "var(--text)" }}
+            className="prose prose-sm max-w-none [&_h1]:display [&_h1]:text-[20px] [&_h1]:tracking-[-0.01em] [&_h2]:text-[14px] [&_h2]:font-medium [&_li]:text-[var(--text-secondary)] [&_p]:text-[var(--text-secondary)]"
+          >
             <ReactMarkdown>{markdown}</ReactMarkdown>
           </div>
         </div>
       </div>
 
       {/* Actions */}
-      <div className="mt-3.5 flex items-center gap-2">
+      <div style={{ display: "flex", gap: 8, marginTop: 14, alignItems: "center" }}>
         <Button
-          variant="default"
-          size="sm"
+          variant="primary"
+          accent="chat"
+          icon="Check"
           onClick={handleSave}
           disabled={isSaving}
           aria-busy={isSaving}
@@ -154,7 +213,7 @@ export function BrandVoiceSection({ initialMarkdown }: BrandVoiceSectionProps) {
         </Button>
         <Button
           variant="ghost"
-          size="sm"
+          icon="Sparkles"
           onClick={handleRegenerate}
           disabled={isRegenerating}
           aria-busy={isRegenerating}
@@ -165,7 +224,7 @@ export function BrandVoiceSection({ initialMarkdown }: BrandVoiceSectionProps) {
       </div>
 
       {error && (
-        <p className="mt-3 text-[12.5px] text-[var(--danger)]" role="alert">
+        <p style={{ marginTop: 12, fontSize: 12.5, color: "var(--danger)" }} role="alert">
           {error}
         </p>
       )}
@@ -188,22 +247,22 @@ export function BrandVoiceSection({ initialMarkdown }: BrandVoiceSectionProps) {
           )}
           <DialogFooter>
             <DialogClose asChild>
-              <Button
+              <ShadcnButton
                 variant="secondary"
                 size="sm"
                 onClick={handleCancelReplace}
               >
                 Keep current
-              </Button>
+              </ShadcnButton>
             </DialogClose>
-            <Button
+            <ShadcnButton
               variant="default"
               size="sm"
               onClick={handleConfirmReplace}
               data-testid="brand-voice-confirm-replace"
             >
               Load draft
-            </Button>
+            </ShadcnButton>
           </DialogFooter>
         </DialogContent>
       </Dialog>

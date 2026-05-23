@@ -31,8 +31,9 @@
  */
 
 import { useState, useTransition } from "react";
-import { Download, Trash2, AlertTriangle, X } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { AlertTriangle } from "lucide-react";
+import { Button, Card } from "@/components/design/primitives";
+import { Icons } from "@/components/design/icons";
 import { Input } from "@/components/ui/input";
 import {
   Dialog,
@@ -43,6 +44,7 @@ import {
   DialogFooter,
   DialogClose,
 } from "@/components/ui/dialog";
+import { Button as ShadcnButton } from "@/components/ui/button";
 import {
   exportAccountData,
   requestAccountDeletion,
@@ -76,16 +78,14 @@ export function DangerSection({
 }: DangerSectionProps) {
   // ── Export state ────────────────────────────────────────────────────────────
   const [latestExport, setLatestExport] = useState(initialLatestExport);
-  const [exportStatus, setExportStatus] = useState<
-    "idle" | "initiated" | "error"
-  >(initialLatestExport?.status === "ready" ? "idle" : "idle");
+  const [exportStatus, setExportStatus] = useState<"idle" | "initiated" | "error">(
+    initialLatestExport?.status === "ready" ? "idle" : "idle"
+  );
   const [exportError, setExportError] = useState<string | null>(null);
   const [isExportPending, startExportTransition] = useTransition();
 
   // ── Deletion state ──────────────────────────────────────────────────────────
-  const [deletionRequestedAt, setDeletionRequestedAt] = useState(
-    initialDeletionRequestedAt
-  );
+  const [deletionRequestedAt, setDeletionRequestedAt] = useState(initialDeletionRequestedAt);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [confirmInput, setConfirmInput] = useState("");
   const [deleteError, setDeleteError] = useState<string | null>(null);
@@ -101,8 +101,6 @@ export function DangerSection({
         setExportError(result.error);
         return;
       }
-      // Initiated — the job is running in the background.
-      // Update latestExport to show "Preparing…" state.
       setExportStatus("initiated");
       setLatestExport({
         id: "pending",
@@ -126,7 +124,6 @@ export function DangerSection({
         setDeleteError(result.error);
         return;
       }
-      // Account is now locked — show grace-period state
       setDeleteConfirmOpen(false);
       setDeletionRequestedAt(new Date());
       setConfirmInput("");
@@ -142,7 +139,6 @@ export function DangerSection({
         setDeleteError(result.error);
         return;
       }
-      // Deletion cancelled — restore normal state
       setDeletionRequestedAt(null);
     });
   }
@@ -154,51 +150,42 @@ export function DangerSection({
 
   // ── Determine export display state ─────────────────────────────────────────
   const isExportReady = latestExport?.status === "ready" && latestExport.signed_url;
-  const isExportPreparing =
-    latestExport?.status === "pending" || exportStatus === "initiated";
+  const isExportPreparing = latestExport?.status === "pending" || exportStatus === "initiated";
   const isExportFailed = latestExport?.status === "failed";
 
   return (
-    <section aria-labelledby="danger-zone-heading" className="mt-8">
-      <div className="mb-5">
+    <section aria-labelledby="danger-zone-heading">
+      {/* SectionTitle — matches design SectionTitle helper */}
+      <div style={{ marginBottom: 22 }}>
         <h2
           id="danger-zone-heading"
-          className="display text-[28px] tracking-[-0.015em] text-[var(--danger)]"
+          className="display"
+          style={{ fontSize: 28, color: "var(--text)", margin: 0, letterSpacing: "-0.015em" }}
         >
-          Danger zone
+          Export &amp; delete
         </h2>
-        <p className="mt-1 text-[13.5px] leading-[1.5] text-[var(--text-tertiary)]">
-          Export your data or permanently delete your account. These actions
-          cannot easily be undone.
+        <p style={{ margin: "4px 0 0", color: "var(--text-tertiary)", fontSize: 13.5, lineHeight: 1.5, maxWidth: 580 }}>
+          Your data is yours. Take it with you, or remove it entirely.
         </p>
       </div>
 
-      <div className="flex flex-col gap-3">
-        {/* ── Export data ─────────────────────────────────────────────────── */}
-        <div
-          className="rounded-[var(--r-lg)] border-[0.5px] border-[var(--border)] bg-[var(--bg-elevated)] px-[18px] py-[18px]"
-          data-testid="danger-export-row"
-        >
-          <div className="flex items-start justify-between gap-4">
-            <div className="flex-1">
-              <div className="flex items-center gap-2">
-                <Download
-                  className="h-4 w-4 shrink-0 text-[var(--text-secondary)]"
-                  aria-hidden="true"
-                />
-                <span className="text-[14px] font-medium text-[var(--text)]">
-                  Export my data
-                </span>
+      <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+        {/* ── Export data ───────────────────────────────────────────────────── */}
+        <Card padding={20} style={{}} data-testid="danger-export-row">
+          <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 14, fontWeight: 500, color: "var(--text)" }}>
+                Export account data
               </div>
-              <p className="mt-1 text-[12.5px] leading-[1.5] text-[var(--text-tertiary)]">
-                Download a JSON bundle of your workflows, runs, activity log,
-                memory, and brand voice. The link expires after 24 hours.
-              </p>
+              <div style={{ fontSize: 12.5, color: "var(--text-tertiary)", marginTop: 2 }}>
+                JSON download. Workflows, activity, memory, brand voice. Everything.
+                The link expires after 24 hours.
+              </div>
 
               {/* Export status messages */}
               {isExportPreparing && (
                 <p
-                  className="mt-2 text-[12.5px] text-[var(--text-secondary)]"
+                  style={{ marginTop: 8, fontSize: 12.5, color: "var(--text-secondary)" }}
                   role="status"
                   aria-live="polite"
                 >
@@ -207,20 +194,33 @@ export function DangerSection({
               )}
 
               {isExportReady && latestExport?.signed_url && (
-                <div className="mt-2">
+                <div style={{ marginTop: 8 }}>
                   <a
                     href={latestExport.signed_url}
-                    className="inline-flex items-center gap-1.5 text-[12.5px] font-medium text-[var(--acc-workflow)] underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--acc-workflow)] focus-visible:ring-offset-1"
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 6,
+                      fontSize: 12.5,
+                      fontWeight: 500,
+                      color: "var(--acc-workflow-ink)",
+                      textDecoration: "underline",
+                      textDecorationColor: "transparent",
+                      textUnderlineOffset: 2,
+                    }}
                     download
                     target="_blank"
                     rel="noopener noreferrer"
                     aria-label="Download your data export (link expires in 24 hours)"
                     data-testid="export-download-link"
+                    onMouseEnter={(e) => ((e.currentTarget as HTMLAnchorElement).style.textDecorationColor = "currentColor")}
+                    onMouseLeave={(e) => ((e.currentTarget as HTMLAnchorElement).style.textDecorationColor = "transparent")}
+                    className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--acc-workflow)] focus-visible:ring-offset-1"
                   >
-                    <Download className="h-3 w-3" aria-hidden="true" />
+                    <Icons.ArrowDownRight size={12} aria-hidden={true} />
                     Download export
                   </a>
-                  <span className="ml-2 text-[11.5px] text-[var(--text-tertiary)]">
+                  <span style={{ marginLeft: 8, fontSize: 11.5, color: "var(--text-tertiary)" }}>
                     (link expires in 24 hours)
                   </span>
                 </div>
@@ -228,7 +228,7 @@ export function DangerSection({
 
               {isExportFailed && (
                 <p
-                  className="mt-2 text-[12.5px] text-[var(--danger)]"
+                  style={{ marginTop: 8, fontSize: 12.5, color: "var(--danger)" }}
                   role="alert"
                 >
                   Export failed:{" "}
@@ -238,7 +238,7 @@ export function DangerSection({
 
               {exportError && (
                 <p
-                  className="mt-2 text-[12.5px] text-[var(--danger)]"
+                  style={{ marginTop: 8, fontSize: 12.5, color: "var(--danger)" }}
                   role="alert"
                 >
                   {exportError}
@@ -248,53 +248,46 @@ export function DangerSection({
 
             <Button
               variant="secondary"
+              icon="ArrowDownRight"
               size="sm"
               onClick={handleExport}
               disabled={isExportPending || isExportPreparing}
               aria-busy={isExportPending}
               aria-label="Request a data export"
               data-testid="export-data-button"
-              className="shrink-0"
+              style={{ flexShrink: 0 }}
             >
-              {isExportPending ? "Requesting…" : "Export data"}
+              {isExportPending ? "Requesting…" : "Export"}
             </Button>
           </div>
-        </div>
+        </Card>
 
-        {/* ── Delete account ───────────────────────────────────────────────── */}
-        <div
-          className="rounded-[var(--r-lg)] border-[0.5px] border-[var(--danger)] bg-[var(--bg-elevated)] px-[18px] py-[18px]"
+        {/* ── Delete account ─────────────────────────────────────────────────── */}
+        <Card
+          padding={20}
+          style={{ borderColor: "color-mix(in oklch, var(--danger) 30%, transparent)" }}
           data-testid="danger-delete-row"
         >
-          <div className="flex items-start justify-between gap-4">
-            <div className="flex-1">
-              <div className="flex items-center gap-2">
-                <Trash2
-                  className="h-4 w-4 shrink-0 text-[var(--danger)]"
-                  aria-hidden="true"
-                />
-                <span className="text-[14px] font-medium text-[var(--text)]">
-                  Delete account
-                </span>
+          <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 14, fontWeight: 500, color: "var(--text)" }}>
+                Delete account
               </div>
 
               {!deletionRequestedAt ? (
-                <p className="mt-1 text-[12.5px] leading-[1.5] text-[var(--text-tertiary)]">
-                  Permanently delete your account and all associated data.
-                  Your account is locked immediately; data is hard-deleted after
-                  a 7-day grace window. You can cancel by signing back in during
-                  that time.
-                </p>
+                <div style={{ fontSize: 12.5, color: "var(--text-tertiary)", marginTop: 2 }}>
+                  7-day grace period. After that, everything is permanently removed.
+                </div>
               ) : (
                 /* Grace-period state */
-                <div className="mt-2">
-                  <div className="flex items-start gap-2">
+                <div style={{ marginTop: 8 }}>
+                  <div style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
                     <AlertTriangle
                       className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[var(--warning)]"
                       aria-hidden="true"
                     />
                     <p
-                      className="text-[12.5px] leading-[1.5] text-[var(--text-secondary)]"
+                      style={{ fontSize: 12.5, lineHeight: 1.5, color: "var(--text-secondary)", margin: 0 }}
                       role="status"
                     >
                       Your account is scheduled for deletion on{" "}
@@ -305,8 +298,7 @@ export function DangerSection({
                           year: "numeric",
                         })}
                       </strong>
-                      . Sign back in or click &ldquo;Cancel deletion&rdquo;
-                      below to keep your account.
+                      . Sign back in or click &ldquo;Cancel deletion&rdquo; below to keep your account.
                     </p>
                   </div>
                 </div>
@@ -314,7 +306,7 @@ export function DangerSection({
 
               {deleteError && (
                 <p
-                  className="mt-2 text-[12.5px] text-[var(--danger)]"
+                  style={{ marginTop: 8, fontSize: 12.5, color: "var(--danger)" }}
                   role="alert"
                   data-testid="delete-error"
                 >
@@ -335,30 +327,30 @@ export function DangerSection({
                 disabled={isDeletePending}
                 aria-label="Request account deletion"
                 data-testid="delete-account-button"
-                className="shrink-0"
+                style={{ flexShrink: 0 }}
               >
                 Delete account
               </Button>
             ) : (
               <Button
                 variant="secondary"
+                icon="X"
                 size="sm"
                 onClick={handleCancelDeletion}
                 disabled={isCancelPending}
                 aria-busy={isCancelPending}
                 aria-label="Cancel the pending account deletion"
                 data-testid="cancel-deletion-button"
-                className="shrink-0 flex items-center gap-1.5"
+                style={{ flexShrink: 0 }}
               >
-                <X className="h-3 w-3" aria-hidden="true" />
                 {isCancelPending ? "Cancelling…" : "Cancel deletion"}
               </Button>
             )}
           </div>
-        </div>
+        </Card>
       </div>
 
-      {/* ── Delete confirm dialog ─────────────────────────────────────────── */}
+      {/* ── Delete confirm dialog ──────────────────────────────────────────── */}
       <Dialog
         open={deleteConfirmOpen}
         onOpenChange={(open) => {
@@ -380,13 +372,13 @@ export function DangerSection({
             </DialogDescription>
           </DialogHeader>
 
-          <div className="mt-4">
+          <div style={{ marginTop: 16 }}>
             <label
               htmlFor="delete-confirm-input"
-              className="mb-2 block text-[12.5px] text-[var(--text-secondary)]"
+              style={{ display: "block", marginBottom: 8, fontSize: 12.5, color: "var(--text-secondary)" }}
             >
               Type{" "}
-              <span className="font-mono font-medium text-[var(--danger)]">
+              <span style={{ fontFamily: "var(--font-mono)", fontWeight: 500, color: "var(--danger)" }}>
                 delete
               </span>{" "}
               to confirm.
@@ -409,7 +401,7 @@ export function DangerSection({
 
           {deleteError && (
             <p
-              className="mt-3 text-[12.5px] text-[var(--danger)]"
+              style={{ marginTop: 12, fontSize: 12.5, color: "var(--danger)" }}
               role="alert"
               data-testid="delete-dialog-error"
             >
@@ -417,13 +409,13 @@ export function DangerSection({
             </p>
           )}
 
-          <DialogFooter className="mt-4">
+          <DialogFooter style={{ marginTop: 16 }}>
             <DialogClose asChild>
-              <Button variant="secondary" size="sm">
+              <ShadcnButton variant="secondary" size="sm">
                 Cancel
-              </Button>
+              </ShadcnButton>
             </DialogClose>
-            <Button
+            <ShadcnButton
               variant="danger"
               size="sm"
               onClick={handleDeleteConfirm}
@@ -432,10 +424,8 @@ export function DangerSection({
               aria-label="Confirm account deletion"
               data-testid="confirm-delete-button"
             >
-              {isDeletePending
-                ? "Deleting…"
-                : "Yes, delete my account"}
-            </Button>
+              {isDeletePending ? "Deleting…" : "Yes, delete my account"}
+            </ShadcnButton>
           </DialogFooter>
         </DialogContent>
       </Dialog>
