@@ -168,15 +168,16 @@ export async function recordSession(
         set: { last_seen_at: new Date() },
       });
   } else {
-    // No session_id — insert a new row (cannot deduplicate without session_id)
-    await serviceDb.insert(userSessions).values({
-      user_id: userId,
-      supabase_session_id: null,
-      device_label: deviceLabel,
-      raw_ua: input.rawUa ?? null,
-      ip_geo_label: ipGeoLabel,
-      last_seen_at: new Date(),
-    });
+    // WR-03: no session_id → cannot deduplicate → skip insert to avoid unbounded
+    // row growth. Auth flows that don't embed session_id in the JWT (e.g. some
+    // refresh edge cases) would otherwise create a new orphan row on every call,
+    // never revokable by revokeSession (which looks up by row id, not session_id).
+    console.warn(JSON.stringify({
+      level: "warn",
+      event: "session.record.no_session_id",
+      userId,
+      note: "skipping insert — no supabase_session_id available for deduplication",
+    }));
   }
 }
 
