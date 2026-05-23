@@ -299,6 +299,10 @@ export async function saveBrandVoice(
 export async function getBrandVoice(
   userId: string
 ): Promise<{ profile_markdown: string; tone_tags: string[] | null; forbidden_phrases: string[] | null } | null> {
+  // CR-05: assert the caller is the authenticated user before issuing a serviceDb query
+  const { claims, error } = await getValidatedClaims();
+  if (error || !claims || claims.sub !== userId) return null;
+
   const [row] = await serviceDb
     .select()
     .from(brandVoiceProfiles)
@@ -523,6 +527,10 @@ export async function getMemoryItems(userId: string): Promise<Array<{
   created_at: Date;
   updated_at: Date;
 }>> {
+  // CR-05: assert the caller is the authenticated user (serviceDb bypasses RLS)
+  const { claims, error } = await getValidatedClaims();
+  if (error || !claims || claims.sub !== userId) return [];
+
   return serviceDb
     .select({
       id: memoryItems.id,
@@ -731,6 +739,10 @@ export async function saveAutonomyThresholds(
 export async function getAutonomyThresholds(
   userId: string
 ): Promise<{ default_level: string; per_action_overrides: Record<string, string> } | null> {
+  // CR-05: assert the caller is the authenticated user (serviceDb bypasses RLS)
+  const { claims, error } = await getValidatedClaims();
+  if (error || !claims || claims.sub !== userId) return null;
+
   const [row] = await serviceDb
     .select()
     .from(autonomyThresholds)
@@ -824,6 +836,10 @@ export async function listSessions(
   last_seen_at: Date;
   created_at: Date;
 }>> {
+  // CR-05: assert the caller is the authenticated user (serviceDb bypasses RLS)
+  const { claims, error } = await getValidatedClaims();
+  if (error || !claims || claims.sub !== userId) return [];
+
   return serviceDb
     .select({
       id: userSessions.id,
@@ -834,7 +850,7 @@ export async function listSessions(
     })
     .from(userSessions)
     .where(and(eq(userSessions.user_id, userId), isNull(userSessions.revoked_at)))
-    .orderBy(userSessions.last_seen_at);
+    .orderBy(desc(userSessions.last_seen_at));   // WR-01: desc — most recent first
 }
 
 // ─── Account Export (SET-06, D-08) ───────────────────────────────────────────
@@ -889,6 +905,10 @@ export async function getLatestExport(userId: string): Promise<{
   created_at: Date;
   completed_at: Date | null;
 } | null> {
+  // CR-05: assert the caller is the authenticated user (serviceDb bypasses RLS)
+  const { claims, error: authError } = await getValidatedClaims();
+  if (authError || !claims || claims.sub !== userId) return null;
+
   const [row] = await serviceDb
     .select({
       id: userExports.id,

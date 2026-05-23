@@ -557,6 +557,17 @@ export async function getPendingApprovals(
   userId: string,
   opts: { showSnoozed?: boolean } = {}
 ): Promise<PendingApproval[]> {
+  // CR-05: re-validate that the caller is the authenticated user.
+  // These are exported Server Actions callable from any client context;
+  // serviceDb bypasses RLS, so we MUST enforce ownership here.
+  let authedUserId: string;
+  try {
+    authedUserId = await requireUserId();
+  } catch {
+    return [];
+  }
+  if (authedUserId !== userId) return [];
+
   const now = new Date();
 
   // Build WHERE clause
@@ -572,11 +583,9 @@ export async function getPendingApprovals(
     );
   }
 
-  // Exclude hard-expired items (expires_at < now) — shown as auto-withdrawn
-  conditions.push(
-    // Only show items that have not expired
-    eq(approvals.status, "pending") // already filtered; expires_at guard via app-level filter below
-  );
+  // WR-04: removed duplicate eq(approvals.status, "pending") that was here —
+  // status='pending' is already in the conditions array above. The expires_at
+  // guard is correctly applied via the app-level filter below.
 
   const rows = await serviceDb
     .select()
@@ -612,6 +621,15 @@ export async function getPendingApprovals(
  * @param userId — authenticated user UUID
  */
 export async function fetchPendingCount(userId: string): Promise<number> {
+  // CR-05: re-validate against the authenticated session (same pattern as getPendingApprovals)
+  let authedUserId: string;
+  try {
+    authedUserId = await requireUserId();
+  } catch {
+    return 0;
+  }
+  if (authedUserId !== userId) return 0;
+
   const now = new Date();
 
   const rows = await serviceDb
