@@ -24,7 +24,7 @@
 
 import { serviceDb } from "@/lib/db/client";
 import { userSessions, userProfiles } from "@/lib/db/schema";
-import { eq, and, isNull } from "drizzle-orm";
+import { eq, and, isNull, desc } from "drizzle-orm";
 import { createClient } from "@supabase/supabase-js";
 
 // ── Service-role Supabase client (for admin.signOut) ─────────────────────────
@@ -207,7 +207,7 @@ export async function listSessions(
     })
     .from(userSessions)
     .where(and(eq(userSessions.user_id, userId), isNull(userSessions.revoked_at)))
-    .orderBy(userSessions.last_seen_at);
+    .orderBy(desc(userSessions.last_seen_at));  // WR-01: most recently active first
 }
 
 /**
