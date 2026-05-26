@@ -34,6 +34,7 @@ import {
 } from "@/components/ui/dialog";
 import { Button as ShadcnButton } from "@/components/ui/button";
 import { revokeSession, signOutEverywhere } from "@/app/app/settings/actions";
+import { signOut } from "@/app/app/actions";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -260,8 +261,21 @@ export function SessionsSection({ sessions: initialSessions }: SessionsSectionPr
         </Card>
       )}
 
-      {/* Sign out everywhere */}
+      {/* Sign out (this device) */}
       <div style={{ marginTop: 14 }}>
+        <form action={signOut} style={{ marginBottom: 10 }}>
+          <Button
+            variant="secondary"
+            size="md"
+            icon="LogOut"
+            type="submit"
+            aria-label="Sign out of this device"
+          >
+            Sign out
+          </Button>
+        </form>
+
+        {/* Sign out everywhere */}
         <Button
           variant="danger"
           size="md"
