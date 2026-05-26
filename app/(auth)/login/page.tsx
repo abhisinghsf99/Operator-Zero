@@ -2,6 +2,9 @@
  * app/(auth)/login/page.tsx
  * Email + password sign-in + Google OAuth — styled in the Operator Zero design language.
  *
+ * Demo CTA is the primary action at the top of the card; the existing email/password
+ * form + Google sign-in remain fully functional and unchanged below it.
+ *
  * ACCESSIBILITY (WCAG 2.1 AA):
  *   - All inputs have explicit <label htmlFor> associations.
  *   - Error messages announced via role="alert" + aria-live.
@@ -9,9 +12,9 @@
  */
 "use client";
 
-import { login } from "./actions";
+import { login, enterDemo } from "./actions";
 import Link from "next/link";
-import { useActionState, type CSSProperties } from "react";
+import { useActionState, useState, useTransition, type CSSProperties } from "react";
 import { Button } from "@/components/design/primitives";
 import { Icons } from "@/components/design/icons";
 import { GoogleAuthButton, AuthDivider } from "@/components/auth/google-auth-button";
@@ -56,6 +59,12 @@ export default function LoginPage() {
     null
   );
 
+  const [isDemoPending, startTransition] = useTransition();
+  const [demoError, setDemoError] = useState<string | null>(null);
+
+  // Show whichever error is present (form error or demo error)
+  const displayError = state?.error ?? demoError;
+
   return (
     <main
       style={{
@@ -98,6 +107,42 @@ export default function LoginPage() {
           </span>
         </div>
 
+        {/* ── Demo CTA (primary path) ── */}
+        <Button
+          variant="primary"
+          accent="chat"
+          size="lg"
+          disabled={isDemoPending}
+          style={{ width: "100%" }}
+          onClick={() => {
+            setDemoError(null);
+            startTransition(async () => {
+              const res = await enterDemo();
+              if (res && "error" in res) setDemoError(res.error);
+            });
+          }}
+        >
+          {isDemoPending ? "Entering demo…" : "View the live demo →"}
+        </Button>
+
+        {/* Demo disclaimer line */}
+        <p
+          style={{
+            marginTop: 8,
+            marginBottom: 0,
+            fontSize: 12,
+            color: "var(--text-tertiary)",
+            textAlign: "center",
+          }}
+        >
+          This is a portfolio demo of Operator Zero — not the real product. Data is illustrative.
+        </p>
+
+        {/* Divider separating demo from standard login */}
+        <div style={{ marginTop: 20, marginBottom: 4 }}>
+          <AuthDivider />
+        </div>
+
         <h1
           className="display"
           style={{ fontSize: 30, margin: "0 0 4px", color: "var(--text)", letterSpacing: "-0.02em" }}
@@ -108,7 +153,7 @@ export default function LoginPage() {
           Sign in to pick up where the agent left off.
         </p>
 
-        {state?.error && (
+        {displayError && (
           <div
             role="alert"
             aria-live="polite"
@@ -122,7 +167,7 @@ export default function LoginPage() {
               border: "0.5px solid color-mix(in oklch, var(--danger) 30%, transparent)",
             }}
           >
-            {state.error}
+            {displayError}
           </div>
         )}
 
