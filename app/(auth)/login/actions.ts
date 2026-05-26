@@ -28,6 +28,7 @@ import { z } from "zod";
 import { headers } from "next/headers";
 import { recordSession, cancelDeletionIfPending } from "@/lib/auth/session-registry";
 import { inngest } from "@/lib/inngest/client";
+import { getDemoCredentials } from "@/lib/auth/demo";
 
 const loginSchema = z.object({
   email: z.string().email("Please enter a valid email address."),
@@ -92,4 +93,51 @@ export async function login(
   }
 
   redirect("/app/home");
+}
+
+/**
+ * enterDemo — Server Action: sign in as the seeded demo user.
+ *
+ * Reads demo credentials from server-side env vars (DEMO_EMAIL, DEMO_PASSWORD).
+ * Credentials never reach the client — this is a server action.
+ * On success, records the session and redirects to /app/workflows.
+ * On failure, returns { error } (redirect() throws, so never branch is satisfied).
+ *
+ * SECURITY: getDemoCredentials() reads from process.env server-side only.
+ *   The client never sees the credentials — it only calls this server action.
+ */
+export async function enterDemo(): Promise<{ error: string } | never> {
+  const creds = getDemoCredentials();
+  if (!creds) return { error: "Demo is not configured." };
+
+  const supabase = await createClient();
+  const { error } = await supabase.auth.signInWithPassword(creds);
+  if (error) return { error: error.message };
+
+  // Mirror the existing login() post-sign-in block: record session + cancel pending deletion.
+  // Non-fatal: errors here must NOT block the demo redirect.
+  try {
+    const { data: claimsData } = await supabase.auth.getClaims();
+    const userId = claimsData?.claims?.sub;
+    if (userId) {
+      const sessionId = (claimsData?.claims as Record<string, unknown> | null)?.["session_id"] as string | null ?? null;
+      const headerStore = await headers();
+      await recordSession(userId, {
+        rawUa: headerStore.get("user-agent"),
+        ip: headerStore.get("x-forwarded-for"),
+        countryCode: headerStore.get("x-vercel-ip-country"),
+        supabaseSessionId: sessionId,
+      });
+      await cancelDeletionIfPending(userId, inngest);
+    }
+  } catch (sessionErr) {
+    console.error(JSON.stringify({
+      level: "warn",
+      event: "auth.enterDemo.session_registry_failed",
+      error: String(sessionErr),
+    }));
+  }
+
+  // redirect() throws — satisfies the `never` branch; must be outside try/catch
+  redirect("/app/workflows");
 }
