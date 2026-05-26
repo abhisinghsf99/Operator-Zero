@@ -179,7 +179,13 @@ export function ChatThreadView({ threadId, initialMessages = [] }: ChatThreadVie
 
         if (!resp.ok) {
           const err = await resp.json().catch(() => ({ error: "Stream failed" }));
-          throw new Error(err.error ?? `HTTP ${resp.status}`);
+          if (resp.status === 429) {
+            throw new Error("The model is rate-limited right now. Wait a moment and try again.");
+          } else if (resp.status === 401 || resp.status === 403) {
+            throw new Error("Your session needs a refresh — reload and sign in again.");
+          } else {
+            throw new Error(err.error ?? `HTTP ${resp.status}`);
+          }
         }
 
         // 4. Read the SSE stream
@@ -205,7 +211,7 @@ export function ChatThreadView({ threadId, initialMessages = [] }: ChatThreadVie
               const event = JSON.parse(raw);
 
               if (event.error) {
-                throw new Error(event.message ?? "Stream error");
+                throw new Error(event.message ?? "The reply stream was interrupted. Try sending again.");
               }
 
               if (event.text) {
@@ -240,8 +246,9 @@ export function ChatThreadView({ threadId, initialMessages = [] }: ChatThreadVie
                 );
               }
             } catch (parseErr) {
-              if (parseErr instanceof Error && parseErr.message !== "Stream error") {
-                // JSON parse error — skip this line
+              // Re-throw intentional stream errors (from event.error branch above).
+              // Swallow JSON parse errors on individual SSE lines — skip and keep reading.
+              if (parseErr instanceof SyntaxError) {
                 continue;
               }
               throw parseErr;
