@@ -6,6 +6,7 @@ import { cn } from "@/lib/utils";
 import { Icons, type IconName } from "@/components/design/icons";
 import { Avatar } from "@/components/design/primitives";
 import { ApprovalsBadgeSync } from "@/app/app/approvals/_realtime-sync";
+import { signOut } from "@/app/app/actions";
 
 type NavAccent = "chat" | "workflow" | "approval" | "activity" | "experiment";
 
@@ -225,6 +226,24 @@ export function Sidebar({
           <Icons.Settings size={15} strokeWidth={isSettings ? 1.7 : 1.5} />
           <span className="flex-1 truncate">Settings</span>
         </Link>
+
+        <form action={signOut}>
+          <button
+            type="submit"
+            aria-label="Sign out of this device"
+            className={cn(
+              "relative flex items-center gap-[10px] px-[10px] py-2 rounded-[var(--r-sm)]",
+              "text-[13.5px] leading-none transition-colors duration-[120ms]",
+              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--acc-workflow)] focus-visible:ring-offset-1",
+              "text-[var(--text-secondary)] hover:bg-[var(--bg-deeper)] hover:text-[var(--text)]",
+              "motion-reduce:transition-none",
+              "w-full text-left"
+            )}
+          >
+            <Icons.LogOut size={15} strokeWidth={1.5} />
+            <span className="flex-1 truncate">Sign out</span>
+          </button>
+        </form>
 
         <Link
           href="/app/settings"
