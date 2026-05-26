@@ -75,6 +75,7 @@ import {
 } from "@/lib/agent/memory";
 import { revokeSession as registryRevokeSession, signOutEverywhere as registrySignOutEverywhere } from "@/lib/auth/session-registry";
 import Anthropic from "@anthropic-ai/sdk";
+import { isDemoUser, DEMO_DISABLED_MESSAGE } from "@/lib/auth/demo";
 import { CURATED_OVERRIDE_TOOLS } from "@/lib/workflows/autonomy";
 
 // ─── Schemas ──────────────────────────────────────────────────────────────────
@@ -181,6 +182,9 @@ export async function disconnectIntegration(
 
   const userId = claims.sub as string;
   const providerValue = parsed.data;
+
+  // Demo guard: block destructive action for the demo user
+  if (isDemoUser(userId)) return { error: DEMO_DISABLED_MESSAGE };
 
   // 3. Delete integration row via RLS (ownership enforced at DB layer)
   await withUserRls(claims, async (tx) => {
@@ -623,6 +627,10 @@ export async function updateEmail(
   if (error || !claims) {
     return { error: error ?? "Not authenticated." };
   }
+  const userId = claims.sub as string;
+
+  // Demo guard: block destructive action for the demo user
+  if (isDemoUser(userId)) return { error: DEMO_DISABLED_MESSAGE };
 
   // 3. Update via Supabase Auth (sends confirmation email)
   const supabase = await createClient();
@@ -659,6 +667,10 @@ export async function updatePassword(
   if (error || !claims) {
     return { error: error ?? "Not authenticated." };
   }
+  const userId = claims.sub as string;
+
+  // Demo guard: block destructive action for the demo user
+  if (isDemoUser(userId)) return { error: DEMO_DISABLED_MESSAGE };
 
   // 3. Update via Supabase Auth
   const supabase = await createClient();
@@ -784,6 +796,9 @@ export async function revokeSession(
   }
   const userId = claims.sub as string;
 
+  // Demo guard: block destructive action for the demo user
+  if (isDemoUser(userId)) return { error: DEMO_DISABLED_MESSAGE };
+
   // 3. Delegate to session-registry helper (ownership re-check inside)
   const result = await registryRevokeSession(userId, parsed.data.sessionId);
   if (!result.success) {
@@ -808,6 +823,9 @@ export async function signOutEverywhere(): Promise<{ success: true } | { error: 
     return { error: error ?? "Not authenticated." };
   }
   const userId = claims.sub as string;
+
+  // Demo guard: block destructive action for the demo user
+  if (isDemoUser(userId)) return { error: DEMO_DISABLED_MESSAGE };
 
   // 2. Delegate to session-registry helper
   const result = await registrySignOutEverywhere(userId);
@@ -956,6 +974,9 @@ export async function requestAccountDeletion(): Promise<
     return { error: error ?? "Not authenticated." };
   }
   const userId = claims.sub as string;
+
+  // Demo guard: block destructive action for the demo user
+  if (isDemoUser(userId)) return { error: DEMO_DISABLED_MESSAGE };
 
   // 2. Active-run gate (D-09, Pitfall 4): block if any run is mid-execution
   const activeRuns = await serviceDb
