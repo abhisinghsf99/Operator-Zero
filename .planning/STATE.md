@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-05-21)
 Phase: 04
 Plan: Not started
 Status: Milestone complete
-Last activity: 2026-05-26 - Completed quick task 260526-l83: Add logout/sign-out button to UI
+Last activity: 2026-05-26 - Completed quick task 260526-luj: Fix chat (graceful Voyage-recall degradation) + BYOK showcase card
 
 Progress: [██████████] 95%
 
@@ -138,6 +138,7 @@ None yet.
 | 260526-fmp | Add one-click public demo mode (enterDemo + banner + destructive-action guards) | 2026-05-26 | d7b7cc0 | [260526-fmp-add-one-click-public-demo-mode-with-bann](./quick/260526-fmp-add-one-click-public-demo-mode-with-bann/) |
 | 260526-ii6 | Reset demo to baseline on each entry (in-app reseedDemo + reset route + tab-close beacon) | 2026-05-26 | b58c896 | [260526-ii6-reset-demo-to-baseline-on-each-entry-via](./quick/260526-ii6-reset-demo-to-baseline-on-each-entry-via/) |
 | 260526-kpx | Clean shape-aware approval preview (Q&A customer message + drafted reply, before/after, item list) | 2026-05-26 | 6453e56 | [260526-kpx-render-approval-preview-cleanly-especial](./quick/260526-kpx-render-approval-preview-cleanly-especial/) |
+| 260526-luj | Fix chat: graceful Voyage-recall degradation (no more 500 on free-tier 429) + non-editable BYOK showcase card | 2026-05-26 | 9f5cbf3 | [260526-luj-fix-chat-voyage-429-with-graceful-recall](./quick/260526-luj-fix-chat-voyage-429-with-graceful-recall/) |
 | 260526-l83 | Add logout/sign-out button to UI (desktop sidebar + Settings → Sessions) | 2026-05-26 | d8de2da | [260526-l83-add-logout-button](./quick/260526-l83-add-logout-button/) |
 
 ## Session Continuity
