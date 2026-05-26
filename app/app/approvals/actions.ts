@@ -91,6 +91,44 @@ async function requireUserId(): Promise<string> {
   return userId;
 }
 
+// ─── sendInngestEvent helper ──────────────────────────────────────────────────
+
+/**
+ * sendInngestEvent — fire an Inngest event, tolerating dev-server absence.
+ *
+ * When INNGEST_DEV=1, inngest.send() POSTs to http://localhost:8288/. If the
+ * Inngest Dev Server is not running, the fetch throws TypeError: fetch failed
+ * (undici AggregateError). This crashes the Server Action even though the DB
+ * row has already been resolved successfully.
+ *
+ * Fix: wrap send() in try/catch. In all environments we log the error. In
+ * non-dev environments we re-throw so a real send failure is still surfaced.
+ * In dev mode (INNGEST_DEV=1) we swallow the error — the approval row is
+ * already committed to the DB; skipping the Inngest resume event is acceptable
+ * for local UI testing when the dev server is offline.
+ */
+async function sendInngestEvent(
+  name: string,
+  data: Record<string, unknown>
+): Promise<void> {
+  try {
+    await inngest.send({ name, data });
+  } catch (err) {
+    const isDevMode = process.env.INNGEST_DEV === "1";
+    if (isDevMode) {
+      // Dev server likely not running — log a warning but do not crash the action.
+      // The approval row is already resolved in the DB; the UI can proceed.
+      console.warn(
+        "[sendInngestEvent] Dev mode: inngest.send failed (is `npx inngest-cli@latest dev` running?)",
+        err
+      );
+    } else {
+      // Production / staging — re-throw so the caller sees a real failure.
+      throw err;
+    }
+  }
+}
+
 // ─── approveItem ─────────────────────────────────────────────────────────────
 
 export type ApproveResult = { success: true } | { error: string };
@@ -144,10 +182,7 @@ export async function approveItem(
   }
 
   // 4. Fire Inngest resume event — resumes the paused workflow run
-  await inngest.send({
-    name: "approval.resolved",
-    data: { approvalId, decision: "approved" },
-  });
+  await sendInngestEvent("approval.resolved", { approvalId, decision: "approved" });
 
   // 5. Revalidate the approvals UI
   revalidatePath("/app/approvals");
@@ -219,10 +254,7 @@ export async function rejectItem(
   }
 
   // 5. Fire Inngest resume event — resumes the paused workflow run with rejection
-  await inngest.send({
-    name: "approval.resolved",
-    data: { approvalId, decision: "rejected" },
-  });
+  await sendInngestEvent("approval.resolved", { approvalId, decision: "rejected" });
 
   // 6. Revalidate
   revalidatePath("/app/approvals");
@@ -348,10 +380,7 @@ export async function editItem(
   }
 
   // 6. Fire Inngest resume event — engine reads edited proposed_action from DB
-  await inngest.send({
-    name: "approval.resolved",
-    data: { approvalId: parsed.data.approvalId, decision: "approved" },
-  });
+  await sendInngestEvent("approval.resolved", { approvalId: parsed.data.approvalId, decision: "approved" });
 
   // 7. Revalidate
   revalidatePath("/app/approvals");
@@ -412,10 +441,7 @@ export async function bulkResolve(
 
   // 5. Fire approval.resolved for each resolved id (AFTER DB writes complete — Pitfall 2)
   for (const id of resolvedIds) {
-    await inngest.send({
-      name: "approval.resolved",
-      data: { approvalId: id, decision: parsed.data.decision },
-    });
+    await sendInngestEvent("approval.resolved", { approvalId: id, decision: parsed.data.decision });
   }
 
   // 6. Revalidate
