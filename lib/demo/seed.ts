@@ -32,6 +32,8 @@ import {
   activityEntries,
   threads,
   messages,
+  gmailThreads,
+  gmailMessages,
 } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
@@ -75,6 +77,8 @@ export async function reseedDemo(): Promise<void> {
       .delete(shopifyProductVariants)
       .where(eq(shopifyProductVariants.user_id, USER));
     await tx.delete(shopifyProducts).where(eq(shopifyProducts.user_id, USER));
+    await tx.delete(gmailMessages).where(eq(gmailMessages.user_id, USER));
+    await tx.delete(gmailThreads).where(eq(gmailThreads.user_id, USER));
 
     // ─── 2. PROFILE (mark onboarding complete so surfaces don't redirect) ────────
     await tx
@@ -130,6 +134,65 @@ export async function reseedDemo(): Promise<void> {
       last_synced_at: MIN(4),
       connected_at: D(16),
     });
+
+    // ─── 3.5 GMAIL MIRROR ────────────────────────────────────────────────────────
+    // [gmail_thread_id, subject, fromEmail, isSupport, body_text, agoMin]
+    type GmailTuple = [string, string, string, boolean, string, number];
+    const gmailRows: GmailTuple[] = [
+      // PRODUCT QUESTIONS — isSupport = true (9)
+      ["gmail-thread-aa12", "Leather care after rain?", "maria.g@example.com", true, "Hi! I got caught in the rain with my Voyager and it's a bit damp. How do I care for the leather so it doesn't get ruined?", 95],
+      ["gmail-thread-bb34", 'Does the Voyager fit a 16" laptop?', "devin.r@example.com", true, "Will my 16-inch MacBook Pro fit in the Voyager Weekender? Looking for something for weekend work trips.", 140],
+      ["gmail-thread-cc56", "Gift wrapping available?", "priya.s@example.com", true, "Do you offer gift wrapping? I want to send the Field Notebook to my sister for her birthday next week.", 210],
+      ["gmail-thread-dd78", "Replacement strap for the Summit?", "tom.b@example.com", true, "The shoulder strap on my Summit Backpack is fraying after two years. Can I buy a replacement strap?", 330],
+      ["gmail-thread-ee90", "Tan vs Cognac in person?", "aisha.k@example.com", true, "How different are the Tan and Cognac in person? Hard to tell from the photos which one I'd like.", 480],
+      ["gmail-thread-ff12", "Can you monogram the Dopp Kit?", "marcus.l@example.com", true, "Do you do monogramming or initials on the Explorer Dopp Kit? Want to gift it to my brother.", 620],
+      ["gmail-thread-gg34", "Voyager vs Summit for a 5-day trip?", "elena.v@example.com", true, "Trying to decide between the Voyager Weekender and the Summit Backpack for a 5-day trip. Which would you recommend?", 760],
+      ["gmail-thread-hh56", "Does the Dopp Kit hold full-size bottles?", "jordan.p@example.com", true, "Will the Explorer Dopp Kit fit full-size toiletry bottles, or is it more for travel sizes?", 910],
+      ["gmail-thread-ii78", "Caring for waxed canvas?", "nina.r@example.com", true, "I have one of your waxed canvas pouches — does it need different care than the leather pieces?", 1080],
+      // ORDER-STATUS — isSupport = false (6)
+      ["gmail-thread-oo01", "Where's my order #WB-48217?", "greg.m@example.com", false, "Hi, I placed order #WB-48217 five days ago and haven't seen a shipping update. Can you check the status?", 175],
+      ["gmail-thread-oo02", "Order still processing?", "sara.t@example.com", false, "My order from last week still says processing. Is everything okay with it?", 260],
+      ["gmail-thread-oo03", "Tracking number?", "liam.c@example.com", false, "Could you send me the tracking number for my recent order? I want to make sure I'm home for delivery.", 400],
+      ["gmail-thread-oo04", "Delivery estimate?", "bea.n@example.com", false, "When should I expect my Field Notebook to arrive? Ordered it Tuesday.", 540],
+      ["gmail-thread-oo05", "Change shipping address", "owen.d@example.com", false, "I just moved — can you update the shipping address on my order before it goes out?", 700],
+      ["gmail-thread-oo06", "Order #WB-47990 status", "chloe.f@example.com", false, "Checking in on order #WB-47990 — the tracking hasn't updated in three days.", 860],
+      // NEWSLETTER — isSupport = false (5)
+      ["gmail-thread-nn01", "Re: Weekend at Wanderbound", "hannah.w@example.com", false, "Just wanted to say I love these emails — the photography is gorgeous. Keep them coming!", 300],
+      ["gmail-thread-nn02", "Unsubscribe", "paul.g@example.com", false, "Please remove me from your mailing list. Thanks.", 450],
+      ["gmail-thread-nn03", "Re: New arrivals", "yuki.m@example.com", false, "When's the next drop? I've been waiting for the olive colorway to come back.", 600],
+      ["gmail-thread-nn04", "Re: Spring lookbook", "dana.r@example.com", false, "Loved the lookbook. Any chance you'll do a version for smaller everyday bags?", 980],
+      ["gmail-thread-nn05", "Emailing a bit too often", "frank.h@example.com", false, "You're emailing a bit too often for me — can you dial it back or take me off the list?", 1200],
+      // SPAM — isSupport = false (3)
+      ["gmail-thread-ss01", "Boost your store traffic 10x", "outreach@rankboost-pro.com", false, "Hi, I noticed your website could rank higher on Google. We guarantee first-page results in 30 days. Reply to learn more.", 520],
+      ["gmail-thread-ss02", "You've been selected for a $500 gift card", "noreply@gift-rewards-claim.com", false, "Congratulations! You have been selected to receive a $500 gift card. Click here to claim before it expires.", 1320],
+      ["gmail-thread-ss03", "Quick question about Wanderbound", "hello@growth-agency-outreach.biz", false, "Hey, I help DTC brands scale to 7 figures. Do you have 15 minutes this week for a quick call?", 1500],
+    ];
+
+    for (const [tid, subject, fromEmail, isSupport, body, agoMin] of gmailRows) {
+      await tx.insert(gmailThreads).values({
+        user_id: USER,
+        gmail_thread_id: tid,
+        subject,
+        participants: [fromEmail, "sarah@wanderbound.co"],
+        is_customer_support: isSupport,
+        last_message_at: MIN(agoMin),
+        message_count: 1,
+        last_synced_at: MIN(4),
+      });
+      await tx.insert(gmailMessages).values({
+        user_id: USER,
+        gmail_message_id: `msg-${tid}`,
+        gmail_thread_id: tid,
+        from_address: fromEmail,
+        to_addresses: ["sarah@wanderbound.co"],
+        subject,
+        body_text: body,
+        body_html: null,
+        direction: "inbound",
+        gmail_received_at: MIN(agoMin),
+        last_synced_at: MIN(4),
+      });
+    }
 
     // ─── 4. BRAND VOICE ──────────────────────────────────────────────────────────
     const brandMd = `# Wanderbound — Brand Voice
