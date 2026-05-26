@@ -344,6 +344,32 @@ async function loadStoreContext(userId: string): Promise<StoreContextData | null
  * @param query   — optional query string for semantic recall (current user message)
  * @param opts    — assembly options (budget: 'chat' | 'workflow')
  */
+/**
+ * safeRecallMemory — wraps recallMemory (Voyage embedding call) in try/catch.
+ * On any error (including Voyage 429 free-tier rate limit), logs a warning and
+ * resolves to [] so buildSystemPrompt never throws on an embedding failure.
+ * Structured memory items + brand-voice PROFILE still load via unguarded parallel calls.
+ */
+async function safeRecallMemory(
+  userId: string,
+  query: string,
+  topK: number
+): Promise<SemanticRecallItem[]> {
+  try {
+    return await recallMemory(userId, query, topK);
+  } catch (e) {
+    console.error(
+      JSON.stringify({
+        level: "warn",
+        event: "prompt.semantic_recall_unavailable",
+        error: String(e),
+        timestamp: new Date().toISOString(),
+      })
+    );
+    return [];
+  }
+}
+
 export async function buildSystemPrompt(
   userId: string,
   query?: string,
@@ -353,7 +379,7 @@ export async function buildSystemPrompt(
     loadMemoryItems(userId),
     loadBrandVoiceProfile(userId),
     loadStoreContext(userId),
-    query ? recallMemory(userId, query, 5) : Promise.resolve([]),
+    query ? safeRecallMemory(userId, query, 5) : Promise.resolve([]),
   ]);
 
   return assemblePrompt(

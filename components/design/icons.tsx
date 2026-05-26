@@ -304,6 +304,12 @@ export const Icons = {
       <path d="M7 7l10 10M17 17V8M17 17H8" />
     </Icon>
   ),
+  LogOut: (p: IconProps) => (
+    <Icon {...p}>
+      <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+      <path d="M16 17l5-5-5-5M21 12H9" />
+    </Icon>
+  ),
 } as const;
 
 export type IconName = keyof typeof Icons;

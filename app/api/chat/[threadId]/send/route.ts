@@ -213,7 +213,24 @@ export async function POST(
   }
 
   // 9. Cost cap check (T-2-05-02) and system prompt
-  const capStatus = await checkCostCap(userId);
+  // Belt-and-suspenders: wrap both calls so a transient failure (e.g. DB blip on
+  // cost-cap, or a Voyage 429 that slips past safeRecallMemory) cannot hard-500
+  // a normal chat message — the user MUST always get a streamed reply.
+  let capStatus: string = "ok";
+  try {
+    capStatus = await checkCostCap(userId);
+  } catch (capErr) {
+    console.error(
+      JSON.stringify({
+        level: "warn",
+        event: "chat.cost_cap_check_failed",
+        error: String(capErr),
+        timestamp: new Date().toISOString(),
+      })
+    );
+    // Default to non-"hard" so write tools remain available
+    capStatus = "ok";
+  }
   const includeWriteTools = capStatus !== "hard";
 
   const allMessages = [
@@ -221,9 +238,25 @@ export async function POST(
     { role: "user" as const, content: body.message },
   ];
 
-  const systemPrompt = await buildSystemPrompt(userId, body.message, {
-    budget: "chat",
-  });
+  const MINIMAL_SYSTEM_PROMPT =
+    "You are Operator Zero — an autonomous agent that runs the day-to-day operations of a Shopify store on behalf of the store owner. Answer helpfully and concisely.";
+
+  let systemPrompt: string = MINIMAL_SYSTEM_PROMPT;
+  try {
+    systemPrompt = await buildSystemPrompt(userId, body.message, {
+      budget: "chat",
+    });
+  } catch (promptErr) {
+    console.error(
+      JSON.stringify({
+        level: "error",
+        event: "chat.system_prompt_failed",
+        error: String(promptErr),
+        timestamp: new Date().toISOString(),
+      })
+    );
+    // Fall back to minimal static prompt — stream still starts
+  }
   const toolDefs = getAnthropicToolDefinitions(includeWriteTools);
 
   // 10. Build the SSE ReadableStream — pump Anthropic deltas as SSE events
