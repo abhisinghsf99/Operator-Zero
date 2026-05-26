@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-05-21)
 Phase: 04
 Plan: Not started
 Status: Milestone complete
-Last activity: 2026-05-26 - Completed quick task 260526-ii6: Reset demo to baseline on each entry (in-app reseedDemo + reset route + tab-close beacon)
+Last activity: 2026-05-26 - Completed quick task 260526-kpx: Clean shape-aware approval preview (Q&A customer message + drafted reply)
 
 Progress: [██████████] 95%
 
@@ -137,6 +137,7 @@ None yet.
 | 260523-1jq | Fix Shopify Connect button to collect myshopify store domain before OAuth redirect | 2026-05-23 | 4851b5b | [260523-1jq-fix-shopify-connect-button-to-collect-my](./quick/260523-1jq-fix-shopify-connect-button-to-collect-my/) |
 | 260526-fmp | Add one-click public demo mode (enterDemo + banner + destructive-action guards) | 2026-05-26 | d7b7cc0 | [260526-fmp-add-one-click-public-demo-mode-with-bann](./quick/260526-fmp-add-one-click-public-demo-mode-with-bann/) |
 | 260526-ii6 | Reset demo to baseline on each entry (in-app reseedDemo + reset route + tab-close beacon) | 2026-05-26 | b58c896 | [260526-ii6-reset-demo-to-baseline-on-each-entry-via](./quick/260526-ii6-reset-demo-to-baseline-on-each-entry-via/) |
+| 260526-kpx | Clean shape-aware approval preview (Q&A customer message + drafted reply, before/after, item list) | 2026-05-26 | 6453e56 | [260526-kpx-render-approval-preview-cleanly-especial](./quick/260526-kpx-render-approval-preview-cleanly-especial/) |
 
 ## Session Continuity
 

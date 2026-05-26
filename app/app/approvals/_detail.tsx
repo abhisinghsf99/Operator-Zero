@@ -34,6 +34,7 @@ import {
 import { Button as ShadButton } from "@/components/ui/button";
 import { approveItem, rejectItem, snoozeItem, editItem, revertApproved } from "./actions";
 import type { PendingApproval } from "./actions";
+import { ApprovalPreview } from "./_preview";
 import {
   Button,
   Card,
@@ -369,28 +370,8 @@ export function ApprovalDetail({ approval, onResolved, detailHeadingRef }: Appro
 
         {/* Preview */}
         <SectionHeader>Preview</SectionHeader>
-        <div
-          style={{
-            marginBottom: 24,
-            borderRadius: "var(--r-md)",
-            border: "0.5px solid var(--border)",
-            background: "var(--bg-elevated)",
-            padding: 16,
-          }}
-        >
-          <pre
-            style={{
-              margin: 0,
-              overflowX: "auto",
-              whiteSpace: "pre-wrap",
-              fontSize: 12.5,
-              lineHeight: 1.5,
-              color: "var(--text-secondary)",
-              fontFamily: "var(--font-mono)",
-            }}
-          >
-            {JSON.stringify(approval.preview, null, 2)}
-          </pre>
+        <div style={{ marginBottom: 24 }}>
+          <ApprovalPreview preview={approval.preview} />
         </div>
 
         {/* Edit panel (D-01 — edit proposed_action in place) */}
