@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-05-21)
 Phase: 04
 Plan: Not started
 Status: Milestone complete
-Last activity: 2026-05-26 - Completed quick task 260526-luj: Fix chat (graceful Voyage-recall degradation) + BYOK showcase card
+Last activity: 2026-05-26 - Completed quick task 260526-mfp: Seed Gmail mirror tables in reseedDemo (23/23/9)
 
 Progress: [██████████] 95%
 
@@ -140,9 +140,10 @@ None yet.
 | 260526-kpx | Clean shape-aware approval preview (Q&A customer message + drafted reply, before/after, item list) | 2026-05-26 | 6453e56 | [260526-kpx-render-approval-preview-cleanly-especial](./quick/260526-kpx-render-approval-preview-cleanly-especial/) |
 | 260526-luj | Fix chat: graceful Voyage-recall degradation (no more 500 on free-tier 429) + non-editable BYOK showcase card | 2026-05-26 | 9f5cbf3 | [260526-luj-fix-chat-voyage-429-with-graceful-recall](./quick/260526-luj-fix-chat-voyage-429-with-graceful-recall/) |
 | 260526-l83 | Add logout/sign-out button to UI (desktop sidebar + Settings → Sessions) | 2026-05-26 | d8de2da | [260526-l83-add-logout-button](./quick/260526-l83-add-logout-button/) |
+| 260526-mfp | Seed Gmail mirror tables in reseedDemo (23 threads/messages, 9 product questions) — inbox tools now return data | 2026-05-26 | c3072a7 | [260526-mfp-seed-gmail-mirror-demo](./quick/260526-mfp-seed-gmail-mirror-demo/) |
 
 ## Session Continuity
 
-Last session: 2026-05-23T00:30:18.000Z
-Stopped at: Completed Phase 04-04 — Autonomy thresholds + session management slice
+Last session: 2026-05-26T23:14:03Z
+Stopped at: Completed quick task 260526-mfp — Gmail mirror seed (23/23/9)
 Resume file: None
