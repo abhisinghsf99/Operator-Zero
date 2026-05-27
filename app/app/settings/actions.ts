@@ -74,7 +74,8 @@ import {
   softDeleteMemoryItem,
 } from "@/lib/agent/memory";
 import { revokeSession as registryRevokeSession, signOutEverywhere as registrySignOutEverywhere } from "@/lib/auth/session-registry";
-import Anthropic from "@anthropic-ai/sdk";
+import { generateText } from "ai";
+import { resolveModel } from "@/lib/agent/llm/models";
 import { isDemoUser, isDemoConnectionLocked, DEMO_DISABLED_MESSAGE } from "@/lib/auth/demo";
 import { CURATED_OVERRIDE_TOOLS } from "@/lib/workflows/autonomy";
 
@@ -363,11 +364,10 @@ export async function regenerateBrandVoice(): Promise<
       ? samples.map((s, i) => `Sample ${i + 1}:\n${s.sample_text}`).join("\n\n")
       : "(No samples available — generate based on a generic ecommerce brand voice.)";
 
-  // 3. Call Claude to produce a draft markdown (no DB write — T-4-03-04)
-  const client = new Anthropic();
-  const message = await client.messages.create({
-    model: "claude-opus-4-5",
-    max_tokens: 1024,
+  // 3. Call the DRAFTER model to produce a draft markdown (no DB write — T-4-03-04)
+  const result = await generateText({
+    model: resolveModel("DRAFTER"),
+    maxOutputTokens: 1024,
     messages: [
       {
         role: "user",
@@ -376,13 +376,13 @@ export async function regenerateBrandVoice(): Promise<
     ],
   });
 
-  const textContent = message.content.find((c) => c.type === "text");
-  if (!textContent || textContent.type !== "text") {
+  const draftText = result.text ?? "";
+  if (!draftText) {
     return { error: "Failed to generate brand voice draft. Please try again." };
   }
 
   // T-4-03-04: return draft only — caller must explicitly save
-  return { draft: textContent.text };
+  return { draft: draftText };
 }
 
 // ─── Memory CRUD ─────────────────────────────────────────────────────────────

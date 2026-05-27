@@ -8,7 +8,7 @@
  *
  * Strategy: test the pure functions (buildAuditSuggestions, emptyStoreSuggestions)
  * directly — no Inngest, no DB, no LLM call needed for unit tests.
- * The Anthropic LLM call is mocked at the boundary.
+ * The LLM call is mocked at the Vercel AI SDK boundary (generateText).
  *
  * Requirements:
  *   ONBOARD-04 — Read-only catalog audit returns ≥3 starter suggestions
@@ -16,43 +16,35 @@
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-// ─── Mock Anthropic SDK at boundary ──────────────────────────────────────────
+// ─── Mock AI SDK at boundary ──────────────────────────────────────────────────
 
-vi.mock("@anthropic-ai/sdk", () => {
-  return {
-    default: class MockAnthropic {
-      messages = {
-        create: vi.fn().mockResolvedValue({
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify([
-                {
-                  name: "Fill missing meta titles",
-                  description: "Automatically generate SEO-optimized meta titles for products missing them.",
-                  domain: "seo",
-                  level: "L2",
-                },
-                {
-                  name: "Enrich thin product descriptions",
-                  description: "Expand short product descriptions to improve conversion and SEO.",
-                  domain: "catalog",
-                  level: "L2",
-                },
-                {
-                  name: "Weekly SEO audit report",
-                  description: "Compile a weekly report of products with SEO gaps.",
-                  domain: "seo",
-                  level: "L2",
-                },
-              ]),
-            },
-          ],
-        }),
-      };
-    },
-  };
-});
+vi.mock("ai", () => ({
+  generateText: vi.fn().mockResolvedValue({
+    text: JSON.stringify([
+      {
+        name: "Fill missing meta titles",
+        description: "Automatically generate SEO-optimized meta titles for products missing them.",
+        domain: "seo",
+        level: "L2",
+      },
+      {
+        name: "Enrich thin product descriptions",
+        description: "Expand short product descriptions to improve conversion and SEO.",
+        domain: "catalog",
+        level: "L2",
+      },
+      {
+        name: "Weekly SEO audit report",
+        description: "Compile a weekly report of products with SEO gaps.",
+        domain: "seo",
+        level: "L2",
+      },
+    ]),
+  }),
+}));
+vi.mock("@/lib/agent/llm/models", () => ({
+  resolveModel: vi.fn().mockReturnValue({ provider: "anthropic", modelId: "claude-haiku-4-5" }),
+}));
 
 // ─── Import after mocks ───────────────────────────────────────────────────────
 

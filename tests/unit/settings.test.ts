@@ -82,24 +82,16 @@ vi.mock("next/cache", () => ({
   revalidatePath: vi.fn(),
 }));
 
-// Mock Anthropic SDK — returns a predictable draft
-vi.mock("@anthropic-ai/sdk", () => {
-  const MockAnthropic = vi.fn().mockImplementation(function () {
-    return {
-      messages: {
-        create: vi.fn().mockResolvedValue({
-          content: [
-            {
-              type: "text",
-              text: "# Generated Voice\n\nWarm, direct, and human.",
-            },
-          ],
-        }),
-      },
-    };
-  });
-  return { default: MockAnthropic };
-});
+// Mock the AI SDK boundary (regenerateBrandVoice now uses generateText) —
+// returns a predictable draft.
+vi.mock("ai", () => ({
+  generateText: vi.fn().mockResolvedValue({
+    text: "# Generated Voice\n\nWarm, direct, and human.",
+  }),
+}));
+vi.mock("@/lib/agent/llm/models", () => ({
+  resolveModel: vi.fn().mockReturnValue({ provider: "anthropic", modelId: "claude-opus-4-5" }),
+}));
 
 // Mock memory functions
 vi.mock("@/lib/agent/memory", () => ({

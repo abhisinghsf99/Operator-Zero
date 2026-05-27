@@ -10,7 +10,8 @@
  *   - The prompt asks only for a YES/NO label; output is coerced to boolean
  *   - No tool access — classifier has no side effects
  */
-import { anthropic } from "@/lib/agent/anthropic";
+import { generateText } from "ai";
+import { resolveModel } from "@/lib/agent/llm/models";
 
 /**
  * Classify whether an email is a customer support inquiry.
@@ -26,9 +27,9 @@ export async function classifySupport(
   // Build the classification prompt.
   // T-2-04-03: email content is data in the user turn; the system prompt
   // confines the model to a single YES/NO response.
-  const response = await anthropic.messages.create({
-    model: "claude-haiku-4-5",
-    max_tokens: 10,
+  const result = await generateText({
+    model: resolveModel("CLASSIFIER"),
+    maxOutputTokens: 10,
     system:
       "You are a classifier. Reply with YES if the email is a customer support question about an order, product, refund, shipping, account, or store policy. Reply NO otherwise. Only reply YES or NO — nothing else.",
     messages: [
@@ -39,10 +40,7 @@ export async function classifySupport(
     ],
   });
 
-  const text =
-    response.content[0]?.type === "text"
-      ? response.content[0].text.trim().toUpperCase()
-      : "NO";
+  const text = (result.text ?? "").trim().toUpperCase();
 
   return text.startsWith("YES");
 }

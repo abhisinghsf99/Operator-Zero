@@ -1,22 +1,17 @@
 /**
  * lib/agent/runtime.ts
- * Shared agent runtime — entry points for chat and workflow execution.
+ * Shared agent runtime — entry point for workflow step execution + error classification.
  *
  * SECURITY: Server-only module. No NEXT_PUBLIC_ env vars read here.
  *   Do NOT import this module in Client Components.
  *
  * Entry points:
- *   streamChat(ctx)         — SSE streaming chat entry point (02-06 wires this)
  *   runWorkflowStep(ctx)    — Workflow step execution entry point (02-07 wires this)
+ *   classifyAgentError(err) — map provider API errors to agent error types (AGENT-06)
  *
- * Both entry points:
- *   1. Check checkCostCap(userId) before every LLM call (T-2-05-02)
- *      - 'hard' → disable write tools (chat continues degraded)
- *      - 'soft' → inject cost warning into system prompt
- *   2. Build system prompt via buildSystemPrompt()
- *   3. Call anthropic.messages.stream() with getAnthropicToolDefinitions()
- *   4. On error, use classifyAgentError() → auth/transient/budget (rethrow unknown)
- *   5. After finalMessage, recordCost() from usage
+ * NOTE: the streaming chat path lives in app/api/chat/[threadId]/send/route.ts and
+ * runs on the Vercel AI SDK (streamText). The legacy chat-streaming helper that
+ * used to live here was dead code (nothing called it) and has been removed.
  *
  * Error classification (AGENT-06):
  *   classifyAgentError(err) → { type: 'auth_error' | 'transient' | 'budget_exhausted' }
@@ -28,10 +23,9 @@
  */
 
 import Anthropic from "@anthropic-ai/sdk";
-import { anthropic } from "./anthropic";
-import { buildSystemPrompt } from "./prompt";
+import { APICallError } from "ai";
 import { checkCostCap, recordCost } from "@/lib/cost-cap";
-import { getAnthropicToolDefinitions, dispatchTool } from "./tools/index";
+import { dispatchTool } from "./tools/index";
 import type { AgentContext } from "./tools/index";
 
 // ─── Error classification ─────────────────────────────────────────────────────
@@ -79,26 +73,25 @@ export function classifyAgentError(err: unknown): AgentErrorClassification {
     throw err;
   }
 
-  // Not an Anthropic API error — rethrow for Inngest to handle
+  // ADDITIVE: AI SDK provider errors (Anthropic OR Groq via streamText/generateText)
+  // surface as APICallError with a .statusCode. Map the same way as the Anthropic
+  // branch above. This does not alter the Anthropic.APIError branch or its tests.
+  if (APICallError.isInstance(err)) {
+    const status = err.statusCode;
+    if (status === 401) {
+      return { type: "auth_error" };
+    }
+    if (status === 529 || status === 503 || status === 429) {
+      return { type: "transient" };
+    }
+    if (status !== undefined && status >= 500) {
+      return { type: "transient" };
+    }
+    throw err;
+  }
+
+  // Not a recognized provider API error — rethrow for Inngest to handle
   throw err;
-}
-
-// ─── Chat context ─────────────────────────────────────────────────────────────
-
-export interface ChatContext {
-  userId: string;
-  threadId: string;
-  automationLevel: "L1" | "L2" | "L3";
-  messages: Array<{ role: "user" | "assistant"; content: string }>;
-  query?: string;
-}
-
-export interface ChatResult {
-  content: string;
-  toolsUsed: string[];
-  costUsd: number;
-  degraded: boolean;
-  warningInjected: boolean;
 }
 
 // ─── Workflow step context ─────────────────────────────────────────────────────
@@ -121,108 +114,6 @@ export interface WorkflowStepResult {
   requiresApproval: boolean;
   proposedAction?: unknown;
   costUsd: number;
-}
-
-// ─── Cost warning injection ───────────────────────────────────────────────────
-
-const COST_WARNING =
-  "\n\n⚠️ COST WARNING: You are approaching your daily usage limit. " +
-  "Please complete this task efficiently. Write tools remain available.";
-
-// ─── streamChat ───────────────────────────────────────────────────────────────
-
-/**
- * streamChat — entry point for the chat SSE path.
- *
- * Called by app/api/chat/[threadId]/send/route.ts for each user message.
- * Returns the assembled response; streaming is handled by the route handler
- * that wraps this function with a ReadableStream.
- *
- * Cost cap enforcement (T-2-05-02):
- *   'hard' → write tools stripped from toolDefinitions; chat continues
- *   'soft' → warning appended to system prompt; all tools available
- *
- * @param ctx — ChatContext (userId from authenticated session — never trusted from body)
- */
-export async function streamChat(ctx: ChatContext): Promise<ChatResult> {
-  const agentCtx: AgentContext = {
-    userId: ctx.userId,
-    automationLevel: ctx.automationLevel,
-    threadId: ctx.threadId,
-  };
-
-  // 1. Check cost cap BEFORE any LLM call (T-2-05-02)
-  const capStatus = await checkCostCap(ctx.userId);
-  const includeWriteTools = capStatus !== "hard";
-
-  // 2. Build system prompt
-  let systemPrompt = await buildSystemPrompt(ctx.userId, ctx.query, {
-    budget: "chat",
-  });
-
-  // Inject soft warning into prompt
-  if (capStatus === "soft") {
-    systemPrompt += COST_WARNING;
-  }
-
-  // 3. Get tool definitions (write tools stripped on hard cap)
-  const toolDefs = getAnthropicToolDefinitions(includeWriteTools);
-
-  const toolsUsed: string[] = [];
-  let responseContent = "";
-
-  try {
-    const stream = anthropic.messages.stream({
-      model: "claude-opus-4-7",
-      system: systemPrompt,
-      messages: ctx.messages,
-      tools: toolDefs as Parameters<typeof anthropic.messages.stream>[0]["tools"],
-      max_tokens: 4096,
-    });
-
-    // Process stream events
-    for await (const event of stream) {
-      if (
-        event.type === "content_block_delta" &&
-        event.delta.type === "text_delta"
-      ) {
-        responseContent += event.delta.text;
-      }
-
-      if (
-        event.type === "content_block_start" &&
-        event.content_block.type === "tool_use"
-      ) {
-        const toolBlock = event.content_block;
-        toolsUsed.push(toolBlock.name);
-        // Tool calls are dispatched inline; results fed back on next turn
-        await dispatchTool(toolBlock.name, toolBlock.input, agentCtx);
-      }
-    }
-
-    // 5. Record cost from final message usage
-    const finalMsg = await stream.finalMessage();
-    const usage = finalMsg.usage;
-    // Approximate cost: $3/MTok input, $15/MTok output (claude-opus-4-7)
-    const costUsd =
-      (usage.input_tokens * 3 + (usage.output_tokens ?? 0) * 15) / 1_000_000;
-
-    await recordCost(ctx.userId, costUsd);
-
-    return {
-      content: responseContent,
-      toolsUsed,
-      costUsd,
-      degraded: capStatus === "hard",
-      warningInjected: capStatus === "soft",
-    };
-  } catch (err) {
-    // 4. Classify error (rethrows unknown)
-    const classification = classifyAgentError(err);
-    throw Object.assign(new Error(`Agent error: ${classification.type}`), {
-      classification,
-    });
-  }
 }
 
 // ─── runWorkflowStep ──────────────────────────────────────────────────────────

@@ -22,7 +22,8 @@
  *   - Parsing the LLM response as JSON (structured output — fails if not valid JSON)
  *   - Not executing any content from suggestions
  */
-import Anthropic from "@anthropic-ai/sdk";
+import { generateText } from "ai";
+import { resolveModel } from "@/lib/agent/llm/models";
 import { inngest } from "../client";
 import { serviceDb } from "@/lib/db/client";
 import { shopifyProducts } from "@/lib/db/schema/shopify-mirror";
@@ -123,21 +124,16 @@ Return ONLY the JSON array, no other text.`;
 export async function buildAuditSuggestions(
   products: ProductIssue[]
 ): Promise<WorkflowSuggestion[]> {
-  const client = new Anthropic();
-
   const prompt = buildAuditPrompt(products);
 
-  const response = await client.messages.create({
-    model: "claude-haiku-4-5",
-    max_tokens: 1024,
+  const result = await generateText({
+    model: resolveModel("AUDIT"),
+    maxOutputTokens: 1024,
     messages: [{ role: "user", content: prompt }],
   });
 
   // Parse suggestions as structured JSON — never execute content
-  const rawText = response.content
-    .filter(b => b.type === "text")
-    .map(b => b.type === "text" ? b.text : "")
-    .join("");
+  const rawText = result.text ?? "";
 
   // Extract JSON array from response (may have markdown code fences)
   const jsonMatch = rawText.match(/\[[\s\S]*\]/);
