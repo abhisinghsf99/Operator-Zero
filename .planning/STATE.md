@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-05-21)
 Phase: 04
 Plan: Not started
 Status: Milestone complete
-Last activity: 2026-05-26 - Completed quick task 260526-r8o: Turn off demo auto-reset + clear demo account data (ready for permanent real Shopify connection)
+Last activity: 2026-05-26 - Completed quick task 260526-tl5: Demo Shopify connection lock flag (unlocked now; DEMO_SHOPIFY_LOCKED=true to freeze) + banner copy
 
 Progress: [██████████] 95%
 
@@ -142,6 +142,7 @@ None yet.
 | 260526-l83 | Add logout/sign-out button to UI (desktop sidebar + Settings → Sessions) | 2026-05-26 | d8de2da | [260526-l83-add-logout-button](./quick/260526-l83-add-logout-button/) |
 | 260526-mfp | Seed Gmail mirror tables in reseedDemo (23 threads/messages, 9 product questions) — inbox tools now return data | 2026-05-26 | c3072a7 | [260526-mfp-seed-gmail-mirror-demo](./quick/260526-mfp-seed-gmail-mirror-demo/) |
 | 260526-r8o | Turn off demo auto-reset (removed reseed call + reset route + tab-close beacon) + cleared demo account data — for a permanent real Shopify dev store connection | 2026-05-26 | 8387197 | [260526-r8o-disable-demo-reset-clear-data](./quick/260526-r8o-disable-demo-reset-clear-data/) |
+| 260526-tl5 | Demo Shopify connection lock flag (DEMO_SHOPIFY_LOCKED, default unlocked) gating connect+disconnect guards + reworded demo banner | 2026-05-26 | c5d2d74 | [260526-tl5-demo-shopify-lock-flag](./quick/260526-tl5-demo-shopify-lock-flag/) |
 
 ## Session Continuity
 
