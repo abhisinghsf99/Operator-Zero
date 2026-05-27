@@ -29,7 +29,6 @@ import { headers } from "next/headers";
 import { recordSession, cancelDeletionIfPending } from "@/lib/auth/session-registry";
 import { inngest } from "@/lib/inngest/client";
 import { getDemoCredentials } from "@/lib/auth/demo";
-import { reseedDemo } from "@/lib/demo/seed";
 
 const loginSchema = z.object({
   email: z.string().email("Please enter a valid email address."),
@@ -110,12 +109,6 @@ export async function login(
 export async function enterDemo(): Promise<{ error: string } | never> {
   const creds = getDemoCredentials();
   if (!creds) return { error: "Demo is not configured." };
-
-  try {
-    await reseedDemo();
-  } catch (e) {
-    console.error(JSON.stringify({ level: "warn", event: "demo.reseed_failed", error: String(e) }));
-  }
 
   const supabase = await createClient();
   const { error } = await supabase.auth.signInWithPassword(creds);
