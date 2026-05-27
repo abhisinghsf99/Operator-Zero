@@ -27,7 +27,7 @@ import {
   workflows,
   workflowVersions,
 } from "@/lib/db";
-import { eq, desc, isNull, and } from "drizzle-orm";
+import { eq, desc, isNull, and, sql } from "drizzle-orm";
 import { z } from "zod";
 import { toClientError } from "@/lib/errors";
 
@@ -40,6 +40,14 @@ const createThreadSchema = z.object({
 const renameThreadSchema = z.object({
   threadId: z.string().uuid("threadId must be a UUID"),
   newTitle: z.string().min(1).max(256),
+});
+
+const deleteThreadSchema = z.object({
+  threadId: z.string().uuid("threadId must be a UUID"),
+});
+
+const togglePinThreadSchema = z.object({
+  threadId: z.string().uuid("threadId must be a UUID"),
 });
 
 const saveWorkflowFromPlanSchema = z.object({
@@ -197,6 +205,85 @@ export async function renameThread(
   }
 }
 
+// ─── deleteThread ─────────────────────────────────────────────────────────────
+
+/**
+ * deleteThread — soft-delete a thread by stamping archived_at.
+ *
+ * SOFT DELETE ONLY: sets archived_at = now(). Row is never hard-deleted.
+ * listThreads excludes archived rows (isNull(archived_at) filter).
+ *
+ * Returns { ok: true } on success or { error } on failure.
+ */
+export async function deleteThread(
+  threadId: string
+): Promise<{ ok: true } | { error: string }> {
+  const parsed = deleteThreadSchema.safeParse({ threadId });
+  if (!parsed.success) {
+    return { error: parsed.error.errors[0]?.message ?? "invalid input" };
+  }
+
+  const supabase = await createClient();
+  const { data } = await supabase.auth.getClaims();
+  const claims = data?.claims ?? null;
+  if (!claims?.sub) return { error: "unauthenticated" };
+
+  try {
+    await withUserRls(claims as Record<string, unknown>, async (tx) => {
+      return tx
+        .update(threads)
+        .set({ archived_at: new Date() })
+        .where(eq(threads.id, parsed.data.threadId));
+    });
+
+    return { ok: true };
+  } catch (err) {
+    return { error: toClientError(err, "deleteThread") };
+  }
+}
+
+// ─── togglePinThread ──────────────────────────────────────────────────────────
+
+/**
+ * togglePinThread — atomically flip pinned_at for a thread.
+ *
+ * Uses a single UPDATE with a CASE expression to avoid TOCTOU race:
+ *   pinned_at = CASE WHEN pinned_at IS NULL THEN now() ELSE NULL END
+ *
+ * Returns { ok: true, pinned } where pinned reflects the NEW state (true if
+ * the thread is now pinned). Requires migration 0010 to be applied in prod.
+ */
+export async function togglePinThread(
+  threadId: string
+): Promise<{ ok: true; pinned: boolean } | { error: string }> {
+  const parsed = togglePinThreadSchema.safeParse({ threadId });
+  if (!parsed.success) {
+    return { error: parsed.error.errors[0]?.message ?? "invalid input" };
+  }
+
+  const supabase = await createClient();
+  const { data } = await supabase.auth.getClaims();
+  const claims = data?.claims ?? null;
+  if (!claims?.sub) return { error: "unauthenticated" };
+
+  try {
+    const rows = await withUserRls(claims as Record<string, unknown>, async (tx) => {
+      return tx
+        .update(threads)
+        .set({
+          pinned_at: sql`CASE WHEN ${threads.pinned_at} IS NULL THEN now() ELSE NULL END`,
+        })
+        .where(eq(threads.id, parsed.data.threadId))
+        .returning({ pinned_at: threads.pinned_at });
+    }) as Array<{ pinned_at: Date | null }>;
+
+    const newPinnedAt = rows[0]?.pinned_at ?? null;
+    return { ok: true, pinned: newPinnedAt !== null };
+  } catch (err) {
+    return { error: toClientError(err, "togglePinThread") };
+  }
+}
+
 // ─── listThreads ─────────────────────────────────────────────────────────────
 
 export type ThreadListItem = {
@@ -204,12 +291,14 @@ export type ThreadListItem = {
   title: string | null;
   last_message_at: Date | null;
   created_at: Date;
+  pinned_at: Date | null;
 };
 
 /**
- * listThreads — list user's threads reverse-chronologically.
+ * listThreads — list user's threads, pinned-first then reverse-chronologically.
  *
- * Returns threads sorted by last_message_at DESC (most recently active first).
+ * Pinned threads (pinned_at IS NOT NULL) sort above all unpinned threads.
+ * Within each group, most recently active first (last_message_at DESC).
  * Archived threads (archived_at IS NOT NULL) are excluded.
  * (CONV-04)
  */
@@ -229,10 +318,14 @@ export async function listThreads(): Promise<
           title: threads.title,
           last_message_at: threads.last_message_at,
           created_at: threads.created_at,
+          pinned_at: threads.pinned_at,
         })
         .from(threads)
         .where(isNull(threads.archived_at))
-        .orderBy(desc(threads.last_message_at));
+        .orderBy(
+          sql`${threads.pinned_at} DESC NULLS LAST`,
+          desc(threads.last_message_at)
+        );
     }) as ThreadListItem[];
 
     return { threads: rows };
