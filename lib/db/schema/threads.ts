@@ -64,6 +64,13 @@ export const threads = pgTable(
 
     /** Soft-archive timestamp (nullable — archived threads hidden from sidebar) */
     archived_at: timestamp("archived_at", { withTimezone: true }),
+
+    /**
+     * Pin-to-top timestamp (nullable — pinned threads sort above the rest).
+     * Set via togglePinThread server action from the chat ⋯ menu.
+     * No new RLS policy needed — threads_user_policy (for: all) already covers UPDATE.
+     */
+    pinned_at: timestamp("pinned_at", { withTimezone: true }),
   },
   (table) => [
     /**
