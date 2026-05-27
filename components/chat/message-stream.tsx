@@ -28,6 +28,8 @@
  */
 
 import { useState, useEffect, useRef, useCallback } from "react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { createBrowserClient } from "@/lib/auth/client";
 import { Composer } from "./composer";
 import { WorkflowVisualizer } from "./workflow-visualizer";
@@ -434,17 +436,83 @@ function MessageBubble({ message }: { message: StreamMessage }) {
       <Avatar agent size={28} />
 
       <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 12, paddingTop: 2 }}>
-        {/* Text content with optional streaming cursor */}
+        {/* Text content — rendered as sanitized markdown for assistant messages */}
         {(message.streamingContent || message.content) && (
-          <div
-            style={{
-              fontSize: 14,
-              lineHeight: 1.55,
-              color: "var(--text)",
-              whiteSpace: "pre-wrap",
-            }}
-          >
-            {message.streamingContent ?? message.content}
+          <div style={{ fontSize: 14, lineHeight: 1.55, color: "var(--text)" }}>
+            <ReactMarkdown
+              // SECURITY: rehype-raw is intentionally NOT included — raw HTML passthrough
+              // is disabled. react-markdown's default renderer produces safe React elements
+              // only, preventing XSS from model-generated markdown content (T-2-06-02).
+              remarkPlugins={[remarkGfm]}
+              components={{
+                h1: ({ children }) => (
+                  <h1 style={{ fontWeight: 600, color: "var(--text)", fontSize: "1.1em", margin: "1em 0 0.4em" }}>{children}</h1>
+                ),
+                h2: ({ children }) => (
+                  <h2 style={{ fontWeight: 600, color: "var(--text)", fontSize: "1em", margin: "0.9em 0 0.35em" }}>{children}</h2>
+                ),
+                h3: ({ children }) => (
+                  <h3 style={{ fontWeight: 600, color: "var(--text)", fontSize: "0.95em", margin: "0.8em 0 0.3em" }}>{children}</h3>
+                ),
+                p: ({ children }) => (
+                  <p style={{ marginBottom: "0.65em", color: "var(--text)" }}>{children}</p>
+                ),
+                ul: ({ children }) => (
+                  <ul style={{ listStyleType: "disc", paddingLeft: "1.25em", marginBottom: "0.65em", color: "var(--text)" }}>{children}</ul>
+                ),
+                ol: ({ children }) => (
+                  <ol style={{ listStyleType: "decimal", paddingLeft: "1.25em", marginBottom: "0.65em", color: "var(--text)" }}>{children}</ol>
+                ),
+                li: ({ children }) => (
+                  <li style={{ marginBottom: "0.2em", color: "var(--text)" }}>{children}</li>
+                ),
+                strong: ({ children }) => (
+                  <strong style={{ fontWeight: 600, color: "var(--text)" }}>{children}</strong>
+                ),
+                em: ({ children }) => (
+                  <em style={{ fontStyle: "italic", color: "var(--text-secondary)" }}>{children}</em>
+                ),
+                a: ({ href, children }) => (
+                  <a
+                    href={href}
+                    target="_blank"
+                    rel="noreferrer noopener"
+                    style={{ color: "var(--text)", textDecoration: "underline" }}
+                  >
+                    {children}
+                  </a>
+                ),
+                code: ({ children }) => (
+                  <code style={{ fontFamily: "monospace", background: "var(--bg-deeper)", borderRadius: "var(--r-sm)", padding: "1px 4px", fontSize: "0.85em" }}>{children}</code>
+                ),
+                pre: ({ children }) => (
+                  <pre style={{ fontFamily: "monospace", background: "var(--bg-deeper)", borderRadius: "var(--r-sm)", padding: "10px 14px", overflowX: "auto", marginBottom: "0.65em", fontSize: "0.85em" }}>{children}</pre>
+                ),
+                blockquote: ({ children }) => (
+                  <blockquote style={{ borderLeft: "2px solid var(--border)", paddingLeft: "0.75em", margin: "0.5em 0", color: "var(--text-secondary)", fontStyle: "italic" }}>{children}</blockquote>
+                ),
+                hr: () => (
+                  <hr style={{ border: "none", borderTop: "0.5px solid var(--border)", margin: "0.75em 0" }} />
+                ),
+                // GFM table elements — priority styling for inventory reports
+                table: ({ children }) => (
+                  <div style={{ display: "block", overflowX: "auto", marginBottom: "0.65em" }}>
+                    <table style={{ borderCollapse: "collapse", width: "100%", fontSize: "0.9em" }}>{children}</table>
+                  </div>
+                ),
+                thead: ({ children }) => <thead>{children}</thead>,
+                tbody: ({ children }) => <tbody>{children}</tbody>,
+                tr: ({ children }) => <tr>{children}</tr>,
+                th: ({ children }) => (
+                  <th style={{ fontWeight: 600, background: "var(--bg-subtle)", color: "var(--text)", border: "0.5px solid var(--border)", padding: "6px 10px", textAlign: "left" }}>{children}</th>
+                ),
+                td: ({ children }) => (
+                  <td style={{ color: "var(--text)", border: "0.5px solid var(--border)", padding: "6px 10px" }}>{children}</td>
+                ),
+              }}
+            >
+              {message.streamingContent ?? message.content}
+            </ReactMarkdown>
             {message.status === "streaming" && (
               <span
                 aria-hidden="true"
