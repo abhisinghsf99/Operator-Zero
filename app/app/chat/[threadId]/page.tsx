@@ -40,13 +40,25 @@ export default async function ChatThreadPage({ params }: ChatThreadPageProps) {
   const initialMessages =
     "messages" in messagesResult ? messagesResult.messages : [];
 
+  // Derive the active thread's pinned_at and title from the already-loaded list
+  // (no extra query needed — listThreads already fetches these fields)
+  const active = threads.find((t) => t.id === threadId);
+  const initialPinnedAt = active?.pinned_at ?? null;
+  const initialTitle = active?.title ?? null;
+
   return (
     <div className="flex h-full overflow-hidden" data-testid="chat-thread-page">
       {/* Thread sidebar */}
       <ThreadSidebar threads={threads} activeThreadId={threadId} />
 
       {/* Active thread view — SSE consumer + composer */}
-      <ChatThreadView key={threadId} threadId={threadId} initialMessages={initialMessages} />
+      <ChatThreadView
+        key={threadId}
+        threadId={threadId}
+        initialMessages={initialMessages}
+        initialPinnedAt={initialPinnedAt}
+        initialTitle={initialTitle}
+      />
     </div>
   );
 }

@@ -36,6 +36,8 @@ import { WorkflowVisualizer } from "./workflow-visualizer";
 import { ReasoningBlock } from "./reasoning-block";
 import { ContentPreview } from "./content-preview";
 import { InlineApprovalCard } from "./inline-approval-card";
+import { ChatHeaderMenu } from "./chat-header-menu";
+import { ChatSearchBar } from "./chat-search-bar";
 import { Avatar, IconButton } from "@/components/design/primitives";
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
@@ -71,6 +73,10 @@ interface ChatThreadViewProps {
   threadId: string;
   /** Persisted messages loaded server-side, rendered as history on open. */
   initialMessages?: InitialMessage[];
+  /** Initial pinned_at value from the server — seeds the pinned state for ChatHeaderMenu. */
+  initialPinnedAt?: Date | null;
+  /** Initial thread title from the server — seeds the header title state. */
+  initialTitle?: string | null;
 }
 
 /**
@@ -79,7 +85,12 @@ interface ChatThreadViewProps {
  * Renders the message list and composer in a flex column.
  * The SSE stream is initiated per-send from the Composer.
  */
-export function ChatThreadView({ threadId, initialMessages = [] }: ChatThreadViewProps) {
+export function ChatThreadView({
+  threadId,
+  initialMessages = [],
+  initialPinnedAt = null,
+  initialTitle = null,
+}: ChatThreadViewProps) {
   const [messages, setMessages] = useState<StreamMessage[]>(() =>
     initialMessages
       .filter((m) => m.role === "user" || m.role === "assistant")
@@ -99,6 +110,25 @@ export function ChatThreadView({ threadId, initialMessages = [] }: ChatThreadVie
   const [streamError, setStreamError] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController | null>(null);
+
+  // ─── Header / search state ──────────────────────────────────────────────────
+  const [headerTitle, setHeaderTitle] = useState(initialTitle ?? "Orchestrator");
+  const [pinned, setPinned] = useState(initialPinnedAt != null);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [activeMatchId, setActiveMatchId] = useState<string | null>(null);
+
+  // Message ref map — maps message.id → bubble container HTMLDivElement for scroll
+  const bubbleRefs = useRef<Map<string, HTMLDivElement>>(new Map());
+  const registerBubbleRef = useCallback((id: string, el: HTMLDivElement | null) => {
+    if (el) bubbleRefs.current.set(id, el);
+    else bubbleRefs.current.delete(id);
+  }, []);
+
+  // Detect reduced-motion preference for scroll behavior
+  const prefersReducedMotion =
+    typeof window !== "undefined"
+      ? window.matchMedia("(prefers-reduced-motion: reduce)").matches
+      : false;
 
   // Scroll to bottom on new messages
   useEffect(() => {
@@ -304,14 +334,16 @@ export function ChatThreadView({ threadId, initialMessages = [] }: ChatThreadVie
           alignItems: "center",
           gap: 12,
           padding: "20px 32px",
-          borderBottom: "0.5px solid var(--border)",
+          borderBottom: searchOpen ? "none" : "0.5px solid var(--border)",
           background: "var(--bg)",
         }}
       >
         <Avatar agent size={32} />
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <span style={{ fontSize: 14, fontWeight: 500, color: "var(--text)" }}>Orchestrator</span>
+            <span style={{ fontSize: 14, fontWeight: 500, color: "var(--text)" }}>
+              {headerTitle}
+            </span>
             <span
               style={{ width: 5, height: 5, borderRadius: "50%", background: "var(--success)" }}
               aria-hidden="true"
@@ -319,9 +351,42 @@ export function ChatThreadView({ threadId, initialMessages = [] }: ChatThreadVie
             <span style={{ fontSize: 12, color: "var(--text-tertiary)" }}>here &amp; remembering</span>
           </div>
         </div>
-        <IconButton icon="Search" title="Search conversation" />
-        <IconButton icon="More" title="More options" />
+        <IconButton
+          icon="Search"
+          title="Search conversation"
+          active={searchOpen}
+          onClick={() => setSearchOpen((v) => !v)}
+        />
+        <ChatHeaderMenu
+          threadId={threadId}
+          threadTitle={headerTitle}
+          pinned={pinned}
+          messages={messages.map((m) => ({ role: m.role, content: m.content }))}
+          onRenamed={(t) => setHeaderTitle(t)}
+          onPinnedChange={setPinned}
+        />
       </div>
+
+      {/* In-thread search bar — shown when searchOpen */}
+      {searchOpen && (
+        <ChatSearchBar
+          messages={messages.map((m) => ({ id: m.id, content: m.content }))}
+          onActiveMatchChange={(id) => {
+            setActiveMatchId(id);
+            if (id) {
+              const el = bubbleRefs.current.get(id);
+              el?.scrollIntoView({
+                behavior: prefersReducedMotion ? "auto" : "smooth",
+                block: "center",
+              });
+            }
+          }}
+          onClose={() => {
+            setSearchOpen(false);
+            setActiveMatchId(null);
+          }}
+        />
+      )}
 
       {/* Messages area */}
       {messages.length > 0 ? (
@@ -333,7 +398,12 @@ export function ChatThreadView({ threadId, initialMessages = [] }: ChatThreadVie
         >
           <div style={{ maxWidth: 760, margin: "0 auto", padding: "0 32px", display: "flex", flexDirection: "column", gap: 28 }}>
             {messages.map((message) => (
-              <MessageBubble key={message.id} message={message} />
+              <MessageBubble
+                key={message.id}
+                message={message}
+                registerRef={registerBubbleRef}
+                highlighted={message.id === activeMatchId}
+              />
             ))}
 
             {/* Streaming "thinking" indicator — matches design exactly */}
@@ -408,10 +478,30 @@ export function ChatThreadView({ threadId, initialMessages = [] }: ChatThreadVie
 
 // ─── MessageBubble ────────────────────────────────────────────────────────────
 
-function MessageBubble({ message }: { message: StreamMessage }) {
+interface MessageBubbleProps {
+  message: StreamMessage;
+  registerRef?: (id: string, el: HTMLDivElement | null) => void;
+  highlighted?: boolean;
+}
+
+function MessageBubble({ message, registerRef, highlighted = false }: MessageBubbleProps) {
   if (message.role === "user") {
     return (
-      <div className="anim-pop" style={{ display: "flex", justifyContent: "flex-end" }}>
+      <div
+        className="anim-pop"
+        ref={(el) => registerRef?.(message.id, el)}
+        style={{
+          display: "flex",
+          justifyContent: "flex-end",
+          ...(highlighted
+            ? {
+                outline: "2px solid var(--acc-chat-ink)",
+                outlineOffset: "2px",
+                borderRadius: "var(--r-lg)",
+              }
+            : {}),
+        }}
+      >
         <div
           style={{
             maxWidth: "78%",
@@ -432,7 +522,21 @@ function MessageBubble({ message }: { message: StreamMessage }) {
 
   // Assistant message
   return (
-    <div className="anim-pop" style={{ display: "flex", gap: 12 }}>
+    <div
+      className="anim-pop"
+      ref={(el) => registerRef?.(message.id, el)}
+      style={{
+        display: "flex",
+        gap: 12,
+        ...(highlighted
+          ? {
+              outline: "2px solid var(--acc-chat-ink)",
+              outlineOffset: "2px",
+              borderRadius: "var(--r-md)",
+            }
+          : {}),
+      }}
+    >
       <Avatar agent size={28} />
 
       <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 12, paddingTop: 2 }}>
