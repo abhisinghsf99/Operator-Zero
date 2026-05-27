@@ -310,6 +310,14 @@ export const Icons = {
       <path d="M16 17l5-5-5-5M21 12H9" />
     </Icon>
   ),
+  Pin: (p: IconProps) => (
+    <Icon {...p}>
+      {/* Pin head — diamond-ish shape at the top */}
+      <path d="M12 2l3.5 3.5-1 1 1.5 4-2 2-4-1.5-1 1L5.5 8.5z" />
+      {/* Pin tail — straight line from pin body down-left */}
+      <path d="M9 15l-4 4" />
+    </Icon>
+  ),
 } as const;
 
 export type IconName = keyof typeof Icons;

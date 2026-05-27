@@ -139,6 +139,16 @@ export function ThreadSidebar({ threads, activeThreadId }: ThreadSidebarProps) {
                   gap: 6,
                 }}
               >
+                {thread.pinned_at != null && (
+                  <>
+                    <Icons.Pin
+                      size={11}
+                      style={{ color: "var(--text-tertiary)", flexShrink: 0 }}
+                      aria-hidden
+                    />
+                    <span className="sr-only">Pinned. </span>
+                  </>
+                )}
                 {thread.title ?? "Untitled thread"}
               </span>
               <span style={{ fontSize: 11, color: "var(--text-tertiary)", fontFamily: "var(--font-mono)" }}>
