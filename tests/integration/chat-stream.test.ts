@@ -8,46 +8,52 @@
  *   3. Composer queue: hold during stream, flush exactly once after completion
  *   4. Draft-save beforeunload helper: persists and recovers draft text
  *
- * Note: LLM calls are mocked at the Anthropic SDK boundary per TECH-SPEC §7.1.
- * Real first-token latency is measured manually per 02-VALIDATION.md.
+ * Note: LLM calls are mocked at the Vercel AI SDK boundary (`ai`'s streamText)
+ * plus the routing/tools/pricing modules. Real first-token latency is measured
+ * manually per 02-VALIDATION.md.
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-// ─── Anthropic SDK mock — boundary mock ──────────────────────────────────────
-vi.mock("@anthropic-ai/sdk", async (importOriginal) => {
-  const original = await importOriginal<typeof import("@anthropic-ai/sdk")>();
-
-  // A fake async-iterable stream emitting two text deltas
-  class FakeStream {
-    async *[Symbol.asyncIterator]() {
-      yield {
-        type: "content_block_delta",
-        delta: { type: "text_delta", text: "Hello " },
-      };
-      yield {
-        type: "content_block_delta",
-        delta: { type: "text_delta", text: "from the agent." },
-      };
-    }
-
-    async finalMessage() {
-      return {
-        usage: { input_tokens: 100, output_tokens: 50 },
-        content: [{ type: "text", text: "Hello from the agent." }],
-      };
-    }
+// ─── AI SDK mock — boundary mock ──────────────────────────────────────────────
+// Fake streamText whose fullStream async-iterates two text-delta parts and a
+// finish part with usage. Matches the installed v6 part/usage field names
+// (text-delta.text; finish.totalUsage.{inputTokens,outputTokens}).
+vi.mock("ai", () => {
+  function fakeStreamText() {
+    return {
+      fullStream: (async function* () {
+        yield { type: "text-delta", id: "t1", text: "Hello " };
+        yield { type: "text-delta", id: "t1", text: "from the agent." };
+        yield {
+          type: "finish",
+          finishReason: "stop",
+          totalUsage: { inputTokens: 100, outputTokens: 50 },
+        };
+      })(),
+    };
   }
-
   return {
-    ...original,
-    default: class MockAnthropic {
-      messages = {
-        stream: vi.fn().mockReturnValue(new FakeStream()),
-      };
-    },
+    streamText: vi.fn(fakeStreamText),
+    stepCountIs: (n: number) => () => n >= 0,
   };
 });
+
+// ─── Routing / tools / pricing mocks ──────────────────────────────────────────
+vi.mock("@/lib/agent/llm/models", () => ({
+  resolveModel: vi.fn().mockReturnValue({ provider: "anthropic", modelId: "claude-opus-4-7" }),
+  resolveModelChoice: vi
+    .fn()
+    .mockReturnValue({ provider: "anthropic", modelId: "claude-opus-4-7", maxTokens: 4096 }),
+}));
+
+vi.mock("@/lib/agent/llm/tools", () => ({
+  getAiSdkTools: vi.fn().mockReturnValue({}),
+}));
+
+vi.mock("@/lib/agent/llm/pricing", () => ({
+  costFor: vi.fn().mockReturnValue(0),
+}));
 
 // ─── DB mock ──────────────────────────────────────────────────────────────────
 const mockDbInsert = vi.fn().mockReturnValue({
@@ -134,8 +140,9 @@ vi.mock("@/lib/agent/prompt", () => ({
 }));
 
 // ─── Tools mock ──────────────────────────────────────────────────────────────
+// The route no longer imports getAnthropicToolDefinitions; keep dispatchTool /
+// getToolDefinitions for the CR-05 test that imports dispatchTool directly.
 vi.mock("@/lib/agent/tools/index", () => ({
-  getAnthropicToolDefinitions: vi.fn().mockReturnValue([]),
   dispatchTool: vi.fn().mockResolvedValue({ type: "tool_result", content: "{}" }),
   getToolDefinitions: vi.fn().mockReturnValue({}),
   AgentContext: {},

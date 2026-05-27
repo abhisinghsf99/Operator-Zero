@@ -29,14 +29,12 @@ import { chatRateLimit } from "@/lib/rate-limit";
 import { withUserRls, threads, messages, workflows, workflowVersions } from "@/lib/db";
 import { buildSystemPrompt } from "@/lib/agent/prompt";
 import { checkCostCap, recordCost } from "@/lib/cost-cap";
-import { getAnthropicToolDefinitions, dispatchTool } from "@/lib/agent/tools/index";
-import { anthropic } from "@/lib/agent/anthropic";
-import type Anthropic from "@anthropic-ai/sdk";
+import { resolveModel, resolveModelChoice } from "@/lib/agent/llm/models";
+import { getAiSdkTools } from "@/lib/agent/llm/tools";
+import { costFor } from "@/lib/agent/llm/pricing";
+import { streamText, stepCountIs } from "ai";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
-
-// Anthropic message param type for multi-turn tool loops
-type AnthropicMessage = Anthropic.MessageParam;
 
 // ─── Route config ─────────────────────────────────────────────────────────────
 
@@ -184,6 +182,11 @@ export async function POST(
   }
   void userMsgId; // suppress unused var warning
 
+  // Resolve the orchestrator model once — used for the placeholder model_id,
+  // the streamText call, cost computation, and the finalize update. Default
+  // profile = anthropic => choice.modelId === "claude-opus-4-7" (zero change).
+  const choice = resolveModelChoice("ORCHESTRATOR");
+
   // 8. Insert assistant placeholder with status='streaming' (CONV-09)
   let assistantMsgId: string | null = null;
   try {
@@ -196,7 +199,7 @@ export async function POST(
           role: "assistant",
           content: "",
           status: "streaming",
-          model_id: "claude-opus-4-7",
+          model_id: choice.modelId,
         })
         .returning();
     }) as Array<{ id: string }>;
@@ -257,9 +260,8 @@ export async function POST(
     );
     // Fall back to minimal static prompt — stream still starts
   }
-  const toolDefs = getAnthropicToolDefinitions(includeWriteTools);
 
-  // 10. Build the SSE ReadableStream — pump Anthropic deltas as SSE events
+  // 10. Build the SSE ReadableStream — pump AI SDK deltas as SSE events
   const encoder = new TextEncoder();
   let accumulatedContent = "";
   let inlineBlockType: string | null = null;
@@ -268,134 +270,77 @@ export async function POST(
   const stream = new ReadableStream({
     async start(controller) {
       try {
+        // Per-request agent context — captured in the getAiSdkTools closure below
+        // (NEVER a module-level singleton — wrong-user security regression, T-ebw-01).
         const agentCtx = {
           userId,
           automationLevel: "L2" as const,
           threadId,
         };
 
-        // ── Agentic tool loop (CR-05) ───────────────────────────────────────────
-        // Run the model, collect tool_use blocks, dispatch each, append tool_result
-        // user turn, re-invoke. Bounded by MAX_TOOL_ITERATIONS to prevent runaway.
-        const MAX_TOOL_ITERATIONS = 5;
-        let currentMessages: AnthropicMessage[] = allMessages.map(m => ({
-          role: m.role,
-          content: m.content,
-        }));
         let totalInputTokens = 0;
         let totalOutputTokens = 0;
 
-        for (let iteration = 0; iteration < MAX_TOOL_ITERATIONS; iteration++) {
-          const anthropicStream = anthropic.messages.stream({
-            model: "claude-opus-4-7",
-            system: systemPrompt,
-            messages: currentMessages,
-            tools: toolDefs as Parameters<typeof anthropic.messages.stream>[0]["tools"],
-            max_tokens: 4096,
-          });
+        // ── Agentic tool loop (CR-05) ───────────────────────────────────────────
+        // streamText runs the model + tool loop internally (execute delegates to
+        // dispatchTool), bounded by stopWhen: stepCountIs(5). We re-emit the same
+        // custom SSE events from result.fullStream so the client is untouched.
+        const result = streamText({
+          model: resolveModel("ORCHESTRATOR"),
+          system: systemPrompt,
+          messages: allMessages,
+          tools: getAiSdkTools(includeWriteTools, agentCtx),
+          stopWhen: stepCountIs(5),
+          maxOutputTokens: choice.maxTokens,
+        });
 
-          // Collect tool_use blocks from this iteration
-          const pendingToolUses: Array<{ id: string; name: string; input: unknown }> = [];
-          const assistantContentBlocks: Array<unknown> = [];
-
-          for await (const event of anthropicStream) {
-            // Text delta — only stream on the final turn (no tool requests)
-            // We forward text during every turn; the model's final turn has no tool_use.
-            if (
-              event.type === "content_block_delta" &&
-              event.delta.type === "text_delta"
-            ) {
-              accumulatedContent += event.delta.text;
-              controller.enqueue(
-                encoder.encode(
-                  `data: ${JSON.stringify({ text: event.delta.text })}\n\n`
-                )
-              );
-            }
-
-            // Capture completed tool_use blocks
-            if (
-              event.type === "content_block_stop"
-            ) {
-              // Handled below via finalMessage
-            }
+        for await (const part of result.fullStream) {
+          // Text delta — accumulate + forward as the unchanged { text } SSE event.
+          if (part.type === "text-delta") {
+            accumulatedContent += part.text;
+            controller.enqueue(
+              encoder.encode(`data: ${JSON.stringify({ text: part.text })}\n\n`)
+            );
+            continue;
           }
 
-          const finalMsg = await anthropicStream.finalMessage();
-          totalInputTokens += finalMsg.usage.input_tokens;
-          totalOutputTokens += (finalMsg.usage as { output_tokens?: number }).output_tokens ?? 0;
-
-          // Collect tool_use content blocks from this turn's response
-          for (const block of finalMsg.content) {
-            assistantContentBlocks.push(block);
-            if (block.type === "tool_use") {
-              pendingToolUses.push({
-                id: block.id,
-                name: block.name,
-                input: block.input,
-              });
-            }
-          }
-
-          // If model made no tool calls, we're done
-          if (pendingToolUses.length === 0) {
-            break;
-          }
-
-          // Dispatch all tool calls and collect results
-          const toolResultContents: Array<{
-            type: "tool_result";
-            tool_use_id: string;
-            content: string;
-          }> = [];
-
-          for (const tu of pendingToolUses) {
-            try {
-              const toolResult = await dispatchTool(tu.name, tu.input, agentCtx);
-
-              // Check if tool result embeds an inline block (propose_workflow_plan)
-              if (toolResult && toolResult.content) {
-                try {
-                  const parsed = JSON.parse(toolResult.content);
-                  if (parsed.inline_block_type === "workflow_plan") {
-                    inlineBlockType = "workflow_plan";
-                    inlineBlockPayload = parsed.inline_block_payload;
-                    // Emit SSE event so client can render the visualizer
-                    controller.enqueue(
-                      encoder.encode(
-                        `data: ${JSON.stringify({
-                          inline_block_type: inlineBlockType,
-                          inline_block_payload: inlineBlockPayload,
-                        })}\n\n`
-                      )
-                    );
-                  }
-                } catch {
-                  // Not JSON or not an inline block — ignore
+          // Tool result — execute returned a ToolResult on part.output. Run the
+          // SAME inline-block extraction (JSON.parse(content)) as before. The
+          // execute() wrapper (dispatchTool) never throws, so tool failures surface
+          // as correctable results, not stream crashes (T-ebw-02).
+          if (part.type === "tool-result") {
+            const toolResult = part.output as
+              | { content?: string; is_error?: boolean }
+              | undefined;
+            if (toolResult && typeof toolResult.content === "string") {
+              try {
+                const parsed = JSON.parse(toolResult.content);
+                if (parsed.inline_block_type === "workflow_plan") {
+                  inlineBlockType = "workflow_plan";
+                  inlineBlockPayload = parsed.inline_block_payload;
+                  // Emit SSE event so client can render the visualizer
+                  controller.enqueue(
+                    encoder.encode(
+                      `data: ${JSON.stringify({
+                        inline_block_type: inlineBlockType,
+                        inline_block_payload: inlineBlockPayload,
+                      })}\n\n`
+                    )
+                  );
                 }
+              } catch {
+                // Not JSON or not an inline block — ignore
               }
-
-              toolResultContents.push({
-                type: "tool_result",
-                tool_use_id: tu.id,
-                content: toolResult?.content ?? "",
-              });
-            } catch (toolErr) {
-              // Tool dispatch error — return an error result so the model can handle it
-              toolResultContents.push({
-                type: "tool_result",
-                tool_use_id: tu.id,
-                content: JSON.stringify({ error: String(toolErr) }),
-              });
             }
+            continue;
           }
 
-          // Append the assistant turn (with tool_use blocks) + tool results turn
-          currentMessages = [
-            ...currentMessages,
-            { role: "assistant" as const, content: assistantContentBlocks as Anthropic.ContentBlock[] },
-            { role: "user" as const, content: toolResultContents as Anthropic.ToolResultBlockParam[] },
-          ] as AnthropicMessage[];
+          // Final usage — read inputTokens/outputTokens off the finish part.
+          if (part.type === "finish") {
+            totalInputTokens = part.totalUsage.inputTokens ?? 0;
+            totalOutputTokens = part.totalUsage.outputTokens ?? 0;
+            continue;
+          }
         }
 
         // 11. Finalize assistant message → status='complete'
@@ -403,9 +348,7 @@ export async function POST(
           input_tokens: totalInputTokens,
           output_tokens: totalOutputTokens,
         };
-        const costUsd =
-          (usage.input_tokens * 3 + ((usage as { output_tokens?: number }).output_tokens ?? 0) * 15) /
-          1_000_000;
+        const costUsd = costFor(choice.modelId, totalInputTokens, totalOutputTokens);
 
         // Record cost (T-2-05-02)
         await recordCost(userId, costUsd);
@@ -419,6 +362,7 @@ export async function POST(
                 .set({
                   content: accumulatedContent,
                   status: "complete",
+                  model_id: choice.modelId,
                   token_input: usage.input_tokens,
                   token_output: (usage as { output_tokens?: number }).output_tokens ?? null,
                   ...(inlineBlockType
