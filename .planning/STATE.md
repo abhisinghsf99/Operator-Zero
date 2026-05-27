@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-05-21)
 Phase: 04
 Plan: Not started
 Status: Milestone complete
-Last activity: 2026-05-27 - Completed quick task 260527-d97: Render chat assistant markdown (react-markdown + remark-gfm GFM tables)
+Last activity: 2026-05-27 - Completed quick task 260527-dse: Functional chat header Search + ⋯ menu (search, rename/delete/copy/pin) [Needs Review]
 
 Progress: [██████████] 95%
 
@@ -132,8 +132,8 @@ None yet.
 
 ### Quick Tasks Completed
 
-| # | Description | Date | Commit | Directory |
-|---|-------------|------|--------|-----------|
+| # | Description | Date | Commit | Status | Directory |
+|---|-------------|------|--------|--------|-----------|
 | 260523-1jq | Fix Shopify Connect button to collect myshopify store domain before OAuth redirect | 2026-05-23 | 4851b5b | [260523-1jq-fix-shopify-connect-button-to-collect-my](./quick/260523-1jq-fix-shopify-connect-button-to-collect-my/) |
 | 260526-fmp | Add one-click public demo mode (enterDemo + banner + destructive-action guards) | 2026-05-26 | d7b7cc0 | [260526-fmp-add-one-click-public-demo-mode-with-bann](./quick/260526-fmp-add-one-click-public-demo-mode-with-bann/) |
 | 260526-ii6 | Reset demo to baseline on each entry (in-app reseedDemo + reset route + tab-close beacon) | 2026-05-26 | b58c896 | [260526-ii6-reset-demo-to-baseline-on-each-entry-via](./quick/260526-ii6-reset-demo-to-baseline-on-each-entry-via/) |
@@ -144,7 +144,8 @@ None yet.
 | 260526-r8o | Turn off demo auto-reset (removed reseed call + reset route + tab-close beacon) + cleared demo account data — for a permanent real Shopify dev store connection | 2026-05-26 | 8387197 | [260526-r8o-disable-demo-reset-clear-data](./quick/260526-r8o-disable-demo-reset-clear-data/) |
 | 260526-tl5 | Demo Shopify connection lock flag (DEMO_SHOPIFY_LOCKED, default unlocked) gating connect+disconnect guards + reworded demo banner | 2026-05-26 | c5d2d74 | [260526-tl5-demo-shopify-lock-flag](./quick/260526-tl5-demo-shopify-lock-flag/) |
 | 260526-v0o | Fix stale/never-synced Shopify connection badge — stamp integrations.last_synced_at at end of shopifyFullSyncForUser | 2026-05-26 | 16bbed1 | [260526-v0o-stamp-integration-last-synced](./quick/260526-v0o-stamp-integration-last-synced/) |
-| 260527-d97 | Fix chat assistant messages rendering raw markdown — render via react-markdown + remark-gfm (GFM tables), preserve streaming caret + T-2-06-02 XSS guard | 2026-05-27 | 0bd45f4 | [260527-d97-fix-chat-assistant-messages-rendering-ra](./quick/260527-d97-fix-chat-assistant-messages-rendering-ra/) |
+| 260527-d97 | Fix chat assistant messages rendering raw markdown — render via react-markdown + remark-gfm (GFM tables), preserve streaming caret + T-2-06-02 XSS guard | 2026-05-27 | 0bd45f4 | | [260527-d97-fix-chat-assistant-messages-rendering-ra](./quick/260527-d97-fix-chat-assistant-messages-rendering-ra/) |
+| 260527-dse | Make chat header Search + ⋯ menu functional — in-thread search, Rename/Delete(soft)/Copy transcript/Pin; new deleteThread+togglePinThread actions, migration 0010 pinned_at, sidebar pin ordering | 2026-05-27 | 5d7442c | Needs Review | [260527-dse-make-chat-header-search-icon-and-more-op](./quick/260527-dse-make-chat-header-search-icon-and-more-op/) |
 
 ## Session Continuity
 
