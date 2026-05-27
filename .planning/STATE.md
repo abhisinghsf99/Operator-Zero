@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-05-21)
 Phase: 04
 Plan: Not started
 Status: Milestone complete
-Last activity: 2026-05-26 - Completed quick task 260526-v0o: Stamp integrations.last_synced_at on Shopify full sync (fixes stale connection badge)
+Last activity: 2026-05-27 - Completed quick task 260527-d97: Render chat assistant markdown (react-markdown + remark-gfm GFM tables)
 
 Progress: [██████████] 95%
 
@@ -144,6 +144,7 @@ None yet.
 | 260526-r8o | Turn off demo auto-reset (removed reseed call + reset route + tab-close beacon) + cleared demo account data — for a permanent real Shopify dev store connection | 2026-05-26 | 8387197 | [260526-r8o-disable-demo-reset-clear-data](./quick/260526-r8o-disable-demo-reset-clear-data/) |
 | 260526-tl5 | Demo Shopify connection lock flag (DEMO_SHOPIFY_LOCKED, default unlocked) gating connect+disconnect guards + reworded demo banner | 2026-05-26 | c5d2d74 | [260526-tl5-demo-shopify-lock-flag](./quick/260526-tl5-demo-shopify-lock-flag/) |
 | 260526-v0o | Fix stale/never-synced Shopify connection badge — stamp integrations.last_synced_at at end of shopifyFullSyncForUser | 2026-05-26 | 16bbed1 | [260526-v0o-stamp-integration-last-synced](./quick/260526-v0o-stamp-integration-last-synced/) |
+| 260527-d97 | Fix chat assistant messages rendering raw markdown — render via react-markdown + remark-gfm (GFM tables), preserve streaming caret + T-2-06-02 XSS guard | 2026-05-27 | 0bd45f4 | [260527-d97-fix-chat-assistant-messages-rendering-ra](./quick/260527-d97-fix-chat-assistant-messages-rendering-ra/) |
 
 ## Session Continuity
 
