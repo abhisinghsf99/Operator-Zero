@@ -261,6 +261,8 @@ export function ChatHeaderMenu({
             icon="More"
             title="More options"
             aria-label="More options"
+            aria-haspopup="menu"
+            aria-expanded={open}
             onClick={toggleMenu}
             active={open}
           />
