@@ -399,6 +399,12 @@ export async function shopifyFullSyncForUser(userId: string): Promise<void> {
       },
     });
 
+  // Stamp the integration row so health (getIntegrationHealth) reads a fresh sync time.
+  await serviceDb
+    .update(integrations)
+    .set({ last_synced_at: now, last_error: null })
+    .where(and(eq(integrations.user_id, userId), eq(integrations.provider, "shopify")));
+
   console.log(
     JSON.stringify({
       level: "info",
