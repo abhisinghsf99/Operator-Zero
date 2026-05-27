@@ -18,6 +18,7 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { sanitizeShopDomain } from "@/lib/integrations/shopify/client";
 import { storeOAuthNonce } from "@/lib/integrations/oauth-nonce";
+import { isDemoUser, isDemoConnectionLocked } from "@/lib/auth/demo";
 import crypto from "crypto";
 
 /** Generate a cryptographically random nonce (32 hex bytes = 64 chars). */
@@ -36,6 +37,13 @@ export async function GET(request: NextRequest) {
     return NextResponse.redirect(`${origin}/login`);
   }
   const userId = claims.sub as string;
+
+  // ── Demo connection lock guard ────────────────────────────────────────────
+  // When DEMO_SHOPIFY_LOCKED=true, block the demo user from initiating a new
+  // OAuth connection. Default (unset) = unlocked — demo visitor can connect freely.
+  if (isDemoUser(userId) && isDemoConnectionLocked()) {
+    return NextResponse.redirect(`${origin}/app/settings`);
+  }
 
   // ── Shop validation (T-2-03-03) ──────────────────────────────────────────
   const rawShop = request.nextUrl.searchParams.get("shop");

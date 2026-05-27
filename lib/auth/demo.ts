@@ -44,3 +44,25 @@ export function getDemoCredentials(): { email: string; password: string } | null
   if (!email || !password) return null;
   return { email, password };
 }
+
+/**
+ * isDemoConnectionLocked — controls whether the demo account's Shopify
+ * connect/disconnect flow is frozen.
+ *
+ * When true, the demo account cannot initiate a new Shopify OAuth connection
+ * (connect route redirects to /app/settings) and cannot disconnect an existing
+ * integration (disconnectIntegration returns DEMO_DISABLED_MESSAGE).
+ *
+ * Controlled entirely by the DEMO_SHOPIFY_LOCKED env var — no code change
+ * needed to freeze or unfreeze the demo connection:
+ *   - FREEZE (lock):   set DEMO_SHOPIFY_LOCKED=true in Vercel env + redeploy
+ *   - UNFREEZE (unlock): unset (or set to any other value) + redeploy
+ *
+ * Default (env unset) = UNLOCKED — demo visitor can exercise the full
+ * connect/disconnect flow.
+ *
+ * SECURITY: Server-only. Never expose DEMO_SHOPIFY_LOCKED to the client bundle.
+ */
+export function isDemoConnectionLocked(): boolean {
+  return process.env.DEMO_SHOPIFY_LOCKED === "true";
+}

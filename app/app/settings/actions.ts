@@ -75,7 +75,7 @@ import {
 } from "@/lib/agent/memory";
 import { revokeSession as registryRevokeSession, signOutEverywhere as registrySignOutEverywhere } from "@/lib/auth/session-registry";
 import Anthropic from "@anthropic-ai/sdk";
-import { isDemoUser, DEMO_DISABLED_MESSAGE } from "@/lib/auth/demo";
+import { isDemoUser, isDemoConnectionLocked, DEMO_DISABLED_MESSAGE } from "@/lib/auth/demo";
 import { CURATED_OVERRIDE_TOOLS } from "@/lib/workflows/autonomy";
 
 // ─── Schemas ──────────────────────────────────────────────────────────────────
@@ -183,8 +183,10 @@ export async function disconnectIntegration(
   const userId = claims.sub as string;
   const providerValue = parsed.data;
 
-  // Demo guard: block destructive action for the demo user
-  if (isDemoUser(userId)) return { error: DEMO_DISABLED_MESSAGE };
+  // Demo guard: block the disconnect only when the demo connection is frozen
+  // (DEMO_SHOPIFY_LOCKED=true). When unset (default), the demo user can connect
+  // and disconnect freely.
+  if (isDemoUser(userId) && isDemoConnectionLocked()) return { error: DEMO_DISABLED_MESSAGE };
 
   // 3. Delete integration row via RLS (ownership enforced at DB layer)
   await withUserRls(claims, async (tx) => {

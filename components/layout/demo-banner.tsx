@@ -25,7 +25,7 @@ export function DemoBanner() {
         borderBottom: "0.5px solid var(--border)",
       }}
     >
-      Demo — you&apos;re viewing a portfolio demo of Operator Zero with sample data, not the live product.
+      Demo — a live portfolio demo of Operator Zero, connected to a real Shopify store.
     </div>
   );
 }
