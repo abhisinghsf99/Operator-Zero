@@ -46,6 +46,7 @@ import { DangerSection } from "@/app/app/settings/_danger";
 import { SettingsShell } from "@/app/app/settings/_settings-shell";
 import { SurfaceHeader } from "@/components/design/primitives";
 import { isDemoUser } from "@/lib/auth/demo";
+import { resolveModelChoice } from "@/lib/agent/llm/models";
 import {
   getBrandVoice,
   getMemoryItems,
@@ -98,7 +99,12 @@ export default async function SettingsPage() {
       label: "AI Provider",
       icon: "Lock" as const,
       description: "Bring your own model key",
-      content: <ByokSection isDemo={isDemoUser(profile.user_id)} />,
+      content: (
+        <ByokSection
+          isDemo={isDemoUser(profile.user_id)}
+          currentModel={resolveModelChoice("ORCHESTRATOR")}
+        />
+      ),
     },
     {
       id: "brand-voice",
