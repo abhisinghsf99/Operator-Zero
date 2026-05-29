@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-05-21)
 Phase: 04
 Plan: Not started
 Status: Milestone complete
-Last activity: 2026-05-29 - Completed quick task 260529-f4g: "Optimized product descriptions" workflow (run-time LLM generation via extractProposedAction contract, engine frozen) — pending live end-to-end check
+Last activity: 2026-05-29 - Completed quick task 260529-jk4: "Optimize SEO meta" workflow (shopify_optimize_meta Tool 13, reuses extractProposedAction contract, engine frozen) — pending live end-to-end check
 
 Progress: [██████████] 95%
 
