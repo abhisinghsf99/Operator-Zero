@@ -166,10 +166,21 @@ export async function runWorkflowStep(
     ? toolDef.approvalRequired(input, agentCtx)
     : false;
 
+  // 6. Compute proposedAction — prefer the tool's extractProposedAction when present.
+  //    This lets a tool surface the generated copy (e.g. body_html) as proposedAction
+  //    instead of the bare input, so the engine's approval card shows the generated
+  //    copy AND the approved re-dispatch arrives with it (no content drift, no double
+  //    LLM call). Falls back to the raw input for every existing tool (backward-compat).
+  const proposedAction = requiresApproval
+    ? (toolDef?.extractProposedAction
+        ? toolDef.extractProposedAction(toolResult, input, agentCtx)
+        : input)
+    : undefined;
+
   return {
     toolResult,
     requiresApproval,
-    proposedAction: requiresApproval ? input : undefined,
+    proposedAction,
     costUsd,
   };
 }

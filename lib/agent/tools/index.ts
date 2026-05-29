@@ -60,6 +60,21 @@ export interface ToolDefinition {
    * The workflow engine checks this before calling execute().
    */
   approvalRequired?: (input: unknown, ctx: AgentContext) => boolean;
+  /**
+   * extractProposedAction — optional. When a tool's propose-phase output (e.g.
+   * generated copy) must reach the engine's approval preview AND the approved
+   * re-dispatch — not just the raw input — implement this to derive the proposed
+   * action from the ToolResult.
+   *
+   * The runtime prefers it over the raw input when computing proposedAction:
+   *   proposedAction = toolDef.extractProposedAction(result, input, ctx) ?? input
+   *
+   * Omit it to keep the default (proposedAction = input). This keeps every
+   * existing tool's behavior byte-for-byte unchanged.
+   *
+   * MUST NOT throw — return input as a fallback on any parse failure.
+   */
+  extractProposedAction?: (result: ToolResult, input: unknown, ctx: AgentContext) => unknown;
 }
 
 // ─── Tool registry ─────────────────────────────────────────────────────────────
