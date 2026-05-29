@@ -1,6 +1,6 @@
 /**
  * lib/agent/tools/write/index.ts
- * 12 write tools for the Operator Zero agent runtime — gated by automation level.
+ * 13 write tools for the Operator Zero agent runtime — gated by automation level.
  *
  * Write tools:
  *   1.  shopify_update_product_description
@@ -15,6 +15,7 @@
  *   10. gmail_draft_reply
  *   11. gmail_send_email                — high stakes, default L2
  *   12. shopify_optimize_product_description — generate + propose/write/L3
+ *   13. shopify_optimize_meta — generate + propose/write/L3
  *
  * All write tools:
  *   - Expose approvalRequired(input, ctx): boolean keyed on automationLevel
@@ -631,7 +632,228 @@ export const shopifyOptimizeProductDescription: ToolDefinition = {
   },
 };
 
-// ─── Export all 12 write tools ────────────────────────────────────────────────
+// ─── Tool 13: shopify_optimize_meta ──────────────────────────────────────────
+
+/**
+ * shopify_optimize_meta — generate an optimized SEO meta title + description;
+ * proposes the generated meta for approval (L1/L2) or writes directly (L3).
+ *
+ * Input branches:
+ *   WRITE  — input HAS meta_title and/or meta_description (L2 approval re-dispatch or direct L3-with-meta):
+ *             call updateProduct; MUST NOT regenerate (no second LLM call, no content drift).
+ *   GENERATE / PROPOSE — input has product_gid, NO meta (or both empty), automationLevel L1/L2:
+ *             read product + brand voice from DB, call generateOptimizedMeta,
+ *             return propose-phase content. MUST NOT call updateProduct.
+ *   L3 single dispatch — NO meta AND automationLevel L3:
+ *             generate THEN updateProduct in one call.
+ *
+ * extractProposedAction: parses the propose-phase ToolResult content and returns
+ *   { product_gid, meta_title, meta_description }, so the engine's approval card
+ *   shows the generated meta AND the approved re-dispatch carries meta (→ WRITE phase,
+ *   no regeneration). Degrades to input on parse failure (T-jk4-00).
+ *
+ * Cost-cap enforcement: DELEGATED to generateOptimizedMeta (gated + recorded there).
+ * The WRITE phase makes no LLM call so no cap check is needed in that path.
+ *
+ * SECURITY:
+ *   T-jk4-02: product + brand voice read by ctx.userId only (never input)
+ *   T-jk4-01: plain-text length guards live in generateOptimizedMeta
+ *   T-jk4-00: extractProposedAction wrapped in try/catch; degrades to input
+ */
+
+const optimizeMetaSchema = z.object({
+  product_gid: z.string().min(1, "product_gid is required"),
+  meta_title: z.string().optional(),
+  meta_description: z.string().optional(),
+  instructions: z.string().optional(),
+});
+
+export const shopifyOptimizeMeta: ToolDefinition = {
+  name: "shopify_optimize_meta",
+  description:
+    "Generate an optimized SEO meta title + description; proposes the generated meta for approval (L1/L2) or writes directly (L3).",
+  inputSchema: optimizeMetaSchema,
+  approvalRequired: defaultApprovalRequired,
+
+  async execute(input, ctx: AgentContext): Promise<ToolResult> {
+    // 1. Zod validation
+    const parsed = optimizeMetaSchema.safeParse(input);
+    if (!parsed.success) {
+      return {
+        type: "tool_result",
+        is_error: true,
+        content: formatZodError(parsed.error),
+      };
+    }
+
+    try {
+      const { product_gid, meta_title, meta_description, instructions } = parsed.data;
+
+      // ── WRITE phase FIRST: meta fields present → updateProduct, no regenerate ──
+      // hasMeta: true if meta_title OR meta_description is a non-empty string
+      const hasMeta =
+        (meta_title !== undefined && meta_title !== "") ||
+        (meta_description !== undefined && meta_description !== "");
+
+      if (hasMeta) {
+        const { updateProduct } = await import(
+          "@/lib/integrations/shopify/mutations"
+        );
+        const patch: {
+          product_gid: string;
+          meta_title?: string;
+          meta_description?: string;
+        } = { product_gid };
+        if (meta_title) patch.meta_title = meta_title;
+        if (meta_description) patch.meta_description = meta_description;
+        const result = await updateProduct(ctx.userId, patch);
+        return {
+          type: "tool_result",
+          is_error: false,
+          content: JSON.stringify({
+            ok: true,
+            phase: "write",
+            idempotency_key: result.idempotency_key,
+          }),
+        };
+      }
+
+      // ── GENERATE path: read product + brand voice from mirror ───────────────
+      // Query product from mirror scoped by ctx.userId (T-jk4-02)
+      const [productRow] = await serviceDb
+        .select()
+        .from(shopifyProducts)
+        .where(
+          and(
+            eq(shopifyProducts.user_id, ctx.userId),
+            eq(shopifyProducts.product_gid, product_gid)
+          )
+        )
+        .limit(1);
+
+      if (!productRow) {
+        return {
+          type: "tool_result",
+          is_error: true,
+          content: `Product not found: ${product_gid}`,
+        };
+      }
+
+      // Load brand voice for this user (may be absent)
+      const [brandVoiceRow] = await serviceDb
+        .select()
+        .from(brandVoiceProfiles)
+        .where(eq(brandVoiceProfiles.user_id, ctx.userId))
+        .limit(1);
+
+      const brandVoice = brandVoiceRow ?? null;
+
+      // Call the generation helper (cost-cap enforcement delegated to it)
+      const { generateOptimizedMeta } = await import(
+        "@/lib/agent/generation/optimize-meta"
+      );
+      const { meta_title: generatedTitle, meta_description: generatedDesc } =
+        await generateOptimizedMeta({
+          userId: ctx.userId,
+          product: {
+            product_gid: productRow.product_gid,
+            title: productRow.title,
+            body_html: productRow.body_html,
+            product_type: productRow.product_type,
+            vendor: productRow.vendor,
+            meta_title: productRow.meta_title,
+            meta_description: productRow.meta_description,
+          },
+          brandVoice: brandVoice
+            ? {
+                profile_markdown: brandVoice.profile_markdown,
+                tone_tags: brandVoice.tone_tags ?? null,
+                forbidden_phrases: brandVoice.forbidden_phrases ?? null,
+              }
+            : null,
+          instructions,
+        });
+
+      // ── L3 single dispatch: generate then write ────────────────────────────
+      if (ctx.automationLevel === "L3") {
+        const { updateProduct } = await import(
+          "@/lib/integrations/shopify/mutations"
+        );
+        const result = await updateProduct(ctx.userId, {
+          product_gid,
+          meta_title: generatedTitle,
+          meta_description: generatedDesc,
+        });
+        return {
+          type: "tool_result",
+          is_error: false,
+          content: JSON.stringify({
+            ok: true,
+            phase: "l3",
+            idempotency_key: result.idempotency_key,
+          }),
+        };
+      }
+
+      // ── PROPOSE (L1/L2): return generated meta, no write ──────────────────
+      const preview = `${generatedTitle} — ${generatedDesc}`.slice(0, 200);
+
+      return {
+        type: "tool_result",
+        is_error: false,
+        content: JSON.stringify({
+          ok: true,
+          phase: "propose",
+          product_gid,
+          meta_title: generatedTitle,
+          meta_description: generatedDesc,
+          preview,
+        }),
+      };
+    } catch (err) {
+      return {
+        type: "tool_result",
+        is_error: true,
+        content: `Failed to optimize meta: ${String(err)}`,
+      };
+    }
+  },
+
+  /**
+   * extractProposedAction — derive proposedAction from the propose-phase ToolResult.
+   *
+   * Returns { product_gid, meta_title, meta_description } so the engine's approval
+   * card shows the generated meta AND the approved re-dispatch carries meta fields
+   * (WRITE phase, no regeneration). Degrades to raw input on parse failure (T-jk4-00).
+   *
+   * Operator precedence note: the OR'd presence checks for meta_title / meta_description
+   * are parenthesized so that EITHER non-empty field triggers the return. Without
+   * parentheses the outer && binds before ||, silently swallowing meta_description-only cases.
+   */
+  extractProposedAction(result: ToolResult, _input: unknown): unknown {
+    try {
+      const parsed = JSON.parse(result.content) as Record<string, unknown>;
+      if (
+        parsed &&
+        (
+          (typeof parsed.meta_title === "string" && parsed.meta_title.length > 0) ||
+          (typeof parsed.meta_description === "string" && parsed.meta_description.length > 0)
+        )
+      ) {
+        return {
+          product_gid: parsed.product_gid,
+          meta_title: parsed.meta_title,
+          meta_description: parsed.meta_description,
+        };
+      }
+    } catch {
+      /* fall through — T-jk4-00 */
+    }
+    return _input;
+  },
+};
+
+// ─── Export all 13 write tools ────────────────────────────────────────────────
 
 export const writeTools: ToolDefinition[] = [
   shopifyUpdateProductDescription,
@@ -646,4 +868,5 @@ export const writeTools: ToolDefinition[] = [
   gmailDraftReply,
   gmailSendEmail,
   shopifyOptimizeProductDescription,
+  shopifyOptimizeMeta,
 ];
