@@ -24,8 +24,39 @@ import {
   shopifyProducts,
   shopifyProductVariants,
 } from "@/lib/db/schema/shopify-mirror";
-import { eq, and } from "drizzle-orm";
+import { activityEntries } from "@/lib/db/schema";
+import { eq, and, isNull } from "drizzle-orm";
 import { ShopifyAdapter } from "./client";
+
+// ─── After-state backfill ─────────────────────────────────────────────────────
+
+/**
+ * Backfills after_state onto the activity_entries row identified by (step_id, user_id).
+ *
+ * Completes the observability-first pattern: the row was inserted with after_state null
+ * BEFORE the Shopify effect; this fills it in once the effect result is known.
+ *
+ * Retry-safe: setting after_state is idempotent, and matching by
+ * (workflow_run_id IS NULL, step_id, user_id) targets the exact inserted row — no
+ * double-effect risk (T-sgu-02). The WHERE clause includes user_id to prevent
+ * cross-tenant updates when serviceDb bypasses RLS (T-sgu-01).
+ */
+async function backfillAfterState(
+  userId: string,
+  stepId: string,
+  afterState: unknown
+): Promise<void> {
+  await serviceDb
+    .update(activityEntries)
+    .set({ after_state: afterState as Record<string, unknown> | null })
+    .where(
+      and(
+        isNull(activityEntries.workflow_run_id),
+        eq(activityEntries.step_id, stepId),
+        eq(activityEntries.user_id, userId)
+      )
+    );
+}
 
 // ─── Idempotency key ──────────────────────────────────────────────────────────
 
@@ -232,6 +263,9 @@ export async function updateProduct(
     )
     .limit(1);
 
+  // Backfill after_state onto the activity_entries row inserted above (T-sgu-01, T-sgu-02).
+  await backfillAfterState(userId, idempotency_key, afterRow ?? null);
+
   return {
     before_state,
     after_state: afterRow ?? null,
@@ -378,6 +412,9 @@ export async function updateInventory(
       )
     )
     .limit(1);
+
+  // Backfill after_state onto the activity_entries row inserted above (T-sgu-01, T-sgu-02).
+  await backfillAfterState(userId, idempotency_key, afterRow ?? null);
 
   return {
     before_state,
