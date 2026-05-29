@@ -146,14 +146,23 @@ describe("AGENT-04 — Tool Zod validation → correctable error format", () => 
     expect(READ_TOOL_NAMES.length).toBe(11);
   });
 
-  it("tool registry exports all 11 write tools with valid input schemas", () => {
+  it("tool registry exports all 12 write tools with valid input schemas", () => {
     const defs = getToolDefinitions();
     for (const name of WRITE_TOOL_NAMES) {
       expect(defs[name]).toBeDefined();
       expect(defs[name]!.inputSchema).toBeDefined();
       expect(typeof defs[name]!.execute).toBe("function");
     }
-    expect(WRITE_TOOL_NAMES.length).toBe(11);
+    expect(WRITE_TOOL_NAMES.length).toBe(12);
+  });
+
+  it("shopify_optimize_product_description is defined with approvalRequired, inputSchema, and extractProposedAction", () => {
+    const defs = getToolDefinitions();
+    const optimizeTool = defs["shopify_optimize_product_description"];
+    expect(optimizeTool).toBeDefined();
+    expect(typeof optimizeTool!.approvalRequired).toBe("function");
+    expect(optimizeTool!.inputSchema).toBeDefined();
+    expect(typeof optimizeTool!.extractProposedAction).toBe("function");
   });
 
   it("each tool's execute function is callable and returns ToolResult shape", async () => {

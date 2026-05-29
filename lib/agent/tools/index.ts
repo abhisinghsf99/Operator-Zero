@@ -1,12 +1,12 @@
 /**
  * lib/agent/tools/index.ts
- * Tool registry — aggregates all 11 read + 11 write + 5 meta tools.
+ * Tool registry — aggregates all 11 read + 12 write + 5 meta tools.
  *
  * Exports:
  *   getToolDefinitions()          — returns the full tool registry (name → ToolDefinition)
  *   dispatchTool(name, input, ctx) — validate with Zod → execute → return ToolResult
  *   READ_TOOL_NAMES               — array of 11 read tool names
- *   WRITE_TOOL_NAMES              — array of 11 write tool names
+ *   WRITE_TOOL_NAMES              — array of 12 write tool names
  *   META_TOOL_NAMES               — array of 5 meta tool names
  *
  * SECURITY (T-2-05-01): dispatchTool uses inputSchema.safeParse before calling execute().
@@ -60,6 +60,21 @@ export interface ToolDefinition {
    * The workflow engine checks this before calling execute().
    */
   approvalRequired?: (input: unknown, ctx: AgentContext) => boolean;
+  /**
+   * extractProposedAction — optional. When a tool's propose-phase output (e.g.
+   * generated copy) must reach the engine's approval preview AND the approved
+   * re-dispatch — not just the raw input — implement this to derive the proposed
+   * action from the ToolResult.
+   *
+   * The runtime prefers it over the raw input when computing proposedAction:
+   *   proposedAction = toolDef.extractProposedAction(result, input, ctx) ?? input
+   *
+   * Omit it to keep the default (proposedAction = input). This keeps every
+   * existing tool's behavior byte-for-byte unchanged.
+   *
+   * MUST NOT throw — return input as a fallback on any parse failure.
+   */
+  extractProposedAction?: (result: ToolResult, input: unknown, ctx: AgentContext) => unknown;
 }
 
 // ─── Tool registry ─────────────────────────────────────────────────────────────
@@ -71,7 +86,7 @@ let _registry: ToolRegistry | null = null;
 /**
  * getToolDefinitions — returns the full tool registry (name → ToolDefinition).
  *
- * Lazily built on first call and cached. All 22 operational tools + 5 meta tools.
+ * Lazily built on first call and cached. All 23 operational tools + 5 meta tools.
  */
 export function getToolDefinitions(): ToolRegistry {
   if (_registry) return _registry;
@@ -89,7 +104,7 @@ export function getToolDefinitions(): ToolRegistry {
 /** The exact 11 read tool names (from TECH-SPEC.md §tool-catalog) */
 export const READ_TOOL_NAMES: string[] = readTools.map((t) => t.name);
 
-/** The exact 11 write tool names (from TECH-SPEC.md §tool-catalog) */
+/** The exact 12 write tool names (from TECH-SPEC.md §tool-catalog) */
 export const WRITE_TOOL_NAMES: string[] = writeTools.map((t) => t.name);
 
 /** The 5 meta tool names */
