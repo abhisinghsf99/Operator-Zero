@@ -1,12 +1,12 @@
 /**
  * lib/agent/tools/index.ts
- * Tool registry — aggregates all 11 read + 13 write + 5 meta tools.
+ * Tool registry — aggregates all 11 read + 14 write + 5 meta tools.
  *
  * Exports:
  *   getToolDefinitions()          — returns the full tool registry (name → ToolDefinition)
  *   dispatchTool(name, input, ctx) — validate with Zod → execute → return ToolResult
  *   READ_TOOL_NAMES               — array of 11 read tool names
- *   WRITE_TOOL_NAMES              — array of 13 write tool names
+ *   WRITE_TOOL_NAMES              — array of 14 write tool names
  *   META_TOOL_NAMES               — array of 5 meta tool names
  *
  * SECURITY (T-2-05-01): dispatchTool uses inputSchema.safeParse before calling execute().
@@ -104,7 +104,7 @@ export function getToolDefinitions(): ToolRegistry {
 /** The exact 11 read tool names (from TECH-SPEC.md §tool-catalog) */
 export const READ_TOOL_NAMES: string[] = readTools.map((t) => t.name);
 
-/** The exact 13 write tool names (from TECH-SPEC.md §tool-catalog) */
+/** The exact 14 write tool names (from TECH-SPEC.md §tool-catalog) */
 export const WRITE_TOOL_NAMES: string[] = writeTools.map((t) => t.name);
 
 /** The 5 meta tool names */

@@ -146,14 +146,14 @@ describe("AGENT-04 — Tool Zod validation → correctable error format", () => 
     expect(READ_TOOL_NAMES.length).toBe(11);
   });
 
-  it("tool registry exports all 13 write tools with valid input schemas", () => {
+  it("tool registry exports all 14 write tools with valid input schemas", () => {
     const defs = getToolDefinitions();
     for (const name of WRITE_TOOL_NAMES) {
       expect(defs[name]).toBeDefined();
       expect(defs[name]!.inputSchema).toBeDefined();
       expect(typeof defs[name]!.execute).toBe("function");
     }
-    expect(WRITE_TOOL_NAMES.length).toBe(13);
+    expect(WRITE_TOOL_NAMES.length).toBe(14);
   });
 
   it("shopify_optimize_product_description is defined with approvalRequired, inputSchema, and extractProposedAction", () => {
@@ -172,6 +172,15 @@ describe("AGENT-04 — Tool Zod validation → correctable error format", () => 
     expect(typeof optimizeMetaTool!.approvalRequired).toBe("function");
     expect(optimizeMetaTool!.inputSchema).toBeDefined();
     expect(typeof optimizeMetaTool!.extractProposedAction).toBe("function");
+  });
+
+  it("shopify_propose_restock is defined with approvalRequired, inputSchema, and extractProposedAction", () => {
+    const defs = getToolDefinitions();
+    const proposeRestockTool = defs["shopify_propose_restock"];
+    expect(proposeRestockTool).toBeDefined();
+    expect(typeof proposeRestockTool!.approvalRequired).toBe("function");
+    expect(proposeRestockTool!.inputSchema).toBeDefined();
+    expect(typeof proposeRestockTool!.extractProposedAction).toBe("function");
   });
 
   it("each tool's execute function is callable and returns ToolResult shape", async () => {

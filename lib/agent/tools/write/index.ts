@@ -1,6 +1,6 @@
 /**
  * lib/agent/tools/write/index.ts
- * 13 write tools for the Operator Zero agent runtime — gated by automation level.
+ * 14 write tools for the Operator Zero agent runtime — gated by automation level.
  *
  * Write tools:
  *   1.  shopify_update_product_description
@@ -16,6 +16,7 @@
  *   11. gmail_send_email                — high stakes, default L2
  *   12. shopify_optimize_product_description — generate + propose/write/L3
  *   13. shopify_optimize_meta — generate + propose/write/L3
+ *   14. shopify_propose_restock — reason restock-to-target + propose/write/L3
  *
  * All write tools:
  *   - Expose approvalRequired(input, ctx): boolean keyed on automationLevel
@@ -32,7 +33,7 @@ import { z } from "zod";
 import type { AgentContext, ToolResult, ToolDefinition } from "../index";
 import { formatZodError } from "../read/index";
 import { serviceDb } from "@/lib/db/client";
-import { shopifyProducts } from "@/lib/db/schema/shopify-mirror";
+import { shopifyProducts, shopifyProductVariants } from "@/lib/db/schema/shopify-mirror";
 import { brandVoiceProfiles } from "@/lib/db/schema/brand-voice";
 import { eq, and } from "drizzle-orm";
 
@@ -853,7 +854,210 @@ export const shopifyOptimizeMeta: ToolDefinition = {
   },
 };
 
-// ─── Export all 13 write tools ────────────────────────────────────────────────
+// ─── Tool 14: shopify_propose_restock ────────────────────────────────────────
+
+/**
+ * shopify_propose_restock — reason a restock-to-target inventory quantity for a
+ * low-stock or out-of-stock variant; proposes the target qty + rationale for
+ * approval (L1/L2) or writes directly (L3).
+ *
+ * Input branches:
+ *   WRITE  — input HAS inventory_qty (typeof === "number", incl. 0) → call updateInventory,
+ *             no generation. This is the approval re-dispatch path.
+ *             CRITICAL: the branch MUST key on `typeof inventory_qty === "number"` (not truthiness)
+ *             so inventory_qty: 0 still routes to WRITE (T-jxq-00).
+ *   GENERATE / PROPOSE — input has variant_gid, NO inventory_qty, automationLevel L1/L2:
+ *             read variant + product title from DB, call generateRestockProposal,
+ *             return propose-phase content. MUST NOT call updateInventory.
+ *   L3 single dispatch — NO inventory_qty AND automationLevel L3:
+ *             generate THEN updateInventory in one call.
+ *
+ * extractProposedAction: parses the propose-phase ToolResult content and returns
+ *   { variant_gid, inventory_qty } (only when typeof inventory_qty === "number"),
+ *   so the engine's approval card shows the reasoned quantity AND the approved
+ *   re-dispatch carries inventory_qty (→ WRITE phase, no regeneration).
+ *   Degrades to input on parse failure or missing/non-number inventory_qty (T-jxq-00).
+ *
+ * Cost-cap enforcement: DELEGATED to generateRestockProposal (gated + recorded there).
+ * The WRITE phase makes no LLM call so no cap check is needed in that path.
+ *
+ * SECURITY:
+ *   T-jxq-02: variant + product read by ctx.userId only (never input)
+ *   T-jxq-03: variant fields summarized as DATA in the helper prompt
+ *   T-jxq-00: extractProposedAction wrapped in try/catch; degrades to input
+ *   T-jxq-01: target_qty bounds enforced inside generateRestockProposal
+ */
+
+const proposeRestockSchema = z.object({
+  variant_gid: z.string().min(1, "variant_gid is required"),
+  inventory_qty: z
+    .number()
+    .int()
+    .nonnegative("inventory_qty must be a non-negative integer")
+    .optional(),
+  instructions: z.string().optional(),
+});
+
+export const shopifyProposeRestock: ToolDefinition = {
+  name: "shopify_propose_restock",
+  description:
+    "Reason a restock-to-target inventory quantity for a low-stock or out-of-stock variant; proposes the target qty + rationale for approval (L1/L2) or writes directly (L3).",
+  inputSchema: proposeRestockSchema,
+  approvalRequired: defaultApprovalRequired,
+
+  async execute(input, ctx: AgentContext): Promise<ToolResult> {
+    // 1. Zod validation
+    const parsed = proposeRestockSchema.safeParse(input);
+    if (!parsed.success) {
+      return {
+        type: "tool_result",
+        is_error: true,
+        content: formatZodError(parsed.error),
+      };
+    }
+
+    try {
+      const { variant_gid, inventory_qty, instructions } = parsed.data;
+
+      // ── WRITE phase FIRST: inventory_qty present as a number → updateInventory, no regenerate ──
+      // CRITICAL: key on typeof === "number" (not truthiness) so inventory_qty: 0
+      // still routes to WRITE — covers the OOS→intentional-zero edge (T-jxq-00).
+      if (typeof inventory_qty === "number") {
+        const { updateInventory } = await import(
+          "@/lib/integrations/shopify/mutations"
+        );
+        const result = await updateInventory(ctx.userId, { variant_gid, inventory_qty });
+        return {
+          type: "tool_result",
+          is_error: false,
+          content: JSON.stringify({
+            ok: true,
+            phase: "write",
+            idempotency_key: result.idempotency_key,
+          }),
+        };
+      }
+
+      // ── GENERATE path: read variant + product title from mirror ────────────
+      // Query variant from mirror scoped by ctx.userId (T-jxq-02)
+      const [variantRow] = await serviceDb
+        .select()
+        .from(shopifyProductVariants)
+        .where(
+          and(
+            eq(shopifyProductVariants.user_id, ctx.userId),
+            eq(shopifyProductVariants.variant_gid, variant_gid)
+          )
+        )
+        .limit(1);
+
+      if (!variantRow) {
+        return {
+          type: "tool_result",
+          is_error: true,
+          content: `Variant not found: ${variant_gid}`,
+        };
+      }
+
+      // Load parent product title for context (may be absent — title null)
+      const [productRow] = await serviceDb
+        .select()
+        .from(shopifyProducts)
+        .where(
+          and(
+            eq(shopifyProducts.user_id, ctx.userId),
+            eq(shopifyProducts.product_gid, variantRow.product_gid)
+          )
+        )
+        .limit(1);
+
+      // Call the generation helper (cost-cap enforcement delegated to it)
+      const { generateRestockProposal } = await import(
+        "@/lib/agent/generation/propose-restock"
+      );
+      const { target_qty, rationale } = await generateRestockProposal({
+        userId: ctx.userId,
+        variant: {
+          variant_gid: variantRow.variant_gid,
+          product_title: productRow?.title ?? null,
+          sku: variantRow.sku,
+          inventory_qty: variantRow.inventory_qty,
+          price: variantRow.price != null ? String(variantRow.price) : null,
+        },
+        instructions,
+      });
+
+      // ── L3 single dispatch: generate then write ────────────────────────────
+      if (ctx.automationLevel === "L3") {
+        const { updateInventory } = await import(
+          "@/lib/integrations/shopify/mutations"
+        );
+        const result = await updateInventory(ctx.userId, {
+          variant_gid,
+          inventory_qty: target_qty,
+        });
+        return {
+          type: "tool_result",
+          is_error: false,
+          content: JSON.stringify({
+            ok: true,
+            phase: "l3",
+            idempotency_key: result.idempotency_key,
+          }),
+        };
+      }
+
+      // ── PROPOSE (L1/L2): return proposed qty + rationale, no write ─────────
+      const preview = `Restock to ${target_qty} — ${rationale}`.slice(0, 200);
+
+      return {
+        type: "tool_result",
+        is_error: false,
+        content: JSON.stringify({
+          ok: true,
+          phase: "propose",
+          variant_gid,
+          inventory_qty: target_qty,
+          rationale,
+          preview,
+        }),
+      };
+    } catch (err) {
+      return {
+        type: "tool_result",
+        is_error: true,
+        content: `Failed to propose restock: ${String(err)}`,
+      };
+    }
+  },
+
+  /**
+   * extractProposedAction — derive proposedAction from the propose-phase ToolResult.
+   *
+   * Returns { variant_gid, inventory_qty } ONLY when typeof inventory_qty === "number"
+   * (not a string, not undefined, not null). Degrades to raw input on parse failure
+   * or missing/non-number inventory_qty (T-jxq-00: fail-safe, never throws).
+   *
+   * The typeof number guard ensures inventory_qty: 0 is correctly extracted
+   * (0 is falsy but is a valid restock-to-zero target for the write phase).
+   */
+  extractProposedAction(result: ToolResult, _input: unknown): unknown {
+    try {
+      const parsed = JSON.parse(result.content) as Record<string, unknown>;
+      if (parsed && typeof parsed.inventory_qty === "number") {
+        return {
+          variant_gid: parsed.variant_gid,
+          inventory_qty: parsed.inventory_qty,
+        };
+      }
+    } catch {
+      /* fall through — T-jxq-00 */
+    }
+    return _input;
+  },
+};
+
+// ─── Export all 14 write tools ────────────────────────────────────────────────
 
 export const writeTools: ToolDefinition[] = [
   shopifyUpdateProductDescription,
@@ -869,4 +1073,5 @@ export const writeTools: ToolDefinition[] = [
   gmailSendEmail,
   shopifyOptimizeProductDescription,
   shopifyOptimizeMeta,
+  shopifyProposeRestock,
 ];
