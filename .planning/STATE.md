@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-05-21)
 Phase: 04
 Plan: Not started
 Status: Milestone complete
-Last activity: 2026-05-27 - Completed quick task 260527-ebw: Provider abstraction + per-task model routing (Anthropic↔Groq) via Vercel AI SDK
+Last activity: 2026-05-29 - Completed quick task 260528-sgu: Backfill after_state onto activity_entries in Shopify write path (true before→after in Activity log)
 
 Progress: [██████████] 95%
 
@@ -147,6 +147,7 @@ None yet.
 | 260527-d97 | Fix chat assistant messages rendering raw markdown — render via react-markdown + remark-gfm (GFM tables), preserve streaming caret + T-2-06-02 XSS guard | 2026-05-27 | 0bd45f4 | | [260527-d97-fix-chat-assistant-messages-rendering-ra](./quick/260527-d97-fix-chat-assistant-messages-rendering-ra/) |
 | 260527-dse | Make chat header Search + ⋯ menu functional — in-thread search, Rename/Delete(soft)/Copy transcript/Pin; new deleteThread+togglePinThread actions, migration 0010 pinned_at, sidebar pin ordering | 2026-05-27 | 5d7442c | Needs Review | [260527-dse-make-chat-header-search-icon-and-more-op](./quick/260527-dse-make-chat-header-search-icon-and-more-op/) |
 | 260527-ebw | Provider abstraction + per-task model routing (Anthropic↔Groq) via Vercel AI SDK — MODEL_PROFILE/OZ_MODEL_&lt;ROLE&gt; routing, default anthropic = zero behavior change; chat route on streamText, 3 sites on generateText, dead streamChat removed | 2026-05-27 | 338d7e7 |  | [260527-ebw-model-routing-anthropic-groq-via-ai-sdk](./quick/260527-ebw-model-routing-anthropic-groq-via-ai-sdk/) |
+| 260528-sgu | Backfill after_state onto activity_entries in Shopify write path — updateProduct/updateInventory now persist the post-write mirror re-read onto the activity row (DRY backfillAfterState helper, user_id-scoped) so the Activity log shows a true before→after diff on real edits | 2026-05-29 | 690f122 | Verified | [260528-sgu-backfill-after-state-onto-activity-entri](./quick/260528-sgu-backfill-after-state-onto-activity-entri/) |
 
 ## Session Continuity
 
