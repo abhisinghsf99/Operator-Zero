@@ -177,11 +177,19 @@ describe("WF-06 — writeActivity called BEFORE Shopify API call (observability-
           onConflictDoUpdate: vi.fn().mockResolvedValue([]),
         }),
       }),
+      update: vi.fn().mockReturnValue({
+        set: vi.fn().mockReturnValue({
+          where: vi.fn().mockResolvedValue([]),
+        }),
+      }),
     };
     vi.doMock("@/lib/db/client", () => ({ serviceDb: mockServiceDb }));
     vi.doMock("@/lib/db/schema/shopify-mirror", () => ({
       shopifyProducts: { name: "shopify_products" },
       shopifyProductVariants: { name: "shopify_product_variants" },
+    }));
+    vi.doMock("@/lib/db/schema", () => ({
+      activityEntries: { name: "activity_entries" },
     }));
 
     const { updateProduct } = await import("@/lib/integrations/shopify/mutations");
@@ -241,6 +249,9 @@ describe("WF-06 — writeActivity called BEFORE Shopify API call (observability-
       shopifyProducts: { name: "shopify_products" },
       shopifyProductVariants: { name: "shopify_product_variants" },
     }));
+    vi.doMock("@/lib/db/schema", () => ({
+      activityEntries: { name: "activity_entries" },
+    }));
 
     const { updateInventory } = await import("@/lib/integrations/shopify/mutations");
 
@@ -285,11 +296,19 @@ describe("WF-06 — writeActivity called BEFORE Shopify API call (observability-
           onConflictDoUpdate: vi.fn().mockResolvedValue([]),
         }),
       }),
+      update: vi.fn().mockReturnValue({
+        set: vi.fn().mockReturnValue({
+          where: vi.fn().mockResolvedValue([]),
+        }),
+      }),
     };
     vi.doMock("@/lib/db/client", () => ({ serviceDb: mockServiceDb }));
     vi.doMock("@/lib/db/schema/shopify-mirror", () => ({
       shopifyProducts: { name: "shopify_products" },
       shopifyProductVariants: { name: "shopify_product_variants" },
+    }));
+    vi.doMock("@/lib/db/schema", () => ({
+      activityEntries: { name: "activity_entries" },
     }));
 
     function MockAdapterCR01() {}
@@ -346,11 +365,19 @@ describe("WF-06 — writeActivity called BEFORE Shopify API call (observability-
           onConflictDoUpdate: vi.fn().mockResolvedValue([]),
         }),
       }),
+      update: vi.fn().mockReturnValue({
+        set: vi.fn().mockReturnValue({
+          where: vi.fn().mockResolvedValue([]),
+        }),
+      }),
     };
     vi.doMock("@/lib/db/client", () => ({ serviceDb: mockServiceDb }));
     vi.doMock("@/lib/db/schema/shopify-mirror", () => ({
       shopifyProducts: { name: "shopify_products" },
       shopifyProductVariants: { name: "shopify_product_variants" },
+    }));
+    vi.doMock("@/lib/db/schema", () => ({
+      activityEntries: { name: "activity_entries" },
     }));
 
     function MockShopifyAdapterCapture() {}
@@ -373,5 +400,147 @@ describe("WF-06 — writeActivity called BEFORE Shopify API call (observability-
     expect(capturedInput).not.toBeNull();
     expect(capturedInput!["action_type"]).toBe("product_update");
     expect(capturedInput!["before_state"]).toEqual(mockBeforeRow);
+  });
+});
+
+// ─── after_state backfill — activity row updated post-write ──────────────────
+// After a real write, the activity_entries row must have after_state populated.
+// This closes the observability gap where real edits showed null after_state.
+
+describe("after_state backfill — activity row updated post-write", () => {
+  it("updateProduct calls serviceDb.update with after_state set to the re-read mirror row", async () => {
+    vi.resetModules();
+
+    const mockBeforeRow = { product_gid: "gid://shopify/Product/1", title: "Old Title", user_id: "user-1" };
+    const mockAfterRow = { product_gid: "gid://shopify/Product/1", title: "New Title", user_id: "user-1" };
+
+    vi.doMock("@/lib/workflows/activity", () => ({
+      writeActivity: async function () {},
+    }));
+
+    function MockShopifyAdapterBackfill() {}
+    MockShopifyAdapterBackfill.prototype.shopifyGraphQL = async function (query: string) {
+      if (query.includes("mutation")) return {};
+      return { product: { id: "gid://shopify/Product/1", title: "New Title" } };
+    };
+    vi.doMock("@/lib/integrations/shopify/client", () => ({
+      ShopifyAdapter: MockShopifyAdapterBackfill,
+    }));
+
+    const setSpy = vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue([]) });
+    let selectCallCount = 0;
+    const mockServiceDb = {
+      select: vi.fn().mockImplementation(() => ({
+        from: vi.fn().mockReturnValue({
+          where: vi.fn().mockReturnValue({
+            limit: vi.fn().mockImplementation(async () => {
+              selectCallCount++;
+              return selectCallCount === 1 ? [mockBeforeRow] : [mockAfterRow];
+            }),
+          }),
+        }),
+      })),
+      insert: vi.fn().mockReturnValue({
+        values: vi.fn().mockReturnValue({
+          onConflictDoUpdate: vi.fn().mockResolvedValue([]),
+        }),
+      }),
+      update: vi.fn().mockReturnValue({ set: setSpy }),
+    };
+
+    vi.doMock("@/lib/db/client", () => ({ serviceDb: mockServiceDb }));
+    vi.doMock("@/lib/db/schema/shopify-mirror", () => ({
+      shopifyProducts: { name: "shopify_products" },
+      shopifyProductVariants: { name: "shopify_product_variants" },
+    }));
+    vi.doMock("@/lib/db/schema", () => ({
+      activityEntries: { name: "activity_entries" },
+    }));
+
+    const { updateProduct } = await import("@/lib/integrations/shopify/mutations");
+
+    await updateProduct("user-1", {
+      product_gid: "gid://shopify/Product/1",
+      title: "New Title",
+    });
+
+    // after_state backfill: serviceDb.update must have been called
+    expect(mockServiceDb.update).toHaveBeenCalled();
+    // setSpy must have been called with an object containing after_state equal to the re-read row
+    expect(setSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ after_state: mockAfterRow })
+    );
+  });
+
+  it("updateInventory calls serviceDb.update with after_state set to the re-read mirror row", async () => {
+    vi.resetModules();
+
+    const mockBeforeVariant = { variant_gid: "gid://shopify/ProductVariant/1", inventory_qty: 10, product_gid: "gid://shopify/Product/1", user_id: "user-1" };
+    const mockAfterVariant = { variant_gid: "gid://shopify/ProductVariant/1", inventory_qty: 15, product_gid: "gid://shopify/Product/1", user_id: "user-1" };
+
+    vi.doMock("@/lib/workflows/activity", () => ({
+      writeActivity: async function () {},
+    }));
+
+    function MockShopifyAdapterInvBackfill() {}
+    MockShopifyAdapterInvBackfill.prototype.shopifyGraphQL = async function (query: string) {
+      if (query.includes("mutation")) return {};
+      return {
+        productVariant: {
+          id: "gid://shopify/ProductVariant/1",
+          inventoryQuantity: 15,
+          price: "29.99",
+          sku: "SKU-001",
+          product: { id: "gid://shopify/Product/1" },
+        },
+      };
+    };
+    vi.doMock("@/lib/integrations/shopify/client", () => ({
+      ShopifyAdapter: MockShopifyAdapterInvBackfill,
+    }));
+
+    const setSpy = vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue([]) });
+    let selectCallCount = 0;
+    const mockServiceDb = {
+      select: vi.fn().mockImplementation(() => ({
+        from: vi.fn().mockReturnValue({
+          where: vi.fn().mockReturnValue({
+            limit: vi.fn().mockImplementation(async () => {
+              selectCallCount++;
+              return selectCallCount === 1 ? [mockBeforeVariant] : [mockAfterVariant];
+            }),
+          }),
+        }),
+      })),
+      insert: vi.fn().mockReturnValue({
+        values: vi.fn().mockReturnValue({
+          onConflictDoUpdate: vi.fn().mockResolvedValue([]),
+        }),
+      }),
+      update: vi.fn().mockReturnValue({ set: setSpy }),
+    };
+
+    vi.doMock("@/lib/db/client", () => ({ serviceDb: mockServiceDb }));
+    vi.doMock("@/lib/db/schema/shopify-mirror", () => ({
+      shopifyProducts: { name: "shopify_products" },
+      shopifyProductVariants: { name: "shopify_product_variants" },
+    }));
+    vi.doMock("@/lib/db/schema", () => ({
+      activityEntries: { name: "activity_entries" },
+    }));
+
+    const { updateInventory } = await import("@/lib/integrations/shopify/mutations");
+
+    await updateInventory("user-1", {
+      variant_gid: "gid://shopify/ProductVariant/1",
+      inventory_qty: 15,
+    });
+
+    // after_state backfill: serviceDb.update must have been called
+    expect(mockServiceDb.update).toHaveBeenCalled();
+    // setSpy must have been called with an object containing after_state equal to the re-read row
+    expect(setSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ after_state: mockAfterVariant })
+    );
   });
 });
