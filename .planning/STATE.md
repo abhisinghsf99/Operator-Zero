@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-05-21)
 Phase: 04
 Plan: Not started
 Status: Milestone complete
-Last activity: 2026-05-29 - Completed quick task 260528-sgu: Backfill after_state onto activity_entries in Shopify write path (true before→after in Activity log)
+Last activity: 2026-05-29 - Completed quick task 260529-f4g: "Optimized product descriptions" workflow (run-time LLM generation via extractProposedAction contract, engine frozen) — pending live end-to-end check
 
 Progress: [██████████] 95%
 
@@ -148,6 +148,7 @@ None yet.
 | 260527-dse | Make chat header Search + ⋯ menu functional — in-thread search, Rename/Delete(soft)/Copy transcript/Pin; new deleteThread+togglePinThread actions, migration 0010 pinned_at, sidebar pin ordering | 2026-05-27 | 5d7442c | Needs Review | [260527-dse-make-chat-header-search-icon-and-more-op](./quick/260527-dse-make-chat-header-search-icon-and-more-op/) |
 | 260527-ebw | Provider abstraction + per-task model routing (Anthropic↔Groq) via Vercel AI SDK — MODEL_PROFILE/OZ_MODEL_&lt;ROLE&gt; routing, default anthropic = zero behavior change; chat route on streamText, 3 sites on generateText, dead streamChat removed | 2026-05-27 | 338d7e7 |  | [260527-ebw-model-routing-anthropic-groq-via-ai-sdk](./quick/260527-ebw-model-routing-anthropic-groq-via-ai-sdk/) |
 | 260528-sgu | Backfill after_state onto activity_entries in Shopify write path — updateProduct/updateInventory now persist the post-write mirror re-read onto the activity row (DRY backfillAfterState helper, user_id-scoped) so the Activity log shows a true before→after diff on real edits | 2026-05-29 | 690f122 | Verified | [260528-sgu-backfill-after-state-onto-activity-entri](./quick/260528-sgu-backfill-after-state-onto-activity-entri/) |
+| 260529-f4g | "Optimized product descriptions" workflow (vertical slice #2): run-time LLM generation wired into the frozen workflow engine via a new extractProposedAction tool-contract — generated copy flows into proposedAction so the L2 approval card shows it and the approved re-dispatch writes it without regenerating. Adds generation helper (cost-cap-gated, provider-routed, HTML-sanitized) + shopify_optimize_product_description smart tool (propose/write/L3) + idempotent seed script. 51 tests, engine 0-diff | 2026-05-29 | 7651b25 | Needs Review | [260529-f4g-optimized-product-descriptions-workflow-](./quick/260529-f4g-optimized-product-descriptions-workflow-/) |
 
 ## Session Continuity
 
