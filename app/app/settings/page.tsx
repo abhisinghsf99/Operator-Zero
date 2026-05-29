@@ -35,7 +35,6 @@ import { redirect } from "next/navigation";
 import { getOrCreateProfile } from "@/lib/auth/profile";
 import { getIntegrationHealth } from "@/lib/integrations/health";
 import { ConnectionsSection } from "@/app/app/settings/_connections";
-import { ByokSection } from "@/app/app/settings/_byok";
 import { BrandVoiceSection } from "@/app/app/settings/_brand-voice";
 import { AutonomySection } from "@/app/app/settings/_autonomy";
 import { MemorySection } from "@/app/app/settings/_memory";
@@ -45,8 +44,6 @@ import { NotificationsSection } from "@/app/app/settings/_notifications";
 import { DangerSection } from "@/app/app/settings/_danger";
 import { SettingsShell } from "@/app/app/settings/_settings-shell";
 import { SurfaceHeader } from "@/components/design/primitives";
-import { isDemoUser } from "@/lib/auth/demo";
-import { resolveModelChoice } from "@/lib/agent/llm/models";
 import {
   getBrandVoice,
   getMemoryItems,
@@ -91,18 +88,6 @@ export default async function SettingsPage() {
         <ConnectionsSection
           shopifyHealth={shopifyHealth}
           gmailHealth={gmailHealth}
-        />
-      ),
-    },
-    {
-      id: "ai-provider",
-      label: "AI Provider",
-      icon: "Lock" as const,
-      description: "Bring your own model key",
-      content: (
-        <ByokSection
-          isDemo={isDemoUser(profile.user_id)}
-          currentModel={resolveModelChoice("ORCHESTRATOR")}
         />
       ),
     },
