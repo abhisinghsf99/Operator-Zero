@@ -1,6 +1,6 @@
 /**
  * lib/agent/tools/write/index.ts
- * 11 write tools for the Operator Zero agent runtime — gated by automation level.
+ * 12 write tools for the Operator Zero agent runtime — gated by automation level.
  *
  * Write tools:
  *   1.  shopify_update_product_description
@@ -14,6 +14,7 @@
  *   9.  shopify_update_page_content
  *   10. gmail_draft_reply
  *   11. gmail_send_email                — high stakes, default L2
+ *   12. shopify_optimize_product_description — generate + propose/write/L3
  *
  * All write tools:
  *   - Expose approvalRequired(input, ctx): boolean keyed on automationLevel
@@ -29,6 +30,10 @@
 import { z } from "zod";
 import type { AgentContext, ToolResult, ToolDefinition } from "../index";
 import { formatZodError } from "../read/index";
+import { serviceDb } from "@/lib/db/client";
+import { shopifyProducts } from "@/lib/db/schema/shopify-mirror";
+import { brandVoiceProfiles } from "@/lib/db/schema/brand-voice";
+import { eq, and } from "drizzle-orm";
 
 // ─── Approval gate helper ─────────────────────────────────────────────────────
 
@@ -429,7 +434,204 @@ export const gmailSendEmail: ToolDefinition = {
   },
 };
 
-// ─── Export all 11 write tools ────────────────────────────────────────────────
+// ─── Tool 12: shopify_optimize_product_description ───────────────────────────
+
+/**
+ * shopify_optimize_product_description — generate an optimized, on-brand HTML
+ * product description; proposes the generated copy for approval (L1/L2) or
+ * writes directly (L3).
+ *
+ * Input branches:
+ *   WRITE  — input HAS body_html (L2 approval re-dispatch or direct L3-with-body_html):
+ *             call updateProduct; MUST NOT regenerate (no second LLM call, no content drift).
+ *   GENERATE / PROPOSE — input has product_gid, NO body_html, automationLevel L1/L2:
+ *             read product + brand voice from DB, call generateOptimizedDescription,
+ *             return propose-phase content. MUST NOT call updateProduct.
+ *   L3 single dispatch — NO body_html AND automationLevel L3:
+ *             generate THEN updateProduct in one call.
+ *
+ * extractProposedAction: parses the propose-phase ToolResult content and returns
+ *   { product_gid, body_html }, so the engine's approval card shows the generated
+ *   copy AND the approved re-dispatch carries body_html (→ WRITE phase, no regeneration).
+ *   Degrades to input on parse failure (T-f4g-00).
+ *
+ * Cost-cap enforcement: DELEGATED to generateOptimizedDescription (gated + recorded there).
+ * The WRITE phase makes no LLM call so no cap check is needed in that path.
+ *
+ * SECURITY:
+ *   T-f4g-02: product + brand voice read by ctx.userId only (never input)
+ *   T-f4g-01: HTML sanitization lives in generateOptimizedDescription
+ *   T-f4g-00: extractProposedAction wrapped in try/catch; degrades to input
+ */
+
+const optimizeProductDescriptionSchema = z.object({
+  product_gid: z.string().min(1, "product_gid is required"),
+  body_html: z.string().optional(),
+  instructions: z.string().optional(),
+});
+
+export const shopifyOptimizeProductDescription: ToolDefinition = {
+  name: "shopify_optimize_product_description",
+  description:
+    "Generate an optimized, on-brand HTML product description; proposes the generated copy for approval (L1/L2) or writes directly (L3).",
+  inputSchema: optimizeProductDescriptionSchema,
+  approvalRequired: defaultApprovalRequired,
+
+  async execute(input, ctx: AgentContext): Promise<ToolResult> {
+    // 1. Zod validation
+    const parsed = optimizeProductDescriptionSchema.safeParse(input);
+    if (!parsed.success) {
+      return {
+        type: "tool_result",
+        is_error: true,
+        content: formatZodError(parsed.error),
+      };
+    }
+
+    try {
+      const { product_gid, body_html, instructions } = parsed.data;
+
+      // ── WRITE phase: body_html present → updateProduct, no regenerate ──────
+      if (body_html !== undefined && body_html !== "") {
+        const { updateProduct } = await import(
+          "@/lib/integrations/shopify/mutations"
+        );
+        const result = await updateProduct(ctx.userId, { product_gid, body_html });
+        return {
+          type: "tool_result",
+          is_error: false,
+          content: JSON.stringify({
+            ok: true,
+            phase: "write",
+            idempotency_key: result.idempotency_key,
+          }),
+        };
+      }
+
+      // ── GENERATE path: read product + brand voice from mirror ───────────────
+      // Query product from mirror scoped by ctx.userId (T-f4g-02)
+      const [productRow] = await serviceDb
+        .select()
+        .from(shopifyProducts)
+        .where(
+          and(
+            eq(shopifyProducts.user_id, ctx.userId),
+            eq(shopifyProducts.product_gid, product_gid)
+          )
+        )
+        .limit(1);
+
+      if (!productRow) {
+        return {
+          type: "tool_result",
+          is_error: true,
+          content: `Product not found: ${product_gid}`,
+        };
+      }
+
+      // Load brand voice for this user (may be absent)
+      const [brandVoiceRow] = await serviceDb
+        .select()
+        .from(brandVoiceProfiles)
+        .where(eq(brandVoiceProfiles.user_id, ctx.userId))
+        .limit(1);
+
+      const brandVoice = brandVoiceRow ?? null;
+
+      // Call the generation helper (cost-cap enforcement delegated to it)
+      const { generateOptimizedDescription } = await import(
+        "@/lib/agent/generation/optimize-description"
+      );
+      const bodyHtml = await generateOptimizedDescription({
+        userId: ctx.userId,
+        product: {
+          product_gid: productRow.product_gid,
+          title: productRow.title,
+          body_html: productRow.body_html,
+          product_type: productRow.product_type,
+          vendor: productRow.vendor,
+        },
+        brandVoice: brandVoice
+          ? {
+              profile_markdown: brandVoice.profile_markdown,
+              tone_tags: brandVoice.tone_tags ?? null,
+              forbidden_phrases: brandVoice.forbidden_phrases ?? null,
+            }
+          : null,
+        instructions,
+      });
+
+      // ── L3 single dispatch: generate then write ────────────────────────────
+      if (ctx.automationLevel === "L3") {
+        const { updateProduct } = await import(
+          "@/lib/integrations/shopify/mutations"
+        );
+        const result = await updateProduct(ctx.userId, { product_gid, body_html: bodyHtml });
+        return {
+          type: "tool_result",
+          is_error: false,
+          content: JSON.stringify({
+            ok: true,
+            phase: "l3",
+            idempotency_key: result.idempotency_key,
+          }),
+        };
+      }
+
+      // ── PROPOSE (L1/L2): return generated copy, no write ──────────────────
+      const preview = bodyHtml
+        .replace(/<[^>]+>/g, " ")
+        .trim()
+        .slice(0, 160);
+
+      return {
+        type: "tool_result",
+        is_error: false,
+        content: JSON.stringify({
+          ok: true,
+          phase: "propose",
+          product_gid,
+          body_html: bodyHtml,
+          preview,
+        }),
+      };
+    } catch (err) {
+      return {
+        type: "tool_result",
+        is_error: true,
+        content: `Failed to optimize product description: ${String(err)}`,
+      };
+    }
+  },
+
+  /**
+   * extractProposedAction — derive proposedAction from the propose-phase ToolResult.
+   *
+   * Returns { product_gid, body_html } so the engine's approval card shows the
+   * generated copy AND the approved re-dispatch carries body_html (WRITE phase,
+   * no regeneration). Degrades to raw input on parse failure (T-f4g-00: fail-safe).
+   */
+  extractProposedAction(result: ToolResult, _input: unknown): unknown {
+    try {
+      const parsed = JSON.parse(result.content) as Record<string, unknown>;
+      if (
+        parsed &&
+        typeof parsed.body_html === "string" &&
+        parsed.body_html.length > 0
+      ) {
+        return {
+          product_gid: parsed.product_gid,
+          body_html: parsed.body_html,
+        };
+      }
+    } catch {
+      /* fall through — T-f4g-00 */
+    }
+    return _input;
+  },
+};
+
+// ─── Export all 12 write tools ────────────────────────────────────────────────
 
 export const writeTools: ToolDefinition[] = [
   shopifyUpdateProductDescription,
@@ -443,4 +645,5 @@ export const writeTools: ToolDefinition[] = [
   shopifyUpdatePageContent,
   gmailDraftReply,
   gmailSendEmail,
+  shopifyOptimizeProductDescription,
 ];
