@@ -20,6 +20,7 @@ import { generateText } from "ai";
 import { resolveModel, resolveModelChoice } from "@/lib/agent/llm/models";
 import { costFor } from "@/lib/agent/llm/pricing";
 import { checkCostCap, recordCost } from "@/lib/cost-cap";
+import { sanitizeHtml } from "@/lib/html/sanitize";
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
@@ -129,46 +130,6 @@ function buildPrompt(args: OptimizeDescriptionArgs): string {
   return [productSection, voiceSection, instructionsLine, outputInstructions]
     .filter(Boolean)
     .join("\n\n");
-}
-
-// ─── HTML sanitizer ───────────────────────────────────────────────────────────
-
-/**
- * sanitizeHtml — strips dangerous HTML before the string becomes body_html (T-f4g-01).
- *
- * Strips:
- *   - Markdown code fences (```...```)
- *   - <script>...</script> blocks (with attributes)
- *   - <style>...</style> blocks
- *   - <iframe>...</iframe> blocks
- *   - on*= event handler attributes
- *   - javascript: URLs
- *
- * Allows: p, ul, li, strong, em, h2, h3, br and their closing tags.
- */
-function sanitizeHtml(raw: string): string {
-  let html = raw;
-
-  // Strip markdown code fences (LLMs sometimes wrap HTML in ```)
-  html = html.replace(/```[\s\S]*?```/g, "");
-  html = html.replace(/`[^`]+`/g, "");
-
-  // Remove <script> blocks (any attributes)
-  html = html.replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, "");
-
-  // Remove <style> blocks
-  html = html.replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, "");
-
-  // Remove <iframe> blocks
-  html = html.replace(/<iframe\b[^>]*>[\s\S]*?<\/iframe>/gi, "");
-
-  // Remove on*= event handlers
-  html = html.replace(/\s+on\w+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/gi, "");
-
-  // Remove javascript: URLs
-  html = html.replace(/javascript\s*:/gi, "");
-
-  return html.trim();
 }
 
 // ─── Main export ──────────────────────────────────────────────────────────────
