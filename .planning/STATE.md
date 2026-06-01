@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-05-21)
 Phase: 04
 Plan: Not started
 Status: Milestone complete
-Last activity: 2026-05-29 - Completed quick task 260529-jxq: "Low-stock restock proposals" workflow (shopify_propose_restock Tool 14, restock-to-target via updateInventory, engine frozen) — pending live end-to-end check
+Last activity: 2026-05-31 - Completed quick task 260531-tsg: fixed L2 approval preview rendering across both surfaces (shared buildPreviewModel + extracted sanitizeHtml) — no more raw-JSON dump
 
 Progress: [██████████] 95%
 
@@ -151,6 +151,7 @@ None yet.
 | 260529-f4g | "Optimized product descriptions" workflow (vertical slice #2): run-time LLM generation wired into the frozen workflow engine via a new extractProposedAction tool-contract — generated copy flows into proposedAction so the L2 approval card shows it and the approved re-dispatch writes it without regenerating. Adds generation helper (cost-cap-gated, provider-routed, HTML-sanitized) + shopify_optimize_product_description smart tool (propose/write/L3) + idempotent seed script. 51 tests, engine 0-diff | 2026-05-29 | 7651b25 | Needs Review | [260529-f4g-optimized-product-descriptions-workflow-](./quick/260529-f4g-optimized-product-descriptions-workflow-/) |
 | 260529-jk4 | "Optimize SEO meta" workflow (Tool 13): shopify_optimize_meta smart tool (propose/write/L3) + generateOptimizedMeta helper (cost-cap-gated, SEO-length-guarded ≤60/≤160) + idempotent seed script. Surfaces generated meta title+description via pre-existing extractProposedAction contract (parenthesized OR precedence fix applied). 42 tests, engine 0-diff | 2026-05-29 | 23f4043 | Needs Review | [260529-jk4-meta-optimization-workflow-shopify-optim](./quick/260529-jk4-meta-optimization-workflow-shopify-optim/) |
 | 260529-jxq | "Low-stock restock proposals" workflow (Tool 14): shopify_propose_restock smart tool (propose/write/L3) + generateRestockProposal helper (cost-cap-gated; target_qty clamped to positive int >current, ≤1000) + idempotent seed script targeting variants inventory_qty≤5. Restock-to-target written via updateInventory; WRITE/PROPOSE branch keys on typeof inventory_qty==='number' so a target of 0 still routes to write. 47 tests, engine 0-diff | 2026-05-29 | 9f4dee6 | Needs Review | [260529-jxq-low-stock-restock-workflow-shopify-propo](./quick/260529-jxq-low-stock-restock-workflow-shopify-propo/) |
+| 260531-tsg | Fixed L2 approval preview rendering across BOTH surfaces (Approval Inbox `_preview.tsx` + chat `inline-approval-card.tsx`): extracted shared `sanitizeHtml` to `lib/html/sanitize.ts` + new pure `buildPreviewModel` (lib/approvals/preview-model.ts) discriminated union — html/fields/diff/list/email/text/empty + humanized generic fallback that never dumps escaped JSON. Both surfaces now render off it; raw `JSON.stringify(preview)` fallbacks deleted. HTML sanitized at render. 39 preview/sanitizer tests, 471 suite green, engine 0-diff | 2026-05-31 | 929b1b7 | Verified | [260531-tsg-fix-approval-preview-rendering-across-bo](./quick/260531-tsg-fix-approval-preview-rendering-across-bo/) |
 
 ## Session Continuity
 
