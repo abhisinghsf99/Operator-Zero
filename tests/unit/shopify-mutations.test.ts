@@ -222,7 +222,14 @@ describe("WF-06 — writeActivity called BEFORE Shopify API call (observability-
               id: "gid://shopify/InventoryItem/55",
               tracked: true,
               inventoryLevels: {
-                edges: [{ node: { location: { id: "gid://shopify/Location/112" } } }],
+                edges: [
+                  {
+                    node: {
+                      location: { id: "gid://shopify/Location/112" },
+                      quantities: [{ name: "on_hand", quantity: 0 }],
+                    },
+                  },
+                ],
               },
             },
           },
@@ -524,7 +531,14 @@ describe("after_state backfill — activity row updated post-write", () => {
               id: "gid://shopify/InventoryItem/55",
               tracked: true,
               inventoryLevels: {
-                edges: [{ node: { location: { id: "gid://shopify/Location/112" } } }],
+                edges: [
+                  {
+                    node: {
+                      location: { id: "gid://shopify/Location/112" },
+                      quantities: [{ name: "on_hand", quantity: 0 }],
+                    },
+                  },
+                ],
               },
             },
           },
@@ -889,7 +903,14 @@ describe("Bug B fix — updateInventory resolves real IDs, enables tracking, fai
               id: "gid://shopify/InventoryItem/55",
               tracked,
               inventoryLevels: {
-                edges: [{ node: { location: { id: "gid://shopify/Location/112" } } }],
+                edges: [
+                  {
+                    node: {
+                      location: { id: "gid://shopify/Location/112" },
+                      quantities: [{ name: "on_hand", quantity: 0 }],
+                    },
+                  },
+                ],
               },
             },
           },
@@ -985,6 +1006,40 @@ describe("Bug B fix — updateInventory resolves real IDs, enables tracking, fai
     // Must use resolved locationId
     expect(setQty["locationId"]).toBe("gid://shopify/Location/112");
     expect(setQty["locationId"]).not.toBe("gid://shopify/Location/1");
+  });
+
+  it("(BUG D) set mutation includes changeFromQuantity equal to the resolved on_hand quantity (0 when quantities returns 0)", async () => {
+    vi.resetModules();
+
+    vi.doMock("@/lib/workflows/activity", () => ({ writeActivity: async function () {} }));
+
+    const capturedSetVars: Record<string, unknown>[] = [];
+    vi.doMock("@/lib/integrations/shopify/client", () => ({
+      ShopifyAdapter: makeInventoryAdapter({
+        captureSetVars: (vars) => capturedSetVars.push(vars),
+      }),
+    }));
+
+    vi.doMock("@/lib/db/client", () => ({ serviceDb: makeInventoryServiceDb() }));
+    vi.doMock("@/lib/db/schema/shopify-mirror", () => ({
+      shopifyProducts: { name: "shopify_products" },
+      shopifyProductVariants: { name: "shopify_product_variants" },
+    }));
+    vi.doMock("@/lib/db/schema", () => ({ activityEntries: { name: "activity_entries" } }));
+
+    const { updateInventory } = await import("@/lib/integrations/shopify/mutations");
+
+    await updateInventory("user-1", {
+      variant_gid: "gid://shopify/ProductVariant/77",
+      inventory_qty: 20,
+    });
+
+    expect(capturedSetVars.length).toBeGreaterThan(0);
+    const setInput = capturedSetVars[0]!["input"] as Record<string, unknown>;
+    const setQty = (setInput["setQuantities"] as Array<Record<string, unknown>>)[0]!;
+
+    // BUG D: changeFromQuantity must be present and equal to the resolved on_hand (0)
+    expect(setQty["changeFromQuantity"]).toBe(0);
   });
 
   it("resolution query runs BEFORE inventorySetOnHandQuantities", async () => {
