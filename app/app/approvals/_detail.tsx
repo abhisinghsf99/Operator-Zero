@@ -371,7 +371,7 @@ export function ApprovalDetail({ approval, onResolved, detailHeadingRef }: Appro
         {/* Preview */}
         <SectionHeader>Preview</SectionHeader>
         <div style={{ marginBottom: 24 }}>
-          <ApprovalPreview preview={approval.preview} />
+          <ApprovalPreview preview={approval.preview} actionType={approval.action_type} />
         </div>
 
         {/* Edit panel (D-01 — edit proposed_action in place) */}
