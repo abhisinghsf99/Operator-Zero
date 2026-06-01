@@ -188,10 +188,15 @@ export async function generateRestockProposal(
   const prompt = buildPrompt(args);
 
   // 3. Call generateText once via the AI SDK (NOT a raw Anthropic client)
+  //    providerOptions.groq.reasoningEffort "low" + enlarged output budget mirrors the
+  //    optimize-meta.ts fix: prevents gpt-oss-120b from exhausting output tokens on reasoning.
+  //    The `groq` key is silently ignored by the Anthropic provider on non-Groq profiles.
   const model = resolveModel("DRAFTER");
+  const providerOptions = { groq: { reasoningEffort: "low" as const } };
   const result = await generateText({
     model,
-    maxOutputTokens: 256,
+    maxOutputTokens: 1024,
+    providerOptions,
     messages: [{ role: "user", content: prompt }],
   });
 

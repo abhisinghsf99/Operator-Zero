@@ -343,4 +343,16 @@ describe("generateOptimizedMeta", () => {
       generateOptimizedMeta({ userId: "u1", product: makeProduct() })
     ).rejects.toThrow(/empty after parsing/);
   });
+
+  it("(provider-opts) generateText is called with providerOptions.groq.reasoningEffort === 'low' and maxOutputTokens === 1024", async () => {
+    await generateOptimizedMeta({ userId: "u1", product: makeProduct() });
+
+    expect(mockGenerateText).toHaveBeenCalledTimes(1);
+    const callOpts = mockGenerateText.mock.calls[0]![0] as {
+      providerOptions?: { groq?: { reasoningEffort?: string } };
+      maxOutputTokens?: number;
+    };
+    expect(callOpts.providerOptions?.groq?.reasoningEffort).toBe("low");
+    expect(callOpts.maxOutputTokens).toBe(1024);
+  });
 });

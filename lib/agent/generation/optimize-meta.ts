@@ -274,10 +274,15 @@ export async function generateOptimizedMeta(
   const prompt = buildPrompt(args);
 
   // 3. Call generateText once via the AI SDK (NOT a raw Anthropic client)
+  //    providerOptions.groq.reasoningEffort "low" prevents gpt-oss-120b from spending its
+  //    entire output budget on reasoning tokens and returning empty .text (live root-cause).
+  //    The `groq` key is silently ignored by the Anthropic provider on non-Groq profiles.
   const model = resolveModel("DRAFTER");
+  const providerOptions = { groq: { reasoningEffort: "low" as const } };
   const result = await generateText({
     model,
-    maxOutputTokens: 512,
+    maxOutputTokens: 1024,
+    providerOptions,
     messages: [{ role: "user", content: prompt }],
   });
 
