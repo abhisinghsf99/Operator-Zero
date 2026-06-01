@@ -263,4 +263,84 @@ describe("generateOptimizedMeta", () => {
     expect(result.meta_description).not.toContain("<p>");
     expect(result.meta_description).not.toContain("<em>");
   });
+
+  // ─── parseMeta robustness cases (BUG C) ────────────────────────────────────
+
+  it("(parseMeta-a) bare JSON object parses to {meta_title, meta_description}", async () => {
+    mockGenerateText.mockResolvedValue({
+      text: DEFAULT_META_JSON,
+      usage: { inputTokens: 50, outputTokens: 20 },
+    });
+
+    const result = await generateOptimizedMeta({ userId: "u1", product: makeProduct() });
+    expect(result.meta_title).toBe("Great Mug — Buy Now");
+    expect(result.meta_description).toBe(
+      "A durable, dishwasher-safe mug your customers will love. Order today."
+    );
+  });
+
+  it("(parseMeta-b) ```json-fenced JSON parses to {meta_title, meta_description} (fence does NOT delete content)", async () => {
+    const fencedJson = "```json\n" + DEFAULT_META_JSON + "\n```";
+    mockGenerateText.mockResolvedValue({
+      text: fencedJson,
+      usage: { inputTokens: 50, outputTokens: 30 },
+    });
+
+    const result = await generateOptimizedMeta({ userId: "u1", product: makeProduct() });
+    expect(result.meta_title).toBe("Great Mug — Buy Now");
+    expect(result.meta_description).toBe(
+      "A durable, dishwasher-safe mug your customers will love. Order today."
+    );
+  });
+
+  it("(parseMeta-c) plain-fenced (no lang) JSON parses to {meta_title, meta_description}", async () => {
+    const fencedJson = "```\n" + DEFAULT_META_JSON + "\n```";
+    mockGenerateText.mockResolvedValue({
+      text: fencedJson,
+      usage: { inputTokens: 50, outputTokens: 30 },
+    });
+
+    const result = await generateOptimizedMeta({ userId: "u1", product: makeProduct() });
+    expect(result.meta_title).toBe("Great Mug — Buy Now");
+    expect(result.meta_description).toBe(
+      "A durable, dishwasher-safe mug your customers will love. Order today."
+    );
+  });
+
+  it("(parseMeta-d) JSON with leading preamble prose parses correctly", async () => {
+    const withPreamble =
+      "Here is your optimized SEO metadata:\n\n" + DEFAULT_META_JSON;
+    mockGenerateText.mockResolvedValue({
+      text: withPreamble,
+      usage: { inputTokens: 50, outputTokens: 30 },
+    });
+
+    const result = await generateOptimizedMeta({ userId: "u1", product: makeProduct() });
+    expect(result.meta_title).toBe("Great Mug — Buy Now");
+    expect(result.meta_description).toBe(
+      "A durable, dishwasher-safe mug your customers will love. Order today."
+    );
+  });
+
+  it("(parseMeta-e) non-JSON garbage falls back to line-based extraction, both values non-empty", async () => {
+    mockGenerateText.mockResolvedValue({
+      text: "Artisan Mug — Handcrafted Excellence\nDiscover the beauty of handcrafted ceramics. Perfect for any kitchen.",
+      usage: { inputTokens: 50, outputTokens: 20 },
+    });
+
+    const result = await generateOptimizedMeta({ userId: "u1", product: makeProduct() });
+    expect(result.meta_title.length).toBeGreaterThan(0);
+    expect(result.meta_description.length).toBeGreaterThan(0);
+  });
+
+  it("(parseMeta-f) truly empty output (empty string) throws 'Generated meta was empty after parsing'", async () => {
+    mockGenerateText.mockResolvedValue({
+      text: "",
+      usage: { inputTokens: 10, outputTokens: 2 },
+    });
+
+    await expect(
+      generateOptimizedMeta({ userId: "u1", product: makeProduct() })
+    ).rejects.toThrow(/empty after parsing/);
+  });
 });
