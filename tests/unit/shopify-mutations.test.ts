@@ -885,6 +885,7 @@ describe("Bug B fix — updateInventory resolves real IDs, enables tracking, fai
     resolutionResult?: unknown;
     setResult?: unknown;
     captureSetVars?: (vars: Record<string, unknown>) => void;
+    captureSetQuery?: (query: string) => void;
     captureQueryOrder?: string[];
     captureEnableCalled?: { called: boolean };
   }) {
@@ -919,6 +920,7 @@ describe("Bug B fix — updateInventory resolves real IDs, enables tracking, fai
       if (query.includes("inventorySetOnHandQuantities")) {
         options?.captureQueryOrder?.push("inventorySetOnHandQuantities");
         if (options?.captureSetVars) options.captureSetVars(variables as Record<string, unknown>);
+        if (options?.captureSetQuery) options.captureSetQuery(query);
         return options?.setResult ?? { inventorySetOnHandQuantities: { userErrors: [] } };
       }
       if (query.includes("inventoryItemUpdate")) {
@@ -1168,5 +1170,44 @@ describe("Bug B fix — updateInventory resolves real IDs, enables tracking, fai
         inventory_qty: 20,
       })
     ).rejects.toThrow(/nope/);
+  });
+
+  it("(@idempotent) inventorySetOnHandQuantities passes a non-empty idempotencyKey variable and the mutation contains @idempotent", async () => {
+    vi.resetModules();
+
+    vi.doMock("@/lib/workflows/activity", () => ({ writeActivity: async function () {} }));
+
+    const capturedSetVars: Record<string, unknown>[] = [];
+    const capturedSetQueries: string[] = [];
+    vi.doMock("@/lib/integrations/shopify/client", () => ({
+      ShopifyAdapter: makeInventoryAdapter({
+        captureSetVars: (vars) => capturedSetVars.push(vars),
+        captureSetQuery: (query) => capturedSetQueries.push(query),
+      }),
+    }));
+
+    vi.doMock("@/lib/db/client", () => ({ serviceDb: makeInventoryServiceDb() }));
+    vi.doMock("@/lib/db/schema/shopify-mirror", () => ({
+      shopifyProducts: { name: "shopify_products" },
+      shopifyProductVariants: { name: "shopify_product_variants" },
+    }));
+    vi.doMock("@/lib/db/schema", () => ({ activityEntries: { name: "activity_entries" } }));
+
+    const { updateInventory } = await import("@/lib/integrations/shopify/mutations");
+
+    await updateInventory("user-1", {
+      variant_gid: "gid://shopify/ProductVariant/77",
+      inventory_qty: 20,
+    });
+
+    // Variables must include a non-empty idempotencyKey string
+    expect(capturedSetVars.length).toBeGreaterThan(0);
+    const idempotencyKey = capturedSetVars[0]!["idempotencyKey"];
+    expect(typeof idempotencyKey).toBe("string");
+    expect((idempotencyKey as string).length).toBeGreaterThan(0);
+
+    // Mutation query string must contain @idempotent
+    expect(capturedSetQueries.length).toBeGreaterThan(0);
+    expect(capturedSetQueries[0]).toContain("@idempotent");
   });
 });

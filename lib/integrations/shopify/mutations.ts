@@ -442,8 +442,8 @@ export async function updateInventory(
       userErrors: Array<{ field: string[] | null; message: string }>;
     };
   }>(
-    `mutation SetInventory($input: InventorySetOnHandQuantitiesInput!) {
-      inventorySetOnHandQuantities(input: $input) {
+    `mutation SetInventory($input: InventorySetOnHandQuantitiesInput!, $idempotencyKey: String!) {
+      inventorySetOnHandQuantities(input: $input) @idempotent(key: $idempotencyKey) {
         inventoryAdjustmentGroup { id }
         userErrors { field message }
       }
@@ -460,6 +460,7 @@ export async function updateInventory(
           },
         ],
       },
+      idempotencyKey: idempotency_key,
     }
   );
 
