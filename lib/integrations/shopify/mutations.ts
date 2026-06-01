@@ -359,7 +359,12 @@ export async function updateInventory(
         id: string;
         tracked: boolean;
         inventoryLevels: {
-          edges: Array<{ node: { location: { id: string } } }>;
+          edges: Array<{
+            node: {
+              location: { id: string };
+              quantities: Array<{ name: string; quantity: number }>;
+            };
+          }>;
         };
       } | null;
     } | null;
@@ -373,6 +378,7 @@ export async function updateInventory(
             edges {
               node {
                 location { id }
+                quantities(names: ["on_hand"]) { name quantity }
               }
             }
           }
@@ -387,6 +393,13 @@ export async function updateInventory(
     resolutionData.productVariant?.inventoryItem?.inventoryLevels?.edges?.[0]
       ?.node.location.id;
   const tracked = resolutionData.productVariant?.inventoryItem?.tracked;
+
+  // Read the current on_hand quantity at the resolved level for compare-and-set.
+  // inventorySetOnHandQuantities (API 2024-10) requires changeFromQuantity to prevent
+  // concurrent-write races. Defaults to 0 when level, array, or on_hand entry is absent.
+  const currentOnHand =
+    resolutionData.productVariant?.inventoryItem?.inventoryLevels?.edges?.[0]
+      ?.node.quantities?.find((q) => q.name === "on_hand")?.quantity ?? 0;
 
   if (!inventoryItemId || !locationId) {
     throw new Error(
@@ -443,6 +456,7 @@ export async function updateInventory(
             inventoryItemId,
             locationId,
             quantity: input.inventory_qty,
+            changeFromQuantity: currentOnHand,
           },
         ],
       },
