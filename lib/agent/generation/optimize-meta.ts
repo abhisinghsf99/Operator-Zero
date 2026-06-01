@@ -153,31 +153,77 @@ function buildPrompt(args: OptimizeMetaArgs): string {
 /**
  * parseMeta — parses the LLM output into { meta_title, meta_description }.
  *
- * Strips markdown code fences, attempts JSON.parse. On parse failure, falls back
- * to a simple line-based extraction so output is never empty.
+ * Applies three strategies in order, stopping at the first that yields usable keys:
+ *   1) PRIMARY: extract the first balanced {…} JSON substring (first `{` to last `}`)
+ *      and JSON.parse it. Handles bare JSON and JSON with leading preamble.
+ *   2) FENCE-STRIP: strip only the fence delimiter lines (```lang / ```) preserving
+ *      inner text, then JSON.parse the remainder. Handles fenced JSON objects.
+ *   3) LINE-BASED: first non-empty trimmed line → title; remaining lines → description.
+ *      Handles non-JSON model output gracefully.
+ *
+ * NOTE: does NOT delete fenced content — the old regex `replace(/```[\s\S]*?```/g, "")`
+ * was removed because it stripped the JSON body along with the fence markers (BUG C).
+ *
  * Strips stray HTML tags and applies SEO length guards (T-jk4-01).
  */
 function parseMeta(raw: string): OptimizeMetaResult {
-  let text = raw;
-
-  // Strip markdown code fences (LLMs sometimes wrap JSON in ```)
-  text = text.replace(/```[\s\S]*?```/g, "").replace(/`[^`]+`/g, "").trim();
-
-  // Try JSON.parse first
   let metaTitle = "";
   let metaDescription = "";
 
-  try {
-    const parsed = JSON.parse(text) as Record<string, unknown>;
-    if (parsed && typeof parsed.meta_title === "string") {
+  /**
+   * Attempt to extract {meta_title, meta_description} from a parsed object.
+   * Returns true when at least one field is a non-empty string.
+   */
+  function tryExtract(parsed: Record<string, unknown>): boolean {
+    if (typeof parsed.meta_title === "string" && parsed.meta_title.trim()) {
       metaTitle = parsed.meta_title;
     }
-    if (parsed && typeof parsed.meta_description === "string") {
+    if (
+      typeof parsed.meta_description === "string" &&
+      parsed.meta_description.trim()
+    ) {
       metaDescription = parsed.meta_description;
     }
-  } catch {
-    // Fallback: line-based extraction — first non-empty line → title, rest → description
-    const lines = text
+    return !!(metaTitle || metaDescription);
+  }
+
+  // ── Strategy 1: balanced JSON-object substring extraction ──────────────────
+  // Locate the first `{` and the last `}` in the raw string, slice, and parse.
+  // This handles: bare JSON, JSON with leading preamble, and fenced JSON
+  // (because the JSON object itself contains `{` / `}`).
+  const firstBrace = raw.indexOf("{");
+  const lastBrace = raw.lastIndexOf("}");
+  if (firstBrace !== -1 && lastBrace > firstBrace) {
+    const candidate = raw.slice(firstBrace, lastBrace + 1);
+    try {
+      const parsed = JSON.parse(candidate) as Record<string, unknown>;
+      if (tryExtract(parsed)) {
+        // Fall through to HTML-strip / length-guard below
+      }
+    } catch {
+      // Strategy 1 failed — continue to strategy 2
+    }
+  }
+
+  // ── Strategy 2: strip fence delimiter lines, retry JSON.parse ─────────────
+  // Only runs when strategy 1 did not yield any usable field.
+  if (!metaTitle && !metaDescription) {
+    // Remove the opening fence line (``` or ```lang) and the closing fence line (```)
+    const withoutFences = raw
+      .replace(/^```[^\n]*\n?/, "")   // strip opening fence + optional lang label
+      .replace(/\n?```\s*$/, "")      // strip closing fence
+      .trim();
+    try {
+      const parsed = JSON.parse(withoutFences) as Record<string, unknown>;
+      tryExtract(parsed);
+    } catch {
+      // Strategy 2 failed — continue to strategy 3
+    }
+  }
+
+  // ── Strategy 3 (last resort): line-based extraction ───────────────────────
+  if (!metaTitle && !metaDescription) {
+    const lines = raw
       .split("\n")
       .map((l) => l.trim())
       .filter(Boolean);
@@ -185,14 +231,14 @@ function parseMeta(raw: string): OptimizeMetaResult {
     metaDescription = lines.slice(1).join(" ").trim() || metaTitle;
   }
 
-  // Strip stray HTML tags from both values (T-jk4-01)
+  // ── Post-processing: HTML-tag strip + whitespace collapse (T-jk4-01) ───────
   metaTitle = metaTitle.replace(/<[^>]+>/g, "").replace(/\s+/g, " ").trim();
   metaDescription = metaDescription
     .replace(/<[^>]+>/g, "")
     .replace(/\s+/g, " ")
     .trim();
 
-  // SEO length guards: meta_title ≤60, meta_description ≤160 (T-jk4-01)
+  // ── SEO length guards: meta_title ≤60, meta_description ≤160 (T-jk4-01) ───
   metaTitle = metaTitle.slice(0, 60).trim();
   metaDescription = metaDescription.slice(0, 160).trim();
 
