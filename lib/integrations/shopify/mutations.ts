@@ -162,8 +162,14 @@ export async function updateProduct(
   });
 
   // 4. Write to Shopify Admin GraphQL
+  //    NOTE: Shopify ProductInput uses `descriptionHtml` in ApiVersion.October24+.
+  //    The internal input/mirror column keeps the name `body_html` — only the Shopify field changes.
   const adapter = new ShopifyAdapter(userId);
-  await adapter.shopifyGraphQL(
+  const mutationData = await adapter.shopifyGraphQL<{
+    productUpdate: {
+      userErrors: Array<{ field: string[] | null; message: string }>;
+    };
+  }>(
     `mutation UpdateProduct($input: ProductInput!) {
       productUpdate(input: $input) {
         product { id title }
@@ -174,7 +180,7 @@ export async function updateProduct(
       input: {
         id: input.product_gid,
         ...(input.title !== undefined ? { title: input.title } : {}),
-        ...(input.body_html !== undefined ? { bodyHtml: input.body_html } : {}),
+        ...(input.body_html !== undefined ? { descriptionHtml: input.body_html } : {}),
         ...(input.status !== undefined ? { status: input.status.toUpperCase() } : {}),
         ...(input.tags !== undefined ? { tags: input.tags } : {}),
         ...(input.meta_title !== undefined || input.meta_description !== undefined
@@ -189,13 +195,22 @@ export async function updateProduct(
     }
   );
 
+  if (mutationData.productUpdate.userErrors.length > 0) {
+    throw new Error(
+      `Shopify productUpdate failed: ${mutationData.productUpdate.userErrors
+        .map((e) => e.message)
+        .join("; ")}`
+    );
+  }
+
   // 5. Re-read mirror from Shopify to refresh local state
+  //    NOTE: re-read query uses `descriptionHtml` — the correct Shopify field for ApiVersion.October24+.
   const syncNow = new Date();
   const reReadData = await adapter.shopifyGraphQL<{
     product: {
       id: string;
       title?: string;
-      bodyHtml?: string;
+      descriptionHtml?: string;
       vendor?: string;
       productType?: string;
       status?: string;
@@ -207,7 +222,7 @@ export async function updateProduct(
   }>(
     `query GetProduct($id: ID!) {
       product(id: $id) {
-        id title bodyHtml vendor productType status tags
+        id title descriptionHtml vendor productType status tags
         seo { title description }
         createdAt updatedAt
       }
@@ -223,7 +238,7 @@ export async function updateProduct(
         user_id: userId,
         product_gid: p.id,
         title: p.title ?? null,
-        body_html: p.bodyHtml ?? null,
+        body_html: p.descriptionHtml ?? null,
         vendor: p.vendor ?? null,
         product_type: p.productType ?? null,
         status: p.status?.toLowerCase() ?? null,
@@ -238,7 +253,7 @@ export async function updateProduct(
         target: [shopifyProducts.user_id, shopifyProducts.product_gid],
         set: {
           title: p.title ?? null,
-          body_html: p.bodyHtml ?? null,
+          body_html: p.descriptionHtml ?? null,
           vendor: p.vendor ?? null,
           product_type: p.productType ?? null,
           status: p.status?.toLowerCase() ?? null,
@@ -285,6 +300,13 @@ interface InventoryUpdateInput {
  * Idempotent inventory quantity update.
  *
  * writeActivity is called BEFORE the Shopify API call (WF-06, observability-first).
+ *
+ * Resolution flow (after writeActivity, before the set mutation):
+ *   1. GetVariantInventory: resolves real inventoryItemId + locationId from the variant.
+ *      Uses `inventoryItem.inventoryLevels(first:1).location.id` — no `read_locations`
+ *      scope required, no hardcoded location.
+ *   2. If tracked=false: enables tracking via inventoryItemUpdate before the set.
+ *   3. inventorySetOnHandQuantities with the RESOLVED IDs.
  */
 export async function updateInventory(
   userId: string,
@@ -326,12 +348,87 @@ export async function updateInventory(
     is_revertable: true,
   });
 
-  // 4. Write to Shopify using an absolute-set mutation (inventorySetOnHandQuantities).
-  //    Using a delta derived from the possibly-stale mirror baseline is incorrect —
-  //    if the mirror is stale the delta lands at the wrong absolute value.
-  //    inventorySetOnHandQuantities sets the desired quantity directly (WR-04).
+  // 4a. Resolve real inventoryItemId + locationId from the variant.
+  //     We use `inventoryItem.inventoryLevels(first:1).location.id` — the integration
+  //     does NOT have `read_locations` scope, so the top-level `locations` query is
+  //     access-denied. Never use a hardcoded location GID.
   const adapter = new ShopifyAdapter(userId);
-  await adapter.shopifyGraphQL(
+  const resolutionData = await adapter.shopifyGraphQL<{
+    productVariant: {
+      inventoryItem: {
+        id: string;
+        tracked: boolean;
+        inventoryLevels: {
+          edges: Array<{ node: { location: { id: string } } }>;
+        };
+      } | null;
+    } | null;
+  }>(
+    `query GetVariantInventory($id: ID!) {
+      productVariant(id: $id) {
+        inventoryItem {
+          id
+          tracked
+          inventoryLevels(first: 1) {
+            edges {
+              node {
+                location { id }
+              }
+            }
+          }
+        }
+      }
+    }`,
+    { id: input.variant_gid }
+  );
+
+  const inventoryItemId = resolutionData.productVariant?.inventoryItem?.id;
+  const locationId =
+    resolutionData.productVariant?.inventoryItem?.inventoryLevels?.edges?.[0]
+      ?.node.location.id;
+  const tracked = resolutionData.productVariant?.inventoryItem?.tracked;
+
+  if (!inventoryItemId || !locationId) {
+    throw new Error(
+      `could not resolve Shopify inventory item / location for variant ${input.variant_gid}`
+    );
+  }
+
+  // 4b. Enable inventory tracking if the item is currently untracked.
+  //     Some variants have tracked:false; inventorySetOnHandQuantities requires tracked:true.
+  if (tracked === false) {
+    const enableData = await adapter.shopifyGraphQL<{
+      inventoryItemUpdate: {
+        userErrors: Array<{ field: string[] | null; message: string }>;
+      };
+    }>(
+      `mutation EnableTracking($id: ID!) {
+        inventoryItemUpdate(id: $id, input: { tracked: true }) {
+          inventoryItem { id tracked }
+          userErrors { field message }
+        }
+      }`,
+      { id: inventoryItemId }
+    );
+
+    if (enableData.inventoryItemUpdate.userErrors.length > 0) {
+      throw new Error(
+        `Shopify inventoryItemUpdate (enable tracking) failed: ${enableData.inventoryItemUpdate.userErrors
+          .map((e) => e.message)
+          .join("; ")}`
+      );
+    }
+  }
+
+  // 4c. Write to Shopify using an absolute-set mutation (inventorySetOnHandQuantities).
+  //     Using a delta derived from the possibly-stale mirror baseline is incorrect —
+  //     if the mirror is stale the delta lands at the wrong absolute value.
+  //     inventorySetOnHandQuantities sets the desired quantity directly (WR-04).
+  const setData = await adapter.shopifyGraphQL<{
+    inventorySetOnHandQuantities: {
+      userErrors: Array<{ field: string[] | null; message: string }>;
+    };
+  }>(
     `mutation SetInventory($input: InventorySetOnHandQuantitiesInput!) {
       inventorySetOnHandQuantities(input: $input) {
         inventoryAdjustmentGroup { id }
@@ -343,14 +440,22 @@ export async function updateInventory(
         reason: "correction",
         setQuantities: [
           {
-            inventoryItemId: input.variant_gid,
-            locationId: "gid://shopify/Location/1", // default location; v2 will resolve dynamically
+            inventoryItemId,
+            locationId,
             quantity: input.inventory_qty,
           },
         ],
       },
     }
   );
+
+  if (setData.inventorySetOnHandQuantities.userErrors.length > 0) {
+    throw new Error(
+      `Shopify inventorySetOnHandQuantities failed: ${setData.inventorySetOnHandQuantities.userErrors
+        .map((e) => e.message)
+        .join("; ")}`
+    );
+  }
 
   // 5. Re-read from Shopify and upsert (insert-on-conflict) the mirror row.
   //    Using a bare UPDATE silently no-ops when the variant hasn't been mirrored yet (WR-03).
