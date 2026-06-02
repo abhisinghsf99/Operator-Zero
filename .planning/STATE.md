@@ -3,9 +3,9 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: completed
-stopped_at: Completed quick task 260526-mfp — Gmail mirror seed (23/23/9)
-last_updated: "2026-05-29T21:19:15.811Z"
-last_activity: "2026-05-29 - Completed quick task 260529-f4g: "Optimized product descriptions" workflow (run-time LLM generation via extractProposedAction contract, engine frozen) — pending live end-to-end check"
+stopped_at: Completed quick task 260601-gco — reasoningEffort:low + maxOutputTokens 1024 for meta/restock generation; @idempotent directive on inventorySetOnHandQuantities (117 tests, typecheck clean)
+last_updated: "2026-06-01T12:05:00.000Z"
+last_activity: "2026-06-01 - Fixed Groq gpt-oss-120b reasoning-token starvation in optimize-meta + propose-restock (providerOptions.groq.reasoningEffort=low, maxOutputTokens 1024). Fixed Shopify @idempotent directive requirement on inventorySetOnHandQuantities, reusing existing idempotency_key. All 3 workflows unblocked for live write on Groq drafter."
 progress:
   total_phases: 4
   completed_phases: 4
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-05-21)
 Phase: 04
 Plan: Not started
 Status: Milestone complete
-Last activity: 2026-05-31 - Live smoke test of 3 workflows surfaced + fixed Shopify write bugs (260531-vhh descriptionHtml + inventory IDs; 260531-w26 meta JSON-fence parse + changeFromQuantity). Descriptions (#2) verified writing live. Meta (#1) blocked on Groq gpt-oss reasoning-token starvation (fix identified: reasoningEffort:low). Restock (#3) inventory write blocked on Shopify @idempotent directive requirement (next in the inventory-API chain).
+Last activity: 2026-06-01 - Completed 260601-gco (meta reasoningEffort:low + restock @idempotent) — final code-level blockers for all 3 workflows resolved. Repo relocated to "100x Capstone Project/Operator-Zero" mid-run; gco merged cleanly there, stale worktree pruned. Live re-verification of meta/restock writes still pending (descriptions already verified live). Local ahead of origin.
 
 Progress: [██████████] 95%
 
@@ -154,6 +154,7 @@ None yet.
 | 260531-tsg | Fixed L2 approval preview rendering across BOTH surfaces (Approval Inbox `_preview.tsx` + chat `inline-approval-card.tsx`): extracted shared `sanitizeHtml` to `lib/html/sanitize.ts` + new pure `buildPreviewModel` (lib/approvals/preview-model.ts) discriminated union — html/fields/diff/list/email/text/empty + humanized generic fallback that never dumps escaped JSON. Both surfaces now render off it; raw `JSON.stringify(preview)` fallbacks deleted. HTML sanitized at render. 39 preview/sanitizer tests, 471 suite green, engine 0-diff | 2026-05-31 | 929b1b7 | Verified | [260531-tsg-fix-approval-preview-rendering-across-bo](./quick/260531-tsg-fix-approval-preview-rendering-across-bo/) |
 | 260531-vhh | Fixed live Shopify write path (Admin API 2024-10): updateProduct `bodyHtml`→`descriptionHtml` (mutation+re-read+mirror), updateInventory now resolves real inventoryItemId + locationId from the variant's inventoryItem/inventoryLevels (no read_locations scope needed; no hardcoded Location/1) + enables tracking when tracked:false; both fail loud on userErrors. Found via live smoke test. Descriptions (#2) confirmed writing live after this. 23 tests | 2026-05-31 | 8cb2052 | Verified (descriptions live) | [260531-vhh-fix-live-shopify-write-path-descriptionh](./quick/260531-vhh-fix-live-shopify-write-path-descriptionh/) |
 | 260531-w26 | parseMeta rewritten to extract balanced JSON (stops the fence regex from deleting Groq's ```json content); updateInventory adds `changeFromQuantity` (current on-hand) to inventorySetOnHandQuantities. 42 tests, typecheck clean. NOTE: meta still blocked live by Groq gpt-oss reasoning-token starvation (fix=reasoningEffort:low, not yet applied); restock still blocked by Shopify `@idempotent` directive requirement on the inventory mutation | 2026-05-31 | fdc3f71 | Partial (further live blockers found) | [260531-w26-fix-meta-json-fence-parsing-restock-chan](./quick/260531-w26-fix-meta-json-fence-parsing-restock-chan/) |
+| 260601-gco | Final live-write blockers: meta + restock generation set `providerOptions.groq.reasoningEffort:"low"` + maxOutputTokens 1024 (gpt-oss-120b was spending the whole budget on reasoning, emitting empty JSON); updateInventory adds the required `@idempotent(key:$idempotencyKey)` directive to inventorySetOnHandQuantities (reuses existing idempotency_key). 120 tests, typecheck clean. Merged after the repo was relocated to "100x Capstone Project/Operator-Zero" mid-run. Code-complete + unit-tested; live re-verification of meta/restock writes still pending | 2026-06-01 | 226beaa | Code-complete (live re-verify pending) | [260601-gco-meta-reasoningeffort-restock-idempotent-](./quick/260601-gco-meta-reasoningeffort-restock-idempotent-/) |
 
 ## Session Continuity
 
