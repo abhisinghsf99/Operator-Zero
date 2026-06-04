@@ -27,6 +27,8 @@ import { eq, and, gte, count, desc } from "drizzle-orm";
 import { groupWorkflowsByStatus, type WorkflowSummary } from "@/lib/workflows/grouping";
 import { WorkflowsView } from "./_workflows-view";
 import { workflowsCacheTag } from "@/lib/cache-tags/workflows";
+import { resolveGidTitles } from "@/lib/activity/gid-titles.server";
+import { humanizeGids } from "@/lib/activity/humanize-gids";
 
 // ─── Time-saved constants (D-15: labeled heuristic, not hard claims) ─────────
 
@@ -212,11 +214,22 @@ export default async function WorkflowsPage() {
   const workflowList = allWorkflows as WorkflowSummary[];
   const grouped = groupWorkflowsByStatus(workflowList);
 
+  // Humanize raw Shopify GIDs in the "what just happened" feed → product titles
+  const ticker = tickerRows as RecentActivityEntry[];
+  const tickerTitles = await resolveGidTitles(
+    userId,
+    ticker.map((r) => r.summary)
+  );
+  const recentActivity = ticker.map((r) => ({
+    ...r,
+    summary: humanizeGids(r.summary, tickerTitles),
+  }));
+
   const stripStats: StripStats = {
     pendingApprovalsCount: pendingApprovalsRows[0]?.c ?? 0,
     l3Last12hCount: l3ActionRows[0]?.c ?? 0,
     timeSavedMinutes,
-    recentActivity: tickerRows as RecentActivityEntry[],
+    recentActivity,
   };
 
   const totalActive =

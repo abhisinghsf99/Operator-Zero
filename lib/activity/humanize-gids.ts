@@ -56,3 +56,29 @@ export function resolveGidValue(
 ): string {
   return titles?.[gid] ?? shortenGid(gid);
 }
+
+/**
+ * Recursively replace Shopify GIDs in every string within a value (objects,
+ * arrays, and plain strings). Used to humanize persisted inline-block payloads
+ * (e.g. chat approval cards / workflow plans) without knowing their shape.
+ * Non-string leaves are returned unchanged. Returns a structurally-new value.
+ */
+export function humanizeGidsDeep<T>(
+  value: T,
+  titles: Record<string, string> | undefined | null
+): T {
+  if (typeof value === "string") {
+    return humanizeGids(value, titles) as unknown as T;
+  }
+  if (Array.isArray(value)) {
+    return value.map((v) => humanizeGidsDeep(v, titles)) as unknown as T;
+  }
+  if (value && typeof value === "object") {
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+      out[k] = humanizeGidsDeep(v, titles);
+    }
+    return out as T;
+  }
+  return value;
+}

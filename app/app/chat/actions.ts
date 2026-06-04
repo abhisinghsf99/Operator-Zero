@@ -30,6 +30,8 @@ import {
 import { eq, desc, isNull, and, sql } from "drizzle-orm";
 import { z } from "zod";
 import { toClientError } from "@/lib/errors";
+import { resolveGidTitles } from "@/lib/activity/gid-titles.server";
+import { humanizeGids, humanizeGidsDeep } from "@/lib/activity/humanize-gids";
 
 // ─── Input schemas ─────────────────────────────────────────────────────────────
 
@@ -530,8 +532,29 @@ export async function listMessages(
         .orderBy(messages.created_at);
     })) as ThreadMessage[];
 
+    const visible = rows.filter(
+      (m) => m.role === "user" || m.role === "assistant"
+    );
+
+    // Humanize raw Shopify GIDs in message text + inline-block payloads
+    // (e.g. approval-card summaries, workflow-plan steps) → product titles.
+    const titles = await resolveGidTitles(
+      claims.sub as string,
+      visible.flatMap((m) => [
+        typeof m.content === "string" ? m.content : "",
+        m.inline_block_payload ? JSON.stringify(m.inline_block_payload) : "",
+      ])
+    );
+
     return {
-      messages: rows.filter((m) => m.role === "user" || m.role === "assistant"),
+      messages: visible.map((m) => ({
+        ...m,
+        content:
+          typeof m.content === "string"
+            ? humanizeGids(m.content, titles)
+            : m.content,
+        inline_block_payload: humanizeGidsDeep(m.inline_block_payload, titles),
+      })),
     };
   } catch (err) {
     return { error: toClientError(err, "listMessages") };
