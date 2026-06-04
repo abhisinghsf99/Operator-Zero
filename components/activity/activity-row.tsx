@@ -20,10 +20,13 @@
 
 import { Check } from "lucide-react";
 import { Badge, ResultIndicator } from "@/components/design/primitives";
+import { humanizeGids } from "@/lib/activity/humanize-gids";
 import type { ActivityEntryRow } from "@/app/app/activity/actions";
 
 interface ActivityRowProps {
   entry: ActivityEntryRow;
+  /** Shopify GID → product title map for humanizing the summary. */
+  gidTitles: Record<string, string>;
   isActive: boolean;
   isSelected: boolean;
   selectMode: boolean;
@@ -45,6 +48,7 @@ function formatTime(date: Date): string {
 
 export function ActivityRow({
   entry,
+  gidTitles,
   isActive,
   isSelected,
   selectMode,
@@ -53,6 +57,7 @@ export function ActivityRow({
 }: ActivityRowProps) {
   const isFailed = entry.result === "failed" || entry.result === "partial";
   const isL3 = entry.automation_level === "L3";
+  const summary = humanizeGids(entry.action_summary, gidTitles);
 
   function handleClick(e: React.MouseEvent) {
     if (selectMode) {
@@ -78,7 +83,7 @@ export function ActivityRow({
     <div
       role="button"
       tabIndex={0}
-      aria-label={`${entry.action_summary}${entry.workflowName ? ` from ${entry.workflowName}` : ""}`}
+      aria-label={`${summary}${entry.workflowName ? ` from ${entry.workflowName}` : ""}`}
       aria-pressed={selectMode ? isSelected : undefined}
       onClick={handleClick}
       onKeyDown={handleKeyDown}
@@ -193,7 +198,7 @@ export function ActivityRow({
             whiteSpace: "nowrap",
           }}
         >
-          {entry.action_summary}
+          {summary}
         </span>
         {entry.workflowName && (
           <span

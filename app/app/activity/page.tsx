@@ -83,6 +83,8 @@ export default async function ActivityPage({ searchParams }: ActivityPageProps) 
 
   const initialEntries = "entries" in pageResult ? pageResult.entries : [];
   const initialCursor = "nextCursor" in pageResult ? pageResult.nextCursor : null;
+  const initialGidTitles =
+    "gidTitles" in pageResult ? pageResult.gidTitles : {};
   const fetchError = "error" in pageResult ? pageResult.error : null;
 
   // 5. Fetch workflow list for filter popover (workflow selector)
@@ -106,6 +108,7 @@ export default async function ActivityPage({ searchParams }: ActivityPageProps) 
         userId={userId}
         initialEntries={initialEntries}
         initialCursor={initialCursor}
+        initialGidTitles={initialGidTitles}
         initialFilters={filters}
         workflowOptions={workflowList}
         fetchError={fetchError}

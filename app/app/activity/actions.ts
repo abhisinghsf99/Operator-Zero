@@ -22,8 +22,14 @@ import { z } from "zod";
 import { eq, and, lt, or, gte, lte, inArray } from "drizzle-orm";
 import { createClient } from "@/lib/auth/server";
 import { withUserRls } from "@/lib/db/client";
-import { activityEntries, shopifyProducts, workflows } from "@/lib/db/schema";
+import {
+  activityEntries,
+  shopifyProducts,
+  shopifyProductVariants,
+  workflows,
+} from "@/lib/db/schema";
 import { sql } from "drizzle-orm";
+import { SHOPIFY_GID_RE } from "@/lib/activity/humanize-gids";
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
@@ -108,8 +114,112 @@ async function requireAuth(): Promise<{
 // ─── fetchActivityPage ────────────────────────────────────────────────────────
 
 export type FetchActivityPageResult =
-  | { entries: ActivityEntryRow[]; nextCursor: ActivityCursor | null }
+  | {
+      entries: ActivityEntryRow[];
+      nextCursor: ActivityCursor | null;
+      /**
+       * Map of Shopify GID → resolved product title for every Product/
+       * ProductVariant GID referenced by this page's entries. Variant GIDs
+       * resolve to their parent product's title. Consumed at render time to
+       * humanize summaries and the before/after diff. GIDs with no local
+       * mirror row are simply absent (the client falls back to a short label).
+       */
+      gidTitles: Record<string, string>;
+    }
   | { error: string };
+
+/** The RLS-scoped Drizzle transaction handle passed to withUserRls callbacks. */
+type RlsTx = Parameters<Parameters<typeof withUserRls>[1]>[0];
+
+/**
+ * resolveGidTitles — collect every Shopify GID referenced by `entries`
+ * (from action_summary, target_id, and before/after state) and resolve it to
+ * the parent product's title. Variant GIDs are resolved two-hop:
+ * variant_gid → product_gid → title. Runs two indexed lookups, max.
+ */
+async function resolveGidTitles(
+  tx: RlsTx,
+  userId: string,
+  entries: ActivityEntryRow[]
+): Promise<Record<string, string>> {
+  // 1. Harvest all GIDs from each entry's text + state snapshots.
+  const productGids = new Set<string>();
+  const variantGids = new Set<string>();
+
+  for (const e of entries) {
+    const haystacks = [
+      e.action_summary,
+      e.target_id ?? "",
+      e.before_state ? JSON.stringify(e.before_state) : "",
+      e.after_state ? JSON.stringify(e.after_state) : "",
+    ];
+    for (const text of haystacks) {
+      for (const match of text.matchAll(SHOPIFY_GID_RE)) {
+        const [gid, kind] = match;
+        if (kind === "ProductVariant") variantGids.add(gid);
+        else productGids.add(gid);
+      }
+    }
+  }
+
+  if (productGids.size === 0 && variantGids.size === 0) return {};
+
+  const titles: Record<string, string> = {};
+
+  // 2. Resolve variant GIDs → parent product GID (and remember the linkage).
+  const variantToProduct = new Map<string, string>();
+  if (variantGids.size > 0) {
+    const variantRows = await tx
+      .select({
+        variant_gid: shopifyProductVariants.variant_gid,
+        product_gid: shopifyProductVariants.product_gid,
+      })
+      .from(shopifyProductVariants)
+      .where(
+        and(
+          eq(shopifyProductVariants.user_id, userId),
+          inArray(shopifyProductVariants.variant_gid, [...variantGids])
+        )
+      );
+    for (const row of variantRows) {
+      variantToProduct.set(row.variant_gid, row.product_gid);
+      productGids.add(row.product_gid);
+    }
+  }
+
+  // 3. Resolve all product GIDs → title.
+  const productTitle = new Map<string, string>();
+  if (productGids.size > 0) {
+    const productRows = await tx
+      .select({
+        product_gid: shopifyProducts.product_gid,
+        title: shopifyProducts.title,
+      })
+      .from(shopifyProducts)
+      .where(
+        and(
+          eq(shopifyProducts.user_id, userId),
+          inArray(shopifyProducts.product_gid, [...productGids])
+        )
+      );
+    for (const row of productRows) {
+      if (row.title) productTitle.set(row.product_gid, row.title);
+    }
+  }
+
+  // 4. Build the final GID → title map (product GIDs direct, variant GIDs via parent).
+  for (const gid of productGids) {
+    const t = productTitle.get(gid);
+    if (t) titles[gid] = t;
+  }
+  for (const variantGid of variantGids) {
+    const parent = variantToProduct.get(variantGid);
+    const t = parent ? productTitle.get(parent) : undefined;
+    if (t) titles[variantGid] = t;
+  }
+
+  return titles;
+}
 
 /**
  * fetchActivityPage — cursor-paginated activity entries with AND filters.
@@ -200,7 +310,11 @@ export async function fetchActivityPage(
         .limit(PAGE_SIZE);
 
       if (entries.length === 0) {
-        return { entries: [] as ActivityEntryRow[], nextCursor: null };
+        return {
+          entries: [] as ActivityEntryRow[],
+          nextCursor: null,
+          gidTitles: {} as Record<string, string>,
+        };
       }
 
       // Fetch shopify_updated_at for product/page targets in one join query
@@ -261,6 +375,9 @@ export async function fetchActivityPage(
         workflowName: e.workflow_id ? (workflowNameMap.get(e.workflow_id) ?? null) : null,
       }));
 
+      // Resolve Product/ProductVariant GIDs → product titles for clean display
+      const gidTitles = await resolveGidTitles(tx, userId, enrichedEntries);
+
       // Compute next cursor from last entry (if we got a full page)
       const nextCursor: ActivityCursor | null =
         entries.length === PAGE_SIZE
@@ -270,7 +387,7 @@ export async function fetchActivityPage(
             }
           : null;
 
-      return { entries: enrichedEntries, nextCursor };
+      return { entries: enrichedEntries, nextCursor, gidTitles };
     });
 
     return result;

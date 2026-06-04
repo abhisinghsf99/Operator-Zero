@@ -39,6 +39,10 @@ interface ActivityLogProps {
   initialEntries: ActivityEntryRow[];
   initialCursor: ActivityCursor | null;
   filters: ActivityFilters;
+  /** Shopify GID → product title map for humanizing row summaries. */
+  gidTitles: Record<string, string>;
+  /** Merge newly-resolved GID titles when a page loads. */
+  onMergeGidTitles: (more: Record<string, string>) => void;
   selectedEntryId: string | null;
   onSelectEntry: (entry: ActivityEntryRow) => void;
   selectMode: boolean;
@@ -101,6 +105,8 @@ export function ActivityLog({
   initialEntries,
   initialCursor,
   filters,
+  gidTitles,
+  onMergeGidTitles,
   selectedEntryId,
   onSelectEntry,
   selectMode,
@@ -149,9 +155,10 @@ export function ActivityLog({
     } else {
       setEntries((prev) => [...prev, ...result.entries]);
       setCursor(result.nextCursor);
+      onMergeGidTitles(result.gidTitles);
     }
     setIsLoadingMore(false);
-  }, [cursor, isLoadingMore, filters]);
+  }, [cursor, isLoadingMore, filters, onMergeGidTitles]);
 
   // Detect when virtualizer renders the last item and trigger loadMore
   const virtualItems = rowVirtualizer.getVirtualItems();
@@ -268,6 +275,7 @@ export function ActivityLog({
                 <div role="listitem">
                   <ActivityRow
                     entry={item.entry}
+                    gidTitles={gidTitles}
                     isActive={selectedEntryId === item.entry.id}
                     isSelected={selectedIds.has(item.entry.id)}
                     selectMode={selectMode}
