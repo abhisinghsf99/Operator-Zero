@@ -12,12 +12,23 @@
  * D-07: Select mode toggle in header reveals row checkboxes + bulk-action bar.
  * D-08: Bulk revert modal splits revertable / blocked (handled by BulkRevertModal).
  *
+ * Mobile drill-down (D-11, UX-01):
+ *   - On mobile (<md), shows log OR detail (not both columns).
+ *   - When selectedEntry is set on mobile, log is hidden; detail fills full width.
+ *   - Back button (aria-label="Back to activity") clears selectedEntry, returns focus.
+ *   - All actions (select-mode, bulk-revert, filters, detail revert) work at 390px.
+ *   - Resize divider + aside are desktop-only (hidden md:flex wrapper).
+ *
  * WCAG 2.1 AA:
  *   - SurfaceHeader with kicker, title, subtitle
  *   - Region landmarks for log + detail panel
+ *   - focus-visible ring on Back button
+ *   - Focus restoration on Back (lastActivatedRowRef pattern)
  */
 
 import { useState, useCallback, useEffect, useRef } from "react";
+import { ArrowLeft } from "lucide-react";
+import { cn } from "@/lib/utils";
 import { SurfaceHeader, Button } from "@/components/design/primitives";
 import { ActivityFiltersBar } from "@/components/activity/activity-filters";
 import { ActivityLog } from "@/components/activity/activity-log";
@@ -61,10 +72,10 @@ export function ActivityView({
   workflowOptions,
   fetchError,
 }: ActivityViewProps) {
-  // Selected entry for detail panel
-  const [selectedEntry, setSelectedEntry] = useState<ActivityEntryRow | null>(
-    initialEntries[0] ?? null
-  );
+  // Mobile: default to null (shows log first). Desktop: default to first entry.
+  // The desktop default is restored via useEffect after hydration to avoid
+  // SSR/hydration mismatch (same pattern as panel-width restore below).
+  const [selectedEntry, setSelectedEntry] = useState<ActivityEntryRow | null>(null);
 
   // GID → title map; grows as more pages load (merged via onMergeGidTitles)
   const [gidTitles, setGidTitles] =
@@ -76,12 +87,16 @@ export function ActivityView({
     []
   );
 
+  // Ref to the last activated log row — for returning focus on Back (D-11)
+  const lastActivatedRowRef = useRef<HTMLElement | null>(null);
+
   // ─── Resizable detail panel (drag the divider to widen/narrow) ───────────────
   const [panelWidth, setPanelWidth] = useState(PANEL_DEFAULT);
   const dragStateRef = useRef<{ startX: number; startW: number } | null>(null);
 
-  // Restore persisted width on mount (client-only — avoids hydration mismatch)
+  // Restore persisted width + set desktop-default entry on mount (client-only)
   useEffect(() => {
+    // Restore panel width
     try {
       const saved = window.localStorage.getItem(PANEL_STORAGE_KEY);
       if (saved) {
@@ -93,6 +108,16 @@ export function ActivityView({
     } catch {
       /* localStorage unavailable — keep default */
     }
+
+    // Desktop-only default selection: only set when still null AND on md+ viewport
+    setSelectedEntry((current) => {
+      if (current !== null) return current; // don't clobber a user selection
+      if (window.matchMedia("(min-width: 768px)").matches) {
+        return initialEntries[0] ?? null;
+      }
+      return null;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const clampWidth = useCallback((w: number) => {
@@ -204,6 +229,21 @@ export function ActivityView({
     setSelectedIds(new Set());
   }, []);
 
+  // Activate a log row: capture the activating element for focus restoration (D-11)
+  const handleSelectEntry = useCallback((entry: ActivityEntryRow) => {
+    // Capture current focused element as the activating row
+    lastActivatedRowRef.current = document.activeElement as HTMLElement | null;
+    setSelectedEntry(entry);
+  }, []);
+
+  // Mobile Back: clear selectedEntry, return focus to last activated row (D-11)
+  const handleMobileBack = useCallback(() => {
+    setSelectedEntry(null);
+    requestAnimationFrame(() => {
+      lastActivatedRowRef.current?.focus();
+    });
+  }, []);
+
   return (
     <div
       style={{
@@ -237,13 +277,15 @@ export function ActivityView({
         onBulkRevert={handleBulkRevert}
       />
 
-      {/* Error banner */}
+      {/* Error banner — responsive horizontal padding */}
       {fetchError && (
         <div
           role="alert"
           aria-live="assertive"
+          className="px-4 md:px-10"
           style={{
-            padding: "12px 40px",
+            paddingTop: 12,
+            paddingBottom: 12,
             background: "color-mix(in oklch, var(--danger) 8%, var(--bg))",
             borderBottom: "0.5px solid color-mix(in oklch, var(--danger) 30%, transparent)",
             fontSize: 13,
@@ -254,25 +296,20 @@ export function ActivityView({
         </div>
       )}
 
-      {/* Log + detail split */}
-      <div
-        style={{
-          flex: 1,
-          display: "flex",
-          overflow: "hidden",
-          minHeight: 0,
-        }}
-      >
-        {/* Activity log (virtualized) */}
+      {/* Log + detail split (mobile drill-down + desktop resizable split) */}
+      <div className="flex flex-1 overflow-hidden min-h-0">
+
+        {/*
+          Activity log — main region:
+            Desktop (md+): flex-1, always visible alongside detail.
+            Mobile (<md):  Full width, hidden when detail is open.
+        */}
         <main
           aria-label="Activity log"
-          style={{
-            flex: 1,
-            display: "flex",
-            flexDirection: "column",
-            overflow: "hidden",
-            minWidth: 0,
-          }}
+          className={cn(
+            "flex flex-col overflow-hidden min-w-0",
+            selectedEntry ? "hidden md:flex md:flex-1" : "flex flex-1 w-full"
+          )}
         >
           <ActivityLog
             initialEntries={initialEntries}
@@ -281,14 +318,19 @@ export function ActivityView({
             gidTitles={gidTitles}
             onMergeGidTitles={handleMergeGidTitles}
             selectedEntryId={selectedEntry?.id ?? null}
-            onSelectEntry={setSelectedEntry}
+            onSelectEntry={handleSelectEntry}
             selectMode={selectMode}
             selectedIds={selectedIds}
             onToggleSelect={handleToggleSelect}
           />
         </main>
 
-        {/* Resize divider + detail panel */}
+        {/*
+          Desktop-only: resize divider + fixed-width aside.
+          Both are hidden below md so drag handlers cannot fire on mobile.
+          They are direct children of the outer flex row (not wrapped) so they
+          participate in the flex layout at md+.
+        */}
         {selectedEntry && (
           <>
             <div
@@ -305,6 +347,7 @@ export function ActivityView({
                 setPanelWidth(PANEL_DEFAULT);
                 persistWidth(PANEL_DEFAULT);
               }}
+              className="hidden md:flex"
               style={{
                 flexShrink: 0,
                 width: 7,
@@ -313,7 +356,6 @@ export function ActivityView({
                 cursor: "col-resize",
                 position: "relative",
                 zIndex: 2,
-                display: "flex",
                 justifyContent: "center",
                 touchAction: "none",
               }}
@@ -338,11 +380,13 @@ export function ActivityView({
             </div>
             <aside
               aria-label="Activity entry detail"
+              className="hidden md:flex"
               style={{
                 width: panelWidth,
                 flexShrink: 0,
                 overflowY: "auto",
                 background: "var(--bg-subtle)",
+                flexDirection: "column",
               }}
             >
               <ActivityDetail
@@ -352,6 +396,56 @@ export function ActivityView({
               />
             </aside>
           </>
+        )}
+
+        {/*
+          Mobile-only: full-width detail view.
+          Rendered only when selectedEntry is set; hidden at md+ (desktop uses the aside above).
+        */}
+        {selectedEntry && (
+          <div className="flex flex-col flex-1 w-full md:hidden">
+            {/* Mobile Back affordance (D-11) */}
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                borderBottom: "0.5px solid var(--border)",
+                background: "var(--bg)",
+                padding: "10px 16px",
+                flexShrink: 0,
+              }}
+            >
+              <button
+                onClick={handleMobileBack}
+                aria-label="Back to activity"
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 6,
+                  background: "transparent",
+                  border: "none",
+                  cursor: "pointer",
+                  fontSize: 13,
+                  color: "var(--text-secondary)",
+                  padding: "6px 8px",
+                  borderRadius: "var(--r-sm)",
+                }}
+                className="hover:bg-[var(--bg-subtle)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--acc-activity-ink)] focus-visible:ring-offset-1"
+              >
+                <ArrowLeft size={15} aria-hidden="true" />
+                Back
+              </button>
+            </div>
+
+            {/* Full-width detail — scrolls within the padded main content area */}
+            <div style={{ flex: 1, overflowY: "auto", background: "var(--bg-subtle)" }}>
+              <ActivityDetail
+                entry={selectedEntry}
+                gidTitles={gidTitles}
+                onClose={() => setSelectedEntry(null)}
+              />
+            </div>
+          </div>
         )}
       </div>
 
