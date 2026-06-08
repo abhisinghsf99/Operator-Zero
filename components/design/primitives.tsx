@@ -378,8 +378,10 @@ export function SurfaceHeader({
 }) {
   return (
     <header
+      className="px-4 md:px-10"
       style={{
-        padding: "32px 40px 22px",
+        paddingTop: 32,
+        paddingBottom: 22,
         borderBottom: "0.5px solid var(--border)",
         background: "var(--bg)",
       }}
