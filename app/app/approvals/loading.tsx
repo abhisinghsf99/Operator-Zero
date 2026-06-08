@@ -15,10 +15,10 @@
 export default function ApprovalsLoading() {
   return (
     <div className="flex h-full flex-col overflow-hidden bg-[var(--bg)] animate-pulse">
-      {/* Surface header skeleton */}
+      {/* Surface header skeleton — responsive horizontal padding (mirrors SurfaceHeader) */}
       <div
-        className="shrink-0 border-b border-[var(--border)] bg-[var(--bg)]"
-        style={{ padding: "28px 40px 20px" }}
+        className="shrink-0 border-b border-[var(--border)] bg-[var(--bg)] px-4 md:px-10"
+        style={{ paddingTop: 28, paddingBottom: 20 }}
       >
         <div className="h-[11px] w-[120px] rounded-full bg-[var(--bg-elevated)]" />
         <div className="mt-3 h-[28px] w-[260px] rounded-[var(--r-sm)] bg-[var(--bg-elevated)]" />
@@ -26,7 +26,7 @@ export default function ApprovalsLoading() {
       </div>
 
       {/* Filter chips skeleton */}
-      <div className="flex shrink-0 items-center gap-2 border-b border-[var(--border)] px-10 py-[14px]">
+      <div className="flex shrink-0 items-center gap-2 border-b border-[var(--border)] px-4 md:px-10 py-[14px]">
         {[80, 100, 80, 60, 56, 90].map((w, i) => (
           <div
             key={i}

@@ -32,14 +32,27 @@ export default async function ChatPage() {
 
   return (
     <div style={{ display: "flex", height: "100%", overflow: "hidden" }} data-testid="chat-page">
-      {/* Thread sidebar */}
-      <ThreadSidebar threads={threads} activeThreadId={null} />
+      {/*
+        Thread sidebar:
+          Mobile (<md): full-width (sidebar IS the thread list the user picks from).
+          Desktop (md+): 260px fixed, inline width from ThreadSidebar default.
+        className omits inline width — Tailwind breakpoint classes handle width here.
+      */}
+      <ThreadSidebar
+        threads={threads}
+        activeThreadId={null}
+        className="flex !w-full md:!w-[260px]"
+      />
 
-      {/* No-thread empty state — centered, matches design language */}
+      {/*
+        No-thread empty state:
+          Mobile: hidden (sidebar is the primary UI below md).
+          Desktop (md+): centered flex-1 as before.
+      */}
       <div
+        className="hidden md:flex"
         style={{
           flex: 1,
-          display: "flex",
           flexDirection: "column",
           alignItems: "center",
           justifyContent: "center",

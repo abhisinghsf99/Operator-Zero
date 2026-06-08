@@ -28,6 +28,8 @@
  */
 
 import { useState, useEffect, useRef, useCallback } from "react";
+import { useRouter } from "next/navigation";
+import { ArrowLeft } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { createBrowserClient } from "@/lib/auth/client";
@@ -91,6 +93,7 @@ export function ChatThreadView({
   initialPinnedAt = null,
   initialTitle = null,
 }: ChatThreadViewProps) {
+  const router = useRouter();
   const [messages, setMessages] = useState<StreamMessage[]>(() =>
     initialMessages
       .filter((m) => m.role === "user" || m.role === "assistant")
@@ -327,17 +330,45 @@ export function ChatThreadView({
 
   return (
     <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0, background: "var(--bg)", overflow: "hidden" }}>
-      {/* Thread header — matches design ThreadHeader */}
+      {/* Thread header — matches design ThreadHeader, responsive padding */}
       <div
+        className="px-4 md:px-8"
         style={{
           display: "flex",
           alignItems: "center",
           gap: 12,
-          padding: "20px 32px",
+          paddingTop: 20,
+          paddingBottom: 20,
           borderBottom: searchOpen ? "none" : "0.5px solid var(--border)",
           background: "var(--bg)",
         }}
       >
+        {/* Mobile-only: back to threads navigation (D-11) */}
+        <button
+          className="md:hidden"
+          onClick={() => router.push("/app/chat")}
+          aria-label="Back to threads"
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            background: "transparent",
+            border: "none",
+            cursor: "pointer",
+            color: "var(--text-secondary)",
+            padding: "6px",
+            borderRadius: "var(--r-sm)",
+            flexShrink: 0,
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.background = "var(--bg-subtle)";
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.background = "transparent";
+          }}
+        >
+          <ArrowLeft size={18} aria-hidden="true" />
+        </button>
         <Avatar agent size={32} />
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -396,7 +427,7 @@ export function ChatThreadView({
           aria-live="polite"
           aria-label="Conversation messages"
         >
-          <div style={{ maxWidth: 760, margin: "0 auto", padding: "0 32px", display: "flex", flexDirection: "column", gap: 28 }}>
+          <div className="px-4 md:px-8" style={{ maxWidth: 760, margin: "0 auto", display: "flex", flexDirection: "column", gap: 28 }}>
             {messages.map((message) => (
               <MessageBubble
                 key={message.id}
