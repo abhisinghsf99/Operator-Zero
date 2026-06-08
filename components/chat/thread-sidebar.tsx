@@ -9,6 +9,13 @@
  *
  * Design contract: surface-conversation.jsx ThreadSidebar section.
  *
+ * Mobile drill-down:
+ *   - When a thread is active ([threadId]/page.tsx), caller passes
+ *     className="hidden md:flex" to hide the sidebar below md.
+ *   - On the chat index (page.tsx), caller passes className="flex w-full md:w-[260px]"
+ *     so the sidebar fills full width below md (it IS the thread list the user picks from).
+ *   - Desktop (md+): sidebar is always 260px; className overrides are additive.
+ *
  * ACCESSIBILITY (WCAG 2.1 AA):
  *   - Thread list items are buttons with full keyboard nav
  *   - Active thread indicated by aria-current="page"
@@ -25,9 +32,11 @@ import { Icons } from "@/components/design/icons";
 interface ThreadSidebarProps {
   threads: ThreadListItem[];
   activeThreadId: string | null;
+  /** Optional className applied to the <aside> — used for mobile breakpoint gating. */
+  className?: string;
 }
 
-export function ThreadSidebar({ threads, activeThreadId }: ThreadSidebarProps) {
+export function ThreadSidebar({ threads, activeThreadId, className }: ThreadSidebarProps) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
 
@@ -57,6 +66,7 @@ export function ThreadSidebar({ threads, activeThreadId }: ThreadSidebarProps) {
 
   return (
     <aside
+      className={className}
       style={{
         width: 260,
         flexShrink: 0,
