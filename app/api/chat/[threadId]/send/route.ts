@@ -40,8 +40,14 @@ import { z } from "zod";
 
 /** Must be force-dynamic to prevent Next.js caching SSE responses */
 export const dynamic = "force-dynamic";
-/** Extended timeout — streaming chats can run for ~60s */
-export const maxDuration = 60;
+/**
+ * Extended timeout. The orchestrator runs an agentic tool loop (stepCountIs(5)),
+ * and on Groq (gpt-oss-120b) each step is a separate round-trip — multi-step
+ * tool conversations were hitting the old 60s ceiling and returning 504
+ * ("agent thinks but never responds"). 120s gives the loop headroom; the
+ * reasoningEffort:"low" cap below keeps most turns well under it.
+ */
+export const maxDuration = 120;
 
 // ─── Input validation ─────────────────────────────────────────────────────────
 
@@ -285,6 +291,14 @@ export async function POST(
         // streamText runs the model + tool loop internally (execute delegates to
         // dispatchTool), bounded by stopWhen: stepCountIs(5). We re-emit the same
         // custom SSE events from result.fullStream so the client is untouched.
+        //
+        // reasoningEffort:"low" — when ORCHESTRATOR routes to Groq (gpt-oss-120b,
+        // the prod MODEL_PROFILE), uncapped reasoning lets the model spend its
+        // whole output budget on reasoning tokens, so it "thinks" but streams
+        // little/no text and multi-step tool loops blow past the timeout. "low"
+        // keeps turns fast and preserves output budget for the actual reply.
+        // Harmless on Anthropic — the groq providerOptions namespace is ignored.
+        // (Same fix already applied to optimize-meta.ts / propose-restock.ts.)
         const result = streamText({
           model: resolveModel("ORCHESTRATOR"),
           system: systemPrompt,
@@ -292,6 +306,7 @@ export async function POST(
           tools: getAiSdkTools(includeWriteTools, agentCtx),
           stopWhen: stepCountIs(5),
           maxOutputTokens: choice.maxTokens,
+          providerOptions: { groq: { reasoningEffort: "low" as const } },
         });
 
         for await (const part of result.fullStream) {
