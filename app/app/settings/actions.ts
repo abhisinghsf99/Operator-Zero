@@ -76,7 +76,7 @@ import {
 import { revokeSession as registryRevokeSession, signOutEverywhere as registrySignOutEverywhere } from "@/lib/auth/session-registry";
 import { generateText } from "ai";
 import { resolveModel } from "@/lib/agent/llm/models";
-import { isDemoUser, isDemoConnectionLocked, DEMO_DISABLED_MESSAGE } from "@/lib/auth/demo";
+import { isDemoUser, isSandboxClaims, isDemoConnectionLocked, DEMO_DISABLED_MESSAGE } from "@/lib/auth/demo";
 import { CURATED_OVERRIDE_TOOLS } from "@/lib/workflows/autonomy";
 
 // ─── Schemas ──────────────────────────────────────────────────────────────────
@@ -632,7 +632,7 @@ export async function updateEmail(
   const userId = claims.sub as string;
 
   // Demo guard: block destructive action for the demo user
-  if (isDemoUser(userId)) return { error: DEMO_DISABLED_MESSAGE };
+  if (isSandboxClaims(claims)) return { error: DEMO_DISABLED_MESSAGE };
 
   // 3. Update via Supabase Auth (sends confirmation email)
   const supabase = await createClient();
@@ -672,7 +672,7 @@ export async function updatePassword(
   const userId = claims.sub as string;
 
   // Demo guard: block destructive action for the demo user
-  if (isDemoUser(userId)) return { error: DEMO_DISABLED_MESSAGE };
+  if (isSandboxClaims(claims)) return { error: DEMO_DISABLED_MESSAGE };
 
   // 3. Update via Supabase Auth
   const supabase = await createClient();
@@ -799,7 +799,7 @@ export async function revokeSession(
   const userId = claims.sub as string;
 
   // Demo guard: block destructive action for the demo user
-  if (isDemoUser(userId)) return { error: DEMO_DISABLED_MESSAGE };
+  if (isSandboxClaims(claims)) return { error: DEMO_DISABLED_MESSAGE };
 
   // 3. Delegate to session-registry helper (ownership re-check inside)
   const result = await registryRevokeSession(userId, parsed.data.sessionId);
@@ -827,7 +827,7 @@ export async function signOutEverywhere(): Promise<{ success: true } | { error: 
   const userId = claims.sub as string;
 
   // Demo guard: block destructive action for the demo user
-  if (isDemoUser(userId)) return { error: DEMO_DISABLED_MESSAGE };
+  if (isSandboxClaims(claims)) return { error: DEMO_DISABLED_MESSAGE };
 
   // 2. Delegate to session-registry helper
   const result = await registrySignOutEverywhere(userId);
@@ -978,7 +978,7 @@ export async function requestAccountDeletion(): Promise<
   const userId = claims.sub as string;
 
   // Demo guard: block destructive action for the demo user
-  if (isDemoUser(userId)) return { error: DEMO_DISABLED_MESSAGE };
+  if (isSandboxClaims(claims)) return { error: DEMO_DISABLED_MESSAGE };
 
   // 2. Active-run gate (D-09, Pitfall 4): block if any run is mid-execution
   const activeRuns = await serviceDb

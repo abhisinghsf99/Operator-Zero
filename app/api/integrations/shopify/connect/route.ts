@@ -38,10 +38,13 @@ export async function GET(request: NextRequest) {
   }
   const userId = claims.sub as string;
 
-  // ── Demo connection lock guard ────────────────────────────────────────────
-  // When DEMO_SHOPIFY_LOCKED=true, block the demo user from initiating a new
-  // OAuth connection. Default (unset) = unlocked — demo visitor can connect freely.
-  if (isDemoUser(userId) && isDemoConnectionLocked()) {
+  // ── Demo / sandbox connection lock guard ──────────────────────────────────
+  // Anonymous sandbox visitors can NEVER wire a real Shopify store into their
+  // throwaway tenant — that would escape write-simulation and touch a live store.
+  // The shared demo account is additionally blocked only when DEMO_SHOPIFY_LOCKED
+  // is set (default unset = it can connect freely for testing).
+  const isAnonymous = (claims as { is_anonymous?: boolean }).is_anonymous === true;
+  if (isAnonymous || (isDemoUser(userId) && isDemoConnectionLocked())) {
     return NextResponse.redirect(`${origin}/app/settings`);
   }
 

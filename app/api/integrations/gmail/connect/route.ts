@@ -37,6 +37,13 @@ export async function GET(request: NextRequest) {
   }
   const userId = claims.sub as string;
 
+  // ── Sandbox guard ─────────────────────────────────────────────────────────
+  // Anonymous sandbox visitors can never wire a real Gmail account into their
+  // throwaway tenant — they get a seeded, simulated inbox instead.
+  if ((claims as { is_anonymous?: boolean }).is_anonymous === true) {
+    return NextResponse.redirect(`${origin}/app/settings`);
+  }
+
   // ── Nonce generation + storage (T-2-04-01) ────────────────────────────────
   // CR-07 FIX: Store the nonce in Redis (TTL=10min) rather than clobbering
   // access_token_encrypted. Clobbering destroys a live token when a user

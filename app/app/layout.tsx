@@ -7,16 +7,17 @@
  *
  * Phase 2: Full nav chrome — desktop sidebar + mobile bottom-tabs.
  *
- * Demo mode: When the authenticated user is the seeded demo account, a slim
- * non-dismissible DemoBanner is rendered at the top of the shell. Non-demo
- * users see the shell exactly as before.
+ * Demo mode: When the authenticated user is a demo identity — either the seeded
+ * shared demo account OR a per-visitor anonymous sandbox — a slim non-dismissible
+ * DemoBanner is rendered at the top of the shell (with variant-specific copy).
+ * Non-demo users see the shell exactly as before.
  */
 import type { Metadata } from "next";
 import { Sidebar } from "@/components/layout/sidebar";
 import { BottomTabs } from "@/components/layout/bottom-tabs";
 import { DemoBanner } from "@/components/layout/demo-banner";
 import { createClient } from "@/lib/auth/server";
-import { isDemoUser } from "@/lib/auth/demo";
+import { isSandboxClaims } from "@/lib/auth/demo";
 
 export const metadata: Metadata = {
   title: "Operator Zero",
@@ -26,12 +27,14 @@ export const metadata: Metadata = {
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const supabase = await createClient();
   const { data: claimsData } = await supabase.auth.getClaims();
-  const isDemo = isDemoUser(claimsData?.claims?.sub as string | undefined);
+  const claims = claimsData?.claims ?? null;
+  const isDemo = isSandboxClaims(claims);
+  const isSandbox = (claims as { is_anonymous?: boolean } | null)?.is_anonymous === true;
 
   return (
     <div className="flex flex-col h-screen overflow-hidden bg-[var(--bg)]">
-      {/* Demo banner — only rendered for the demo user */}
-      {isDemo && <DemoBanner />}
+      {/* Demo banner — rendered for the shared demo account and every sandbox visitor */}
+      {isDemo && <DemoBanner variant={isSandbox ? "sandbox" : "shared"} />}
 
       {/* Main shell row: Sidebar + content + BottomTabs */}
       <div className="flex flex-1 min-h-0">
