@@ -16,6 +16,7 @@ import type { Metadata } from "next";
 import { Sidebar } from "@/components/layout/sidebar";
 import { BottomTabs } from "@/components/layout/bottom-tabs";
 import { DemoBanner } from "@/components/layout/demo-banner";
+import { SandboxExitBeacon } from "@/components/layout/sandbox-exit-beacon";
 import { createClient } from "@/lib/auth/server";
 import { isSandboxClaims } from "@/lib/auth/demo";
 
@@ -35,6 +36,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     <div className="flex flex-col h-screen overflow-hidden bg-[var(--bg)]">
       {/* Demo banner — rendered for the shared demo account and every sandbox visitor */}
       {isDemo && <DemoBanner variant={isSandbox ? "sandbox" : "shared"} />}
+
+      {/* Sandbox teardown beacon + heartbeat — only for anonymous sandbox visitors */}
+      {isSandbox && <SandboxExitBeacon />}
 
       {/* Main shell row: Sidebar + content + BottomTabs */}
       <div className="flex flex-1 min-h-0">
