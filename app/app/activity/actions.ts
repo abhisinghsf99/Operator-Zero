@@ -216,7 +216,6 @@ export async function fetchActivityPage(
         return {
           entries: [] as ActivityEntryRow[],
           nextCursor: null,
-          gidTitles: {} as Record<string, string>,
         };
       }
 
@@ -278,17 +277,6 @@ export async function fetchActivityPage(
         workflowName: e.workflow_id ? (workflowNameMap.get(e.workflow_id) ?? null) : null,
       }));
 
-      // Resolve Product/ProductVariant GIDs → product titles for clean display
-      const gidTitles = await resolveGidTitles(
-        userId,
-        enrichedEntries.flatMap((e) => [
-          e.action_summary,
-          e.target_id ?? "",
-          e.before_state ? JSON.stringify(e.before_state) : "",
-          e.after_state ? JSON.stringify(e.after_state) : "",
-        ])
-      );
-
       // Compute next cursor from last entry (if we got a full page)
       const nextCursor: ActivityCursor | null =
         entries.length === PAGE_SIZE
@@ -298,10 +286,29 @@ export async function fetchActivityPage(
             }
           : null;
 
-      return { entries: enrichedEntries, nextCursor, gidTitles };
+      // NOTE: GID→title resolution runs AFTER this transaction closes (below).
+      // resolveGidTitles uses serviceDb, and the postgres client is created with
+      // max:1 (one connection per invocation). Calling it inside this withUserRls
+      // transaction deadlocks — the open tx holds the only connection while
+      // resolveGidTitles waits for one. Mirrors workflows/page.tsx ordering.
+      return { entries: enrichedEntries, nextCursor };
     });
 
-    return result;
+    // Resolve Product/ProductVariant GIDs → product titles OUTSIDE the RLS
+    // transaction (single-connection pool — see note above).
+    const gidTitles: Record<string, string> = result.entries.length
+      ? await resolveGidTitles(
+          userId,
+          result.entries.flatMap((e) => [
+            e.action_summary,
+            e.target_id ?? "",
+            e.before_state ? JSON.stringify(e.before_state) : "",
+            e.after_state ? JSON.stringify(e.after_state) : "",
+          ])
+        )
+      : {};
+
+    return { ...result, gidTitles };
   } catch (err) {
     return { error: String(err) };
   }
