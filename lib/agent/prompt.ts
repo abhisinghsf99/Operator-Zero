@@ -35,8 +35,14 @@ import { recallMemory } from "./memory";
 
 // ─── Token budgets ─────────────────────────────────────────────────────────────
 
-/** Maximum tokens for the chat system prompt (RESEARCH.md Area 5 — [ASSUMED] placeholder) */
-export const CHAT_TOKEN_BUDGET = 15_000;
+/**
+ * Maximum tokens for the chat system prompt. Lowered 15_000 → 3_500 to fit
+ * Groq's free-tier cap (8000 tokens/min, cumulative): the agentic tool loop
+ * re-sends the system prompt every step, so a bloated prompt (memory + semantic
+ * recall) plus tool results blew past 8k. 3_500 keeps the fixed cost small;
+ * oldest memory items + lowest-similarity recalls are dropped first.
+ */
+export const CHAT_TOKEN_BUDGET = 3_500;
 
 /** Maximum tokens for the workflow step system prompt (RESEARCH.md Area 5 — [ASSUMED]) */
 export const WORKFLOW_TOKEN_BUDGET = 20_000;

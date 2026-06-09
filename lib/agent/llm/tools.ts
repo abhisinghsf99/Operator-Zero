@@ -60,10 +60,46 @@ export function getAiSdkTools(
       inputSchema: toolDef.inputSchema,
       // ctx captured in the closure — per-request, never a singleton (T-ebw-01).
       // dispatchTool re-runs the Zod safeParse and never throws, returning a
-      // correctable ToolResult on error (T-ebw-02).
-      execute: (args: unknown) => dispatchTool(name, args, ctx),
+      // correctable ToolResult on error (T-ebw-02). capToolResult trims oversized
+      // payloads so the agentic loop stays within Groq's free-tier token budget.
+      execute: async (args: unknown) => capToolResult(await dispatchTool(name, args, ctx)),
     });
   }
 
   return tools;
+}
+
+/**
+ * Max characters of a tool-result payload fed back to the model. Groq's free
+ * tier caps at 8000 tokens/min, and the agentic loop re-sends every prior tool
+ * result on each step — large Shopify list/inventory dumps blew past the cap and
+ * the model returned nothing ("thinks but doesn't respond"). ~2000 chars ≈ 500
+ * tokens keeps results small while leaving enough for the model to answer.
+ */
+const TOOL_RESULT_MAX_CHARS = 2000;
+
+type DispatchResult = Awaited<ReturnType<typeof dispatchTool>>;
+
+/**
+ * Truncate an oversized stringified tool result before it re-enters the model
+ * context. Inline-block payloads (e.g. workflow_plan) are preserved untouched —
+ * the chat route JSON.parses them to render the visualizer, so truncating would
+ * break it.
+ */
+function capToolResult(res: DispatchResult): DispatchResult {
+  const content = (res as { content?: unknown }).content;
+  if (typeof content !== "string" || content.length <= TOOL_RESULT_MAX_CHARS) {
+    return res;
+  }
+  try {
+    if (JSON.parse(content)?.inline_block_type) return res; // keep inline blocks whole
+  } catch {
+    /* not JSON — safe to truncate */
+  }
+  return {
+    ...res,
+    content:
+      content.slice(0, TOOL_RESULT_MAX_CHARS) +
+      "\n…[result truncated to fit the model context budget]",
+  };
 }

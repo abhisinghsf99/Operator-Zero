@@ -137,7 +137,8 @@ export async function POST(
     });
   }
 
-  // 6. Load prior messages for this thread (last 20 for token budget)
+  // 6. Load prior messages for this thread (last 8 — keeps the request small
+  // enough for Groq's free-tier 8k tokens/min cap; was 20).
   let priorMessages: Array<{ role: "user" | "assistant"; content: string }> = [];
   try {
     const msgRows = await withUserRls(claims as Record<string, unknown>, async (tx) => {
@@ -150,7 +151,7 @@ export async function POST(
     priorMessages = msgRows
       .filter((m) => m.role === "user" || m.role === "assistant")
       .filter((m) => m.status === "complete")
-      .slice(-20)
+      .slice(-8)
       .map((m) => ({
         role: m.role as "user" | "assistant",
         content: m.content ?? "",
@@ -299,13 +300,23 @@ export async function POST(
         // keeps turns fast and preserves output budget for the actual reply.
         // Harmless on Anthropic — the groq providerOptions namespace is ignored.
         // (Same fix already applied to optimize-meta.ts / propose-restock.ts.)
+        // GROQ FREE-TIER TPM FIT (8000 tokens/min, cumulative per request):
+        //   - maxOutputTokens capped at 1536: Groq reserves input+output against
+        //     the per-minute budget, so a 4096 reservation alone ate half of it.
+        //   - stepCountIs(3): each extra tool round re-sends ALL prior tool
+        //     results, so accumulated context blew past 8k by step 3-4. Fewer
+        //     rounds = less accumulation (tool results are also capped, in
+        //     getAiSdkTools).
+        // gpt-oss-120b's agentic tool loop is genuinely tight against the free
+        // tier — these keep typical single tool-using turns under the cap. The
+        // real headroom is Groq Dev tier or an Anthropic key (MODEL_PROFILE=mixed).
         const result = streamText({
           model: resolveModel("ORCHESTRATOR"),
           system: systemPrompt,
           messages: allMessages,
           tools: getAiSdkTools(includeWriteTools, agentCtx),
-          stopWhen: stepCountIs(5),
-          maxOutputTokens: choice.maxTokens,
+          stopWhen: stepCountIs(3),
+          maxOutputTokens: Math.min(choice.maxTokens, 1536),
           providerOptions: { groq: { reasoningEffort: "low" as const } },
         });
 
