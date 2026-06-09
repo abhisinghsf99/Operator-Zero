@@ -3,12 +3,21 @@
  * Server-only — MUST NOT have "use client"; reads process.env server-side only.
  *
  * Faithful Drizzle port of /tmp/oz_seed.mjs onto serviceDb (RLS-bypass, service-role).
- * Wipes and re-seeds the demo user's app data in one transaction.
+ * Wipes and re-seeds a user's app data in one transaction.
+ *
+ * Three entry points:
+ *   - seedDemoFor(userId) — wipe + seed the Wanderbound/Sarah dataset for an
+ *     arbitrary user_id. Used for per-visitor sandboxes (anonymous users) AND by
+ *     reseedDemo() for the shared demo account.
+ *   - reseedDemo() — thin wrapper that seeds the env DEMO_USER_ID (shared account).
+ *   - wipeDemoFor(userId) — delete all of a user's seeded app data. Used by the
+ *     sandbox exit route + TTL-sweep cron to tear a throwaway visitor down.
  *
  * SECURITY:
- *   - USER is read from process.env.DEMO_USER_ID at call time.
- *   - If DEMO_USER_ID is unset or empty, reseedDemo() returns immediately with
- *     NO database access. This is the safety invariant: never wipe an arbitrary user.
+ *   - seedDemoFor / wipeDemoFor require a non-empty userId; they return with NO
+ *     database access if it's empty. This is the safety invariant: never wipe or
+ *     seed an arbitrary/unknown user.
+ *   - reseedDemo() reads process.env.DEMO_USER_ID at call time and no-ops if unset.
  *   - Every delete/update/insert is filtered by eq(table.user_id, USER).
  *   - serviceDb bypasses RLS — the user_id filter is the only isolation layer here.
  *   - This file is server-only; it must never be imported in client components.
@@ -40,12 +49,56 @@ import { randomUUID } from "node:crypto";
 
 const SHOP = "wanderbound.myshopify.com";
 
-// dummy ciphertext placeholder for integration tokens (health never decrypts)
-const TOK = "demo-seed-not-a-real-token-0000000000000000000000000000";
+// dummy ciphertext placeholder for integration tokens (health never decrypts).
+// This exact sentinel ALSO signals "sandbox" to the Shopify write path
+// (lib/integrations/shopify/client.ts): a connection holding this token simulates
+// writes against the local mirror instead of calling the real Shopify API.
+export const SANDBOX_SENTINEL_TOKEN =
+  "demo-seed-not-a-real-token-0000000000000000000000000000";
+const TOK = SANDBOX_SENTINEL_TOKEN;
 
-export async function reseedDemo(): Promise<void> {
+// Transaction handle type, derived from serviceDb so the wipe helper stays typed.
+type SeedTx = Parameters<Parameters<typeof serviceDb.transaction>[0]>[0];
+
+/**
+ * Delete every seeded app-data row for one user (child → parent order).
+ * Does NOT touch user_profiles (re-seed upserts it; cleanup removes it
+ * separately / via auth-user cascade) and does NOT touch sandbox_sessions
+ * (the registry is managed by the caller).
+ */
+async function wipeUserData(tx: SeedTx, USER: string): Promise<void> {
+  await tx.delete(approvals).where(eq(approvals.user_id, USER));
+  await tx.delete(activityEntries).where(eq(activityEntries.user_id, USER));
+  await tx.delete(messages).where(eq(messages.user_id, USER));
+  await tx.delete(threads).where(eq(threads.user_id, USER));
+  await tx.delete(workflowRuns).where(eq(workflowRuns.user_id, USER));
+  await tx
+    .update(workflows)
+    .set({ current_version_id: null })
+    .where(eq(workflows.user_id, USER));
+  await tx.delete(workflows).where(eq(workflows.user_id, USER)); // cascades workflow_versions
+  await tx.delete(memoryItems).where(eq(memoryItems.user_id, USER));
+  await tx.delete(brandVoiceSamples).where(eq(brandVoiceSamples.user_id, USER));
+  await tx.delete(brandVoiceProfiles).where(eq(brandVoiceProfiles.user_id, USER));
+  await tx.delete(autonomyThresholds).where(eq(autonomyThresholds.user_id, USER));
+  await tx.delete(userSessions).where(eq(userSessions.user_id, USER));
+  await tx.delete(integrations).where(eq(integrations.user_id, USER));
+  await tx
+    .delete(shopifyProductVariants)
+    .where(eq(shopifyProductVariants.user_id, USER));
+  await tx.delete(shopifyProducts).where(eq(shopifyProducts.user_id, USER));
+  await tx.delete(gmailMessages).where(eq(gmailMessages.user_id, USER));
+  await tx.delete(gmailThreads).where(eq(gmailThreads.user_id, USER));
+}
+
+/**
+ * Seed the Wanderbound/Sarah demo dataset for an arbitrary user_id.
+ * Wipes any existing app data for that user first, then inserts the full
+ * dataset in one transaction. Safe to call on a brand-new (anonymous) user —
+ * the wipe is a no-op when there's nothing there yet.
+ */
+export async function seedDemoFor(USER: string): Promise<void> {
   // USER GUARD — must be first, before any DB access
-  const USER = process.env.DEMO_USER_ID;
   if (!USER) return;
 
   // ── time helpers (computed at call time so rows stay "recent" on every reset) ──
@@ -57,28 +110,7 @@ export async function reseedDemo(): Promise<void> {
 
   await serviceDb.transaction(async (tx) => {
     // ─── 1. WIPE existing app data for this user (child → parent) ────────────────
-    await tx.delete(approvals).where(eq(approvals.user_id, USER));
-    await tx.delete(activityEntries).where(eq(activityEntries.user_id, USER));
-    await tx.delete(messages).where(eq(messages.user_id, USER));
-    await tx.delete(threads).where(eq(threads.user_id, USER));
-    await tx.delete(workflowRuns).where(eq(workflowRuns.user_id, USER));
-    await tx
-      .update(workflows)
-      .set({ current_version_id: null })
-      .where(eq(workflows.user_id, USER));
-    await tx.delete(workflows).where(eq(workflows.user_id, USER)); // cascades workflow_versions
-    await tx.delete(memoryItems).where(eq(memoryItems.user_id, USER));
-    await tx.delete(brandVoiceSamples).where(eq(brandVoiceSamples.user_id, USER));
-    await tx.delete(brandVoiceProfiles).where(eq(brandVoiceProfiles.user_id, USER));
-    await tx.delete(autonomyThresholds).where(eq(autonomyThresholds.user_id, USER));
-    await tx.delete(userSessions).where(eq(userSessions.user_id, USER));
-    await tx.delete(integrations).where(eq(integrations.user_id, USER));
-    await tx
-      .delete(shopifyProductVariants)
-      .where(eq(shopifyProductVariants.user_id, USER));
-    await tx.delete(shopifyProducts).where(eq(shopifyProducts.user_id, USER));
-    await tx.delete(gmailMessages).where(eq(gmailMessages.user_id, USER));
-    await tx.delete(gmailThreads).where(eq(gmailThreads.user_id, USER));
+    await wipeUserData(tx, USER);
 
     // ─── 2. PROFILE (mark onboarding complete so surfaces don't redirect) ────────
     await tx
@@ -1625,5 +1657,28 @@ export async function reseedDemo(): Promise<void> {
 
     // Thread D — archived (shows the sidebar isn't empty / history exists)
     await mkThread("Onboarding — connect store + set voice", 380, 14);
+  });
+}
+
+/**
+ * Re-seed the SHARED demo account (env DEMO_USER_ID). No-ops if unset, so it's
+ * safe in environments where the shared demo isn't configured.
+ */
+export async function reseedDemo(): Promise<void> {
+  const USER = process.env.DEMO_USER_ID;
+  if (!USER) return;
+  await seedDemoFor(USER);
+}
+
+/**
+ * Tear down a sandbox visitor's app data. Deletes every seeded row for the user
+ * plus their profile, in one transaction. The caller is responsible for removing
+ * the auth identity (auth.admin.deleteUser) and the sandbox_sessions row.
+ */
+export async function wipeDemoFor(USER: string): Promise<void> {
+  if (!USER) return;
+  await serviceDb.transaction(async (tx) => {
+    await wipeUserData(tx, USER);
+    await tx.delete(userProfiles).where(eq(userProfiles.user_id, USER));
   });
 }
