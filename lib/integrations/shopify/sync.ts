@@ -24,7 +24,8 @@ import {
   shopifySyncState,
 } from "@/lib/db/schema/shopify-mirror";
 import { integrations } from "@/lib/db/schema";
-import { eq, and } from "drizzle-orm";
+import { eq, and, ne } from "drizzle-orm";
+import { SANDBOX_SENTINEL_TOKEN } from "@/lib/demo/constants";
 import { ShopifyAdapter } from "./client";
 
 // ─── GraphQL query fragments ──────────────────────────────────────────────────
@@ -546,7 +547,11 @@ export async function getActiveShopifyUserIds(): Promise<string[]> {
     .where(
       and(
         eq(integrations.provider, "shopify"),
-        eq(integrations.status, "active")
+        eq(integrations.status, "active"),
+        // Exclude sandbox connections — their sentinel token has no real Shopify
+        // store behind it. Syncing them would fail and could flip the demo to
+        // "disconnected". Writes are simulated against the mirror instead.
+        ne(integrations.access_token_encrypted, SANDBOX_SENTINEL_TOKEN)
       )
     );
 

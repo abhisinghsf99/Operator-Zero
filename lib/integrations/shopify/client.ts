@@ -21,6 +21,7 @@ import { decryptToken } from "../crypto";
 import { serviceDb } from "@/lib/db/client";
 import { integrations } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
+import { SANDBOX_SENTINEL_TOKEN } from "@/lib/demo/constants";
 
 // ─── Env helpers ──────────────────────────────────────────────────────────────
 
@@ -91,6 +92,29 @@ export async function verifyOAuthHmac(
 
 export class ShopifyAdapter implements IntegrationAdapter {
   constructor(private readonly userId: string) {}
+
+  /**
+   * Returns true if this user's Shopify integration is a SANDBOX connection —
+   * i.e. it holds the demo seed's sentinel token rather than a real OAuth token.
+   *
+   * The sentinel is checked against the RAW stored value (before decryptToken),
+   * because the sentinel is not real ciphertext and would fail decryption. Write
+   * mutations consult this to simulate writes against the local mirror instead of
+   * calling the real Shopify API. Returns false when there is no integration row.
+   */
+  async isSimulated(): Promise<boolean> {
+    const [row] = await serviceDb
+      .select({ tok: integrations.access_token_encrypted })
+      .from(integrations)
+      .where(
+        and(
+          eq(integrations.user_id, this.userId),
+          eq(integrations.provider, "shopify")
+        )
+      )
+      .limit(1);
+    return row?.tok === SANDBOX_SENTINEL_TOKEN;
+  }
 
   /**
    * Loads decrypted credentials for this user's Shopify integration.

@@ -152,6 +152,7 @@ describe("WF-06 — writeActivity called BEFORE Shopify API call (observability-
 
     // Mock ShopifyAdapter as a proper class
     function MockShopifyAdapter() {}
+    MockShopifyAdapter.prototype.isSimulated = async () => false;
     MockShopifyAdapter.prototype.shopifyGraphQL = graphQLSpy;
 
     vi.doMock("@/lib/integrations/shopify/client", () => ({
@@ -258,6 +259,8 @@ describe("WF-06 — writeActivity called BEFORE Shopify API call (observability-
     }));
 
     function MockShopifyAdapterInventory() {}
+
+    MockShopifyAdapterInventory.prototype.isSimulated = async () => false;
     MockShopifyAdapterInventory.prototype.shopifyGraphQL = inventoryGraphQLSpy;
 
     vi.doMock("@/lib/integrations/shopify/client", () => ({
@@ -351,6 +354,8 @@ describe("WF-06 — writeActivity called BEFORE Shopify API call (observability-
     }));
 
     function MockAdapterCR01() {}
+
+    MockAdapterCR01.prototype.isSimulated = async () => false;
     MockAdapterCR01.prototype.shopifyGraphQL = async function (query: string) {
       if (query.includes("mutation")) return { productUpdate: { userErrors: [] } };
       return { product: { id: "gid://shopify/Product/1", title: "New", descriptionHtml: null } };
@@ -420,6 +425,8 @@ describe("WF-06 — writeActivity called BEFORE Shopify API call (observability-
     }));
 
     function MockShopifyAdapterCapture() {}
+
+    MockShopifyAdapterCapture.prototype.isSimulated = async () => false;
     MockShopifyAdapterCapture.prototype.shopifyGraphQL = async function (query: string) {
       if (query.includes("mutation")) return { productUpdate: { userErrors: [] } };
       return { product: { id: "gid://shopify/Product/42", title: "New Title", descriptionHtml: null } };
@@ -458,6 +465,8 @@ describe("after_state backfill — activity row updated post-write", () => {
     }));
 
     function MockShopifyAdapterBackfill() {}
+
+    MockShopifyAdapterBackfill.prototype.isSimulated = async () => false;
     MockShopifyAdapterBackfill.prototype.shopifyGraphQL = async function (query: string) {
       if (query.includes("mutation")) return { productUpdate: { userErrors: [] } };
       return { product: { id: "gid://shopify/Product/1", title: "New Title", descriptionHtml: null } };
@@ -522,6 +531,8 @@ describe("after_state backfill — activity row updated post-write", () => {
     }));
 
     function MockShopifyAdapterInvBackfill() {}
+
+    MockShopifyAdapterInvBackfill.prototype.isSimulated = async () => false;
     // Query-branching mock for the updated multi-call inventory flow
     MockShopifyAdapterInvBackfill.prototype.shopifyGraphQL = async function (query: string) {
       if (query.includes("GetVariantInventory")) {
@@ -624,6 +635,8 @@ describe("Bug A fix — updateProduct uses descriptionHtml (not bodyHtml)", () =
     }));
 
     function MockAdapterDescHtml() {}
+
+    MockAdapterDescHtml.prototype.isSimulated = async () => false;
     MockAdapterDescHtml.prototype.shopifyGraphQL = async function (
       query: string,
       variables: Record<string, unknown>
@@ -693,6 +706,8 @@ describe("Bug A fix — updateProduct uses descriptionHtml (not bodyHtml)", () =
     }));
 
     function MockAdapterReRead() {}
+
+    MockAdapterReRead.prototype.isSimulated = async () => false;
     MockAdapterReRead.prototype.shopifyGraphQL = async function (query: string) {
       queriesCapture.push(query);
       if (query.includes("mutation")) {
@@ -753,6 +768,8 @@ describe("Bug A fix — updateProduct uses descriptionHtml (not bodyHtml)", () =
     }));
 
     function MockAdapterMirror() {}
+
+    MockAdapterMirror.prototype.isSimulated = async () => false;
     MockAdapterMirror.prototype.shopifyGraphQL = async function (query: string) {
       if (query.includes("mutation")) return { productUpdate: { userErrors: [] } };
       return { product: { id: "gid://shopify/Product/1", title: "T", descriptionHtml: "<p>new</p>" } };
@@ -819,6 +836,8 @@ describe("Bug A fix — updateProduct uses descriptionHtml (not bodyHtml)", () =
     }));
 
     function MockAdapterUserErrors() {}
+
+    MockAdapterUserErrors.prototype.isSimulated = async () => false;
     MockAdapterUserErrors.prototype.shopifyGraphQL = async function (query: string) {
       if (query.includes("mutation")) {
         return {
@@ -890,6 +909,7 @@ describe("Bug B fix — updateInventory resolves real IDs, enables tracking, fai
     captureEnableCalled?: { called: boolean };
   }) {
     function MockInvAdapter() {}
+    MockInvAdapter.prototype.isSimulated = async () => false;
     MockInvAdapter.prototype.shopifyGraphQL = async function (
       query: string,
       variables: Record<string, unknown>

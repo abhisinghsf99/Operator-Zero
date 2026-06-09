@@ -161,10 +161,76 @@ export async function updateProduct(
     is_revertable: true,
   });
 
+  const adapter = new ShopifyAdapter(userId);
+
+  // 3.5 SANDBOX SIMULATION — a sandbox connection (sentinel token) never calls
+  //     Shopify. Apply the requested change directly to the local mirror so the
+  //     UI and the activity before/after diff reflect it, then return as if the
+  //     write succeeded. Only fields present in `input` are changed.
+  if (await adapter.isSimulated()) {
+    const syncNow = new Date();
+    await serviceDb
+      .insert(shopifyProducts)
+      .values({
+        user_id: userId,
+        product_gid: input.product_gid,
+        title: input.title ?? before_state?.title ?? null,
+        body_html: input.body_html ?? before_state?.body_html ?? null,
+        vendor: before_state?.vendor ?? null,
+        product_type: before_state?.product_type ?? null,
+        status: input.status?.toLowerCase() ?? before_state?.status ?? null,
+        tags: input.tags ?? before_state?.tags ?? [],
+        meta_title: input.meta_title ?? before_state?.meta_title ?? null,
+        meta_description:
+          input.meta_description ?? before_state?.meta_description ?? null,
+        shopify_created_at: before_state?.shopify_created_at ?? null,
+        shopify_updated_at: syncNow,
+        last_synced_at: syncNow,
+      })
+      .onConflictDoUpdate({
+        target: [shopifyProducts.user_id, shopifyProducts.product_gid],
+        set: {
+          ...(input.title !== undefined ? { title: input.title } : {}),
+          ...(input.body_html !== undefined ? { body_html: input.body_html } : {}),
+          ...(input.status !== undefined
+            ? { status: input.status.toLowerCase() }
+            : {}),
+          ...(input.tags !== undefined ? { tags: input.tags } : {}),
+          ...(input.meta_title !== undefined
+            ? { meta_title: input.meta_title }
+            : {}),
+          ...(input.meta_description !== undefined
+            ? { meta_description: input.meta_description }
+            : {}),
+          shopify_updated_at: syncNow,
+          last_synced_at: syncNow,
+        },
+      });
+
+    const [afterRow] = await serviceDb
+      .select()
+      .from(shopifyProducts)
+      .where(
+        and(
+          eq(shopifyProducts.user_id, userId),
+          eq(shopifyProducts.product_gid, input.product_gid)
+        )
+      )
+      .limit(1);
+
+    await backfillAfterState(userId, idempotency_key, afterRow ?? null);
+
+    return {
+      before_state,
+      after_state: afterRow ?? null,
+      idempotency_key,
+      skipped: false,
+    };
+  }
+
   // 4. Write to Shopify Admin GraphQL
   //    NOTE: Shopify ProductInput uses `descriptionHtml` in ApiVersion.October24+.
   //    The internal input/mirror column keeps the name `body_html` — only the Shopify field changes.
-  const adapter = new ShopifyAdapter(userId);
   const mutationData = await adapter.shopifyGraphQL<{
     productUpdate: {
       userErrors: Array<{ field: string[] | null; message: string }>;
@@ -348,11 +414,60 @@ export async function updateInventory(
     is_revertable: true,
   });
 
+  const adapter = new ShopifyAdapter(userId);
+
+  // 3.5 SANDBOX SIMULATION — a sandbox connection (sentinel token) never calls
+  //     Shopify. Set the mirror's inventory_qty directly so the UI and the
+  //     activity diff reflect it, then return as if the write succeeded.
+  if (await adapter.isSimulated()) {
+    const syncNow = new Date();
+    await serviceDb
+      .insert(shopifyProductVariants)
+      .values({
+        user_id: userId,
+        variant_gid: input.variant_gid,
+        product_gid: (before_state?.product_gid as string | undefined) ?? "",
+        inventory_qty: input.inventory_qty,
+        price: before_state?.price ?? null,
+        sku: before_state?.sku ?? null,
+        last_synced_at: syncNow,
+      })
+      .onConflictDoUpdate({
+        target: [
+          shopifyProductVariants.user_id,
+          shopifyProductVariants.variant_gid,
+        ],
+        set: {
+          inventory_qty: input.inventory_qty,
+          last_synced_at: syncNow,
+        },
+      });
+
+    const [afterRow] = await serviceDb
+      .select()
+      .from(shopifyProductVariants)
+      .where(
+        and(
+          eq(shopifyProductVariants.user_id, userId),
+          eq(shopifyProductVariants.variant_gid, input.variant_gid)
+        )
+      )
+      .limit(1);
+
+    await backfillAfterState(userId, idempotency_key, afterRow ?? null);
+
+    return {
+      before_state,
+      after_state: afterRow ?? null,
+      idempotency_key,
+      skipped: false,
+    };
+  }
+
   // 4a. Resolve real inventoryItemId + locationId from the variant.
   //     We use `inventoryItem.inventoryLevels(first:1).location.id` — the integration
   //     does NOT have `read_locations` scope, so the top-level `locations` query is
   //     access-denied. Never use a hardcoded location GID.
-  const adapter = new ShopifyAdapter(userId);
   const resolutionData = await adapter.shopifyGraphQL<{
     productVariant: {
       inventoryItem: {

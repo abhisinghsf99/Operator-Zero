@@ -46,15 +46,16 @@ import {
 } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
+import { SANDBOX_SENTINEL_TOKEN } from "./constants";
 
 const SHOP = "wanderbound.myshopify.com";
 
 // dummy ciphertext placeholder for integration tokens (health never decrypts).
 // This exact sentinel ALSO signals "sandbox" to the Shopify write path
-// (lib/integrations/shopify/client.ts): a connection holding this token simulates
-// writes against the local mirror instead of calling the real Shopify API.
-export const SANDBOX_SENTINEL_TOKEN =
-  "demo-seed-not-a-real-token-0000000000000000000000000000";
+// (lib/integrations/shopify/mutations.ts): a connection holding this token
+// simulates writes against the local mirror instead of calling Shopify.
+// Re-exported for backward compat with existing importers.
+export { SANDBOX_SENTINEL_TOKEN };
 const TOK = SANDBOX_SENTINEL_TOKEN;
 
 // Transaction handle type, derived from serviceDb so the wipe helper stays typed.
