@@ -29,6 +29,10 @@ import { headers } from "next/headers";
 import { recordSession, cancelDeletionIfPending } from "@/lib/auth/session-registry";
 import { inngest } from "@/lib/inngest/client";
 import { getDemoCredentials } from "@/lib/auth/demo";
+import { seedDemoFor } from "@/lib/demo/seed";
+import { serviceDb } from "@/lib/db/client";
+import { sandboxSessions } from "@/lib/db/schema";
+import { sandboxCreateRateLimit } from "@/lib/rate-limit";
 
 const loginSchema = z.object({
   email: z.string().email("Please enter a valid email address."),
@@ -140,4 +144,80 @@ export async function enterDemo(): Promise<{ error: string } | never> {
 
   // redirect() throws — satisfies the `never` branch; must be outside try/catch
   redirect("/app/workflows");
+}
+
+/**
+ * enterSandbox — Server Action: start an isolated, throwaway demo sandbox.
+ *
+ * This is the PUBLIC demo path. Each visitor gets their own anonymous Supabase
+ * identity (signInAnonymously) seeded with a private copy of the Wanderbound
+ * dataset. RLS makes their data physically unreachable by any other visitor, so
+ * concurrent visitors never affect each other or future visitors. The sandbox is
+ * torn down on tab-close (beacon) and by the TTL-sweep cron.
+ *
+ * Flow:
+ *   1. Rate-limit by client IP (sandboxCreateRateLimit) — floods create churn.
+ *   2. signInAnonymously() — fresh identity + JWT (is_anonymous=true).
+ *   3. seedDemoFor(userId) — clone the demo dataset into THIS user's tenant.
+ *   4. Register in sandbox_sessions so the sweep can reclaim abandoned sandboxes.
+ *   5. redirect to /app/chat (onboarding already marked complete by the seed).
+ *
+ * On any failure before step 5, best-effort sign the half-baked user out and
+ * return an error — never leave the visitor in a broken half-seeded state.
+ */
+export async function enterSandbox(): Promise<{ error: string } | never> {
+  // 1. Rate-limit per client IP.
+  const headerStore = await headers();
+  const ip =
+    headerStore.get("x-forwarded-for")?.split(",")[0]?.trim() ||
+    headerStore.get("x-real-ip") ||
+    "unknown";
+  const { success } = await sandboxCreateRateLimit.limit(ip);
+  if (!success) {
+    return {
+      error:
+        "Too many demo sessions from your network right now. Please try again in a few minutes.",
+    };
+  }
+
+  // 2. Fresh anonymous identity.
+  const supabase = await createClient();
+  const { data: signInData, error } = await supabase.auth.signInAnonymously();
+  if (error || !signInData?.user) {
+    return {
+      error:
+        error?.message ?? "Could not start the demo sandbox. Please try again.",
+    };
+  }
+  const userId = signInData.user.id;
+
+  // 3 + 4. Seed an isolated dataset + register the sandbox. If anything fails,
+  // tear the half-baked identity down rather than stranding the visitor.
+  try {
+    await seedDemoFor(userId);
+    await serviceDb
+      .insert(sandboxSessions)
+      .values({ user_id: userId })
+      .onConflictDoNothing();
+  } catch (seedErr) {
+    console.error(
+      JSON.stringify({
+        level: "error",
+        event: "auth.enterSandbox.seed_failed",
+        userId,
+        error: String(seedErr),
+      })
+    );
+    try {
+      await supabase.auth.signOut();
+    } catch {
+      // best-effort — the TTL sweep will reclaim the orphaned identity
+    }
+    return {
+      error: "Could not prepare the demo sandbox. Please try again.",
+    };
+  }
+
+  // 5. redirect() throws — satisfies the `never` branch; must be outside try/catch.
+  redirect("/app/chat");
 }
