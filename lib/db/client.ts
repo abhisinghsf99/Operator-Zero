@@ -27,7 +27,7 @@
  *   T-1-02-03: the DB password and service-role access live only in DATABASE_URL
  *              (server-only, never NEXT_PUBLIC_). RLS bypass is confined to serviceDb.
  */
-import { drizzle } from "drizzle-orm/postgres-js";
+import { drizzle, type PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import { sql } from "drizzle-orm";
 import * as schema from "./schema";
@@ -41,11 +41,14 @@ import * as schema from "./schema";
  * It looks like:
  *   postgresql://postgres.<ref>:<DB_PASSWORD>@aws-<n>-<region>.pooler.supabase.com:6543/postgres
  *
- * Called at module load time — DATABASE_URL must be present whenever this
- * module is imported. The postgres.js driver itself is lazy: it does NOT
- * open a TCP connection until the first query executes.
+ * Resolved LAZILY, on first DB access — NOT at module import. This matters for
+ * `next build`: its "Collecting page data" step imports every route module to
+ * analyze it, but never runs a query. If the connection string were resolved at
+ * import, a build environment without DATABASE_URL (e.g. Vercel Preview) would
+ * crash the build just collecting page data. Deferring the lookup lets the build
+ * succeed; the error only surfaces if code actually tries to query without a URL.
  *
- * For unit tests: provide a stub DATABASE_URL in vitest.config.mts env.
+ * For unit tests: provide a stub DATABASE_URL in vitest.config.* env.
  */
 function getConnectionString(): string {
   const url = process.env["DATABASE_URL"];
@@ -59,24 +62,71 @@ function getConnectionString(): string {
   return url;
 }
 
-// Single pooled connection. prepare:false is REQUIRED for the transaction-mode pooler.
-const client = postgres(getConnectionString(), {
-  prepare: false,
-  max: 1, // serverless: one connection per function invocation
-});
+type DB = PostgresJsDatabase<typeof schema>;
+
+// Lazily-created connection pool + Drizzle instances. Nothing here runs (and
+// getConnectionString() is not called) until the first property access on
+// serviceDb / baseDb — see the proxies below.
+let _client: ReturnType<typeof postgres> | undefined;
+let _serviceDb: DB | undefined;
+let _baseDb: DB | undefined;
+
+function init(): { serviceDb: DB; baseDb: DB } {
+  if (!_client) {
+    // Connection pool through Supabase's transaction-mode pooler.
+    // prepare:false is REQUIRED for transaction-mode pooling.
+    //
+    // max > 1 is REQUIRED FOR CORRECTNESS, not just throughput. A few web-tier
+    // paths call serviceDb (e.g. resolveGidTitles) from *inside* a withUserRls()
+    // transaction. With max:1 that nested query waits for the single connection
+    // the outer transaction already holds → a self-deadlock that sits "idle in
+    // transaction" and hangs until the serverless function times out (~5 min),
+    // then dies with "Connection closed". A small pool gives the nested query its
+    // own connection, and lets Promise.all'd reads run concurrently.
+    //
+    // Safe with Supavisor: idle pooled connections hold a client slot, not a
+    // backend connection (backends are only pinned during an open transaction).
+    _client = postgres(getConnectionString(), {
+      prepare: false,
+      max: 5,
+      connect_timeout: 10, // fail fast if the pooler is unreachable
+      idle_timeout: 20, // return idle pooled connections to the pooler after 20s
+    });
+    _serviceDb = drizzle(_client, { schema });
+    _baseDb = drizzle(_client, { schema });
+  }
+  return { serviceDb: _serviceDb!, baseDb: _baseDb! };
+}
+
+/**
+ * Build a lazy proxy that initializes the real Drizzle instance on first access
+ * and forwards every property/method to it. This preserves the `serviceDb.xxx()`
+ * call shape across the whole codebase while deferring connection setup.
+ */
+function lazyDb(pick: "serviceDb" | "baseDb"): DB {
+  return new Proxy({} as DB, {
+    get(_target, prop, receiver) {
+      const db = init()[pick] as unknown as Record<PropertyKey, unknown>;
+      const value = Reflect.get(db, prop, receiver);
+      return typeof value === "function"
+        ? (value as (...args: unknown[]) => unknown).bind(db)
+        : value;
+    },
+  });
+}
 
 /**
  * serviceDb — service-role Drizzle client (agent tier).
  * Bypasses RLS (runs as the postgres role). EVERY query MUST filter by user_id.
  * Use ONLY in Inngest functions / internal tooling. Never in web-request code.
  */
-export const serviceDb = drizzle(client, { schema });
+export const serviceDb: DB = lazyDb("serviceDb");
 
 /**
  * Internal base client for the web tier. Not exported — web-tier code must go
  * through withUserRls() so RLS is actually enforced.
  */
-const baseDb = drizzle(client, { schema });
+const baseDb: DB = lazyDb("baseDb");
 
 /** A Drizzle transaction handle, as passed to the withUserRls() callback. */
 type RlsTx = Parameters<Parameters<typeof baseDb.transaction>[0]>[0];
@@ -101,6 +151,11 @@ export async function withUserRls<T>(
   }
   const claimsJson = JSON.stringify(claims);
   return baseDb.transaction(async (tx) => {
+    // Safety net: if this transaction is ever abandoned mid-flight (e.g. the
+    // serverless instance is frozen or killed before COMMIT), Postgres aborts it
+    // after 15s and releases the connection — instead of it sitting "idle in
+    // transaction" and wedging a pooled connection until the function timeout.
+    await tx.execute(sql`set local idle_in_transaction_session_timeout = '15s'`);
     // Order matters: load claims, then drop privileges to `authenticated`.
     await tx.execute(sql`select set_config('request.jwt.claims', ${claimsJson}, true)`);
     await tx.execute(sql`set local role authenticated`);
