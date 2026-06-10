@@ -4,7 +4,7 @@
  *
  * Proves, through the real browser against a live Supabase project:
  *   1. The "Try the live demo" CTA signs the visitor into an isolated sandbox
- *      and lands them in /app/chat with the SANDBOX banner ("changes are private…").
+ *      and lands them in /app/workflows with the SANDBOX banner ("changes are private…").
  *   2. Two concurrent visitors get DISTINCT anonymous identities (different auth
  *      cookies → different RLS tenants). DB-level row isolation is covered by the
  *      prod smoke test (tests/smoke/sandbox.smoke.ts); this proves it at the door.
@@ -30,12 +30,12 @@ const HAS_LIVE_SUPABASE = !!process.env["NEXT_PUBLIC_SUPABASE_URL"];
 // Seeding fires many sequential inserts; allow plenty of headroom for the redirect.
 const SEED_TIMEOUT = 90_000;
 
-/** Click the public demo CTA and wait until the seeded sandbox lands in /app/chat. */
+/** Click the public demo CTA and wait until the seeded sandbox lands in /app/workflows. */
 async function enterSandbox(context: BrowserContext): Promise<Page> {
   const page = await context.newPage();
   await page.goto("/login");
   await page.getByRole("button", { name: /try the live demo/i }).click();
-  await expect(page).toHaveURL(/\/app\/chat/, { timeout: SEED_TIMEOUT });
+  await expect(page).toHaveURL(/\/app\/workflows/, { timeout: SEED_TIMEOUT });
   return page;
 }
 

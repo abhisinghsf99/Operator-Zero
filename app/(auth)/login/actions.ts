@@ -160,7 +160,7 @@ export async function enterDemo(): Promise<{ error: string } | never> {
  *   2. signInAnonymously() — fresh identity + JWT (is_anonymous=true).
  *   3. seedDemoFor(userId) — clone the demo dataset into THIS user's tenant.
  *   4. Register in sandbox_sessions so the sweep can reclaim abandoned sandboxes.
- *   5. redirect to /app/chat (onboarding already marked complete by the seed).
+ *   5. redirect to /app/workflows (onboarding already marked complete by the seed).
  *
  * On any failure before step 5, best-effort sign the half-baked user out and
  * return an error — never leave the visitor in a broken half-seeded state.
@@ -219,5 +219,5 @@ export async function enterSandbox(): Promise<{ error: string } | never> {
   }
 
   // 5. redirect() throws — satisfies the `never` branch; must be outside try/catch.
-  redirect("/app/chat");
+  redirect("/app/workflows");
 }
