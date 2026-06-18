@@ -5,7 +5,7 @@
  * Step 5: Onboarding complete — "You have an operator."
  *
  * Calls completeOnboarding() Server Action which sets onboarding_completed_at
- * and redirects to /app/chat with a welcome seed.
+ * and redirects to /app/workflows — the default landing surface (D-16).
  */
 import { useState } from "react";
 import { Button } from "@/components/design/primitives";
