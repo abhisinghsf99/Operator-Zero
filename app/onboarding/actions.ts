@@ -6,7 +6,7 @@
  *
  * Exports:
  *   saveOnboardingStep(step)         — persists user_profiles.onboarding_step
- *   completeOnboarding()             — sets onboarding_completed_at; redirects to /app/chat
+ *   completeOnboarding()             — sets onboarding_completed_at; redirects to /app/workflows
  *   checkShopifyConnected()          — checks real integrations row (T-2-08-02)
  *   skipGmailStep()                  — marks Gmail as explicitly skipped
  *   saveBrandVoiceProfile(answers)   — saves brand_voice_profiles row (ONBOARD-03)
@@ -20,7 +20,7 @@
  *
  * Exports:
  *   saveOnboardingStep(step) — persists user_profiles.onboarding_step
- *   completeOnboarding()     — sets onboarding_completed_at; redirects to /app/chat
+ *   completeOnboarding()     — sets onboarding_completed_at; redirects to /app/workflows
  *   checkShopifyConnected()  — checks real integrations row (T-2-08-02)
  *   skipGmailStep()          — marks Gmail as explicitly skipped
  *
@@ -98,9 +98,9 @@ export async function saveOnboardingStep(
  * completeOnboarding — finalize onboarding by setting onboarding_completed_at.
  *
  * Sets onboarding_completed_at to now(), resets onboarding_step to 5 (done),
- * then redirects to /app/chat with a welcome seed param.
+ * then redirects to /app/workflows — the default landing surface (D-16).
  *
- * @returns { error } on auth failure; redirects to /app/chat on success
+ * @returns { error } on auth failure; redirects to /app/workflows on success
  */
 export async function completeOnboarding(): Promise<{ error: string } | never> {
   // 1. Get authenticated user claims
@@ -122,8 +122,8 @@ export async function completeOnboarding(): Promise<{ error: string } | never> {
 
   revalidatePath("/app");
 
-  // 3. Redirect to Conversation with a welcome seed (ONBOARD-08)
-  redirect("/app/chat?welcome=1");
+  // 3. Redirect to the Workflows surface — default landing surface (D-16, ONBOARD-08)
+  redirect("/app/workflows");
 }
 
 /**
