@@ -4,7 +4,7 @@
 
 **Status:** v1 MVP. Code-complete across 4 build phases, deployed against a live Shopify Sandbox store, 400+ tests passing, TypeScript strict.
 
-🔗 **[Live demo](LIVE_DEMO_URL)**
+🔗 **[Live demo](https://shopifyoperatorzero.vercel.app/login)**
 
 ---
 
