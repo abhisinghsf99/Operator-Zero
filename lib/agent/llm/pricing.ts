@@ -23,17 +23,24 @@ interface Rate {
 
 // USD per million tokens (USD/MTok).
 // Anthropic rates match the previously-hardcoded chat-route values (Opus 3/15).
-// Groq rates are placeholders — confirm against live Groq pricing before relying
-// on cost reports under the groq/mixed profiles.
+// Groq rates are confirmed published rates for openai/gpt-oss-* as of the
+// 2026-07-27 demo-readiness sweep (previously labeled as unconfirmed placeholders).
+// Gemini rates are Google AI Studio's published per-million-token pricing as of
+// the same sweep date.
 const PRICING: Record<string, Rate> = {
   // ── Anthropic ──
   "claude-opus-4-7": { input: 3, output: 15 },
   "claude-opus-4-5": { input: 3, output: 15 },
   "claude-haiku-4-5": { input: 0.8, output: 4 },
 
-  // ── Groq (placeholder rates — confirm against live Groq pricing) ──
+  // ── Groq (confirmed published rates as of the 2026-07-27 sweep) ──
   "openai/gpt-oss-120b": { input: 0.15, output: 0.75 },
   "openai/gpt-oss-20b": { input: 0.1, output: 0.5 },
+
+  // ── Google AI Studio / Gemini (confirmed published rates as of the 2026-07-27 sweep) ──
+  "gemini-2.5-flash": { input: 0.3, output: 2.5 },
+  "gemini-2.5-flash-lite": { input: 0.1, output: 0.4 },
+  "gemini-2.5-pro": { input: 1.25, output: 10 },
 };
 
 // DEFAULT falls back to Opus rates so an unknown id never under-bills (T-ebw-04).
