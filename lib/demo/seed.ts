@@ -31,9 +31,14 @@ import {
   brandVoiceSamples,
   autonomyThresholds,
   memoryItems,
+  memoryEmbeddings,
   userSessions,
   shopifyProducts,
   shopifyProductVariants,
+  shopifyOrders,
+  shopifyPages,
+  shopifyRedirects,
+  shopifySyncState,
   workflows,
   workflowVersions,
   workflowRuns,
@@ -43,10 +48,13 @@ import {
   messages,
   gmailThreads,
   gmailMessages,
+  gmailSyncState,
+  agentTelemetry,
 } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import { SANDBOX_SENTINEL_TOKEN } from "./constants";
+import { embedTexts } from "@/lib/agent/embeddings";
 
 const SHOP = "wanderbound.myshopify.com";
 
@@ -70,6 +78,7 @@ type SeedTx = Parameters<Parameters<typeof serviceDb.transaction>[0]>[0];
 async function wipeUserData(tx: SeedTx, USER: string): Promise<void> {
   await tx.delete(approvals).where(eq(approvals.user_id, USER));
   await tx.delete(activityEntries).where(eq(activityEntries.user_id, USER));
+  await tx.delete(agentTelemetry).where(eq(agentTelemetry.user_id, USER));
   await tx.delete(messages).where(eq(messages.user_id, USER));
   await tx.delete(threads).where(eq(threads.user_id, USER));
   await tx.delete(workflowRuns).where(eq(workflowRuns.user_id, USER));
@@ -78,6 +87,9 @@ async function wipeUserData(tx: SeedTx, USER: string): Promise<void> {
     .set({ current_version_id: null })
     .where(eq(workflows.user_id, USER));
   await tx.delete(workflows).where(eq(workflows.user_id, USER)); // cascades workflow_versions
+  // memoryEmbeddings BEFORE memoryItems — FK-free but semantically dependent
+  // (embeds memory item content), so drop the derived rows first (WS11).
+  await tx.delete(memoryEmbeddings).where(eq(memoryEmbeddings.user_id, USER));
   await tx.delete(memoryItems).where(eq(memoryItems.user_id, USER));
   await tx.delete(brandVoiceSamples).where(eq(brandVoiceSamples.user_id, USER));
   await tx.delete(brandVoiceProfiles).where(eq(brandVoiceProfiles.user_id, USER));
@@ -88,8 +100,15 @@ async function wipeUserData(tx: SeedTx, USER: string): Promise<void> {
     .delete(shopifyProductVariants)
     .where(eq(shopifyProductVariants.user_id, USER));
   await tx.delete(shopifyProducts).where(eq(shopifyProducts.user_id, USER));
+  // WS11: the seed writes these tables (orders/pages/redirects/sync state)
+  // but the original wipe never deleted them — a reseed left stale rows.
+  await tx.delete(shopifyOrders).where(eq(shopifyOrders.user_id, USER));
+  await tx.delete(shopifyPages).where(eq(shopifyPages.user_id, USER));
+  await tx.delete(shopifyRedirects).where(eq(shopifyRedirects.user_id, USER));
+  await tx.delete(shopifySyncState).where(eq(shopifySyncState.user_id, USER));
   await tx.delete(gmailMessages).where(eq(gmailMessages.user_id, USER));
   await tx.delete(gmailThreads).where(eq(gmailThreads.user_id, USER));
+  await tx.delete(gmailSyncState).where(eq(gmailSyncState.user_id, USER));
 }
 
 // ─── Seeded workflow definitions (module scope — WS1 regression guard) ─────────
@@ -387,8 +406,16 @@ export const DEMO_CHAT_PLAN_STEPS = [
  * Wipes any existing app data for that user first, then inserts the full
  * dataset in one transaction. Safe to call on a brand-new (anonymous) user —
  * the wipe is a no-op when there's nothing there yet.
+ *
+ * @param opts.skipEmbeddings - when true, skips the post-commit memory
+ *   embeddings pass (WS11) so a caller (e.g. the per-visitor sandbox path)
+ *   can opt out of the Voyage AI network cost. Default false — embeddings
+ *   are seeded by default.
  */
-export async function seedDemoFor(USER: string): Promise<void> {
+export async function seedDemoFor(
+  USER: string,
+  opts?: { skipEmbeddings?: boolean }
+): Promise<void> {
   // USER GUARD — must be first, before any DB access
   if (!USER) return;
 
@@ -399,7 +426,12 @@ export async function seedDemoFor(USER: string): Promise<void> {
   const MIN = (m: number) => new Date(now.getTime() - m * 60 * 1000);
   const future = (d: number) => new Date(now.getTime() + d * 24 * 3600 * 1000);
 
-  await serviceDb.transaction(async (tx) => {
+  // WS11: memory embeddings are seeded AFTER the transaction commits — Voyage
+  // AI is a network call, and serviceDb is a max:1 pooled client, so an
+  // embedding call made INSIDE this transaction would stall the whole seed
+  // (and any other serviceDb caller) for its entire duration. The transaction
+  // returns the inserted memory item rows; the embedding pass runs after.
+  const seededMemoryItems = await serviceDb.transaction(async (tx) => {
     // ─── 1. WIPE existing app data for this user (child → parent) ────────────────
     await wipeUserData(tx, USER);
 
@@ -612,16 +644,24 @@ export async function seedDemoFor(USER: string): Promise<void> {
         D(7),
       ],
     ];
+    // Capture inserted ids + content (WS11) — the post-commit embeddings pass
+    // needs both, and cannot re-query inside this transaction (see the
+    // module-level comment on the embeddings pass, below).
+    const insertedMemoryItems: Array<{ id: string; content: string }> = [];
     for (const [category, content, source_type, confidence, created] of mem) {
-      await tx.insert(memoryItems).values({
-        user_id: USER,
-        category,
-        content,
-        source_type,
-        confidence,
-        created_at: created,
-        updated_at: created,
-      });
+      const [row] = await tx
+        .insert(memoryItems)
+        .values({
+          user_id: USER,
+          category,
+          content,
+          source_type,
+          confidence,
+          created_at: created,
+          updated_at: created,
+        })
+        .returning({ id: memoryItems.id, content: memoryItems.content });
+      if (row) insertedMemoryItems.push(row);
     }
 
     // ─── 7. SESSIONS ──────────────────────────────────────────────────────────────
@@ -833,6 +873,118 @@ export async function seedDemoFor(USER: string): Promise<void> {
       });
       pidx++;
     }
+
+    // ─── 8.5 ORDERS (WS11) — backs the inventory + Q&A order-status stories ──────
+    // Order #WB-48217 and #WB-47990 are the two orders the seeded inbox asks
+    // about (§3.5 gmailRows above): gmail-thread-oo01 ("Where's my order
+    // #WB-48217?" from greg.m@example.com) and gmail-thread-oo06 ("Order
+    // #WB-47990 status" from chloe.f@example.com). Kept explicit here so a
+    // future editor doesn't decouple the order data from the inbox story.
+    type OrderTuple = [string, string, string, number, number];
+    const orderDefs: OrderTuple[] = [
+      // [order_gid suffix, financial_status, fulfillment_status, daysAgo, total($)]
+      ["48217", "paid", "unfulfilled", 5, 189.0], // greg.m@example.com — Voyager Weekender
+      ["47990", "paid", "fulfilled", 12, 74.0], // chloe.f@example.com — Laptop Sleeve
+      // 16 more spread across the last 30 days — ~70% paid+fulfilled, ~20%
+      // paid+unfulfilled, ~10% refunded — totals drawn from real seeded price points.
+      ["48201", "paid", "fulfilled", 1, 52.0],
+      ["48195", "paid", "fulfilled", 2, 42.0],
+      ["48188", "paid", "fulfilled", 3, 68.0],
+      ["48176", "paid", "fulfilled", 4, 24.0],
+      ["48160", "paid", "fulfilled", 6, 18.0],
+      ["48142", "paid", "fulfilled", 8, 38.0],
+      ["48120", "paid", "fulfilled", 10, 189.0],
+      ["48099", "paid", "fulfilled", 13, 34.0],
+      ["48075", "paid", "fulfilled", 16, 9.0],
+      ["48050", "paid", "fulfilled", 19, 28.0],
+      ["48030", "paid", "fulfilled", 23, 248.0],
+      ["48110", "paid", "unfulfilled", 9, 74.0],
+      ["48060", "paid", "unfulfilled", 18, 52.0],
+      ["48015", "paid", "unfulfilled", 27, 189.0],
+      ["48090", "refunded", "unfulfilled", 14, 42.0],
+      ["48005", "refunded", "unfulfilled", 29, 68.0],
+    ];
+
+    for (const [
+      suffix,
+      financial_status,
+      fulfillment_status,
+      daysAgo,
+      total,
+    ] of orderDefs) {
+      await tx.insert(shopifyOrders).values({
+        user_id: USER,
+        order_gid: `gid://shopify/Order/${suffix}`,
+        total: total.toFixed(2),
+        financial_status,
+        fulfillment_status,
+        shopify_created_at: D(daysAgo),
+        last_synced_at: MIN(12),
+      });
+    }
+
+    // ─── 8.6 PAGES + REDIRECTS (WS11) — SEO tools return data, not [] ────────────
+    const pageDefs: [string, string, string, string][] = [
+      // [page_gid suffix, title, handle, body_html]
+      [
+        "1001",
+        "About",
+        "about",
+        "<p>Small-batch leather goods made by hand in Austin. We build for people who actually travel.</p>",
+      ],
+      [
+        "1002",
+        "Shipping & Returns",
+        "shipping-returns",
+        "<p>Orders ship within 2 business days. Returns are accepted within 30 days in unused condition.</p>",
+      ],
+      [
+        // Grounds the leather-care Q&A playbook answers (gmail-thread-aa12).
+        "1003",
+        "Leather Care",
+        "leather-care",
+        "<p>Full-grain leather softens and darkens with use. Wipe with a damp cloth, let it air-dry away from direct heat, and condition every few months with a leather balm. A little rain won't hurt it — just let it dry naturally before conditioning.</p>",
+      ],
+    ];
+    for (const [suffix, title, handle, body_html] of pageDefs) {
+      await tx.insert(shopifyPages).values({
+        user_id: USER,
+        page_gid: `gid://shopify/Page/${suffix}`,
+        title,
+        body_html,
+        handle,
+        last_synced_at: MIN(12),
+      });
+    }
+
+    const redirectDefs: [string, string, string][] = [
+      ["2001", "/products/trail-card-holder", "/products/card-sleeve-minimal"],
+      ["2002", "/products/mini-passport-sleeve-v1", "/products/passport-wallet-bridle"],
+    ];
+    for (const [suffix, path, target] of redirectDefs) {
+      await tx.insert(shopifyRedirects).values({
+        user_id: USER,
+        redirect_id: suffix,
+        path,
+        target,
+        last_synced_at: MIN(12),
+      });
+    }
+
+    // ─── 8.7 SYNC STATE (WS11) — Settings health checks read correctly ──────────
+    await tx.insert(shopifySyncState).values({
+      user_id: USER,
+      last_full_sync_at: MIN(12),
+      last_poll_at: MIN(12),
+      sync_status: "healthy",
+      webhook_subscriptions: [],
+    });
+    await tx.insert(gmailSyncState).values({
+      user_id: USER,
+      last_history_id: "184230771",
+      last_poll_at: MIN(4),
+      sync_status: "healthy",
+    });
 
     // ─── 9. WORKFLOWS (+ versions) ────────────────────────────────────────────────
     // Definitions live at module scope (DEMO_WORKFLOW_DEFS, below wipeUserData) so
@@ -1121,10 +1273,12 @@ export async function seedDemoFor(USER: string): Promise<void> {
         "Retire 3 products out of stock 90+ days",
         "low",
         {
+          // WS11: titles match the real seeded GIDs below (dangling-GID fix) —
+          // the approval card and the catalog now agree.
           items: [
-            { title: "Trail Card Holder (discontinued run)", oos_days: 112 },
-            { title: "Mini Passport Sleeve v1", oos_days: 98 },
-            { title: "Canvas Pouch — Olive", oos_days: 94 },
+            { title: "The Cartographer Roll", oos_days: 112 },
+            { title: "Travel Tag Set", oos_days: 98 },
+            { title: "Key Fob — Riveted", oos_days: 94 },
           ],
         },
         "These three have been out of stock 90+ days with no restock planned. Proposing to retire (archive) them — your past preference was 'retire' over 'hide'.",
@@ -1134,9 +1288,9 @@ export async function seedDemoFor(USER: string): Promise<void> {
           action: "update_status",
           status: "archived",
           product_gids: [
-            "gid://shopify/Product/100000201",
-            "gid://shopify/Product/100000202",
-            "gid://shopify/Product/100000203",
+            "gid://shopify/Product/100000010",
+            "gid://shopify/Product/100000013",
+            "gid://shopify/Product/100000009",
           ],
         },
         20,
@@ -1268,7 +1422,7 @@ export async function seedDemoFor(USER: string): Promise<void> {
         "inventory",
         11,
         "product",
-        "gid://shopify/Product/100000201",
+        "gid://shopify/Product/100000010",
         "Retire long-out-of-stock products",
         true,
         null,
@@ -1657,7 +1811,11 @@ export async function seedDemoFor(USER: string): Promise<void> {
         inline_block_type: blockType,
         inline_block_payload: blockPayload ?? null,
         status: "complete",
-        model_id: role === "assistant" ? "claude-opus-4-7" : null,
+        // WS11: seeded transcripts must match the provider the demo actually
+        // runs on (Plan 1 WS6 — Google AI Studio / Gemini). Source of truth
+        // for the active profile is MODEL_PROFILE=google (lib/agent/llm/models.ts);
+        // if that flips to a different provider, update this literal too.
+        model_id: role === "assistant" ? "gemini-2.5-flash" : null,
         token_input: role === "assistant" ? 1800 + mseq * 30 : null,
         token_output: role === "assistant" ? 240 + mseq * 12 : null,
         latency_ms: role === "assistant" ? 1400 + mseq * 50 : null,
@@ -1776,9 +1934,65 @@ export async function seedDemoFor(USER: string): Promise<void> {
       120
     );
 
-    // Thread D — archived (shows the sidebar isn't empty / history exists)
-    await mkThread("Onboarding — connect store + set voice", 380, 14);
+    // Thread D — archived (shows the sidebar isn't empty / history exists).
+    // WS11: previously had 0 messages — now carries 3, with createdAgoMin
+    // consistent with the thread's 380-hour-old last_message_at (380h = 22,800 min).
+    const tD = await mkThread("Onboarding — connect store + set voice", 380, 14);
+    await msg(
+      tD,
+      "user",
+      "I just finished connecting my Shopify store — can you confirm it synced okay?",
+      22850
+    );
+    await msg(
+      tD,
+      "assistant",
+      "Confirmed — Shopify is connected and I synced 143 products from Wanderbound. Everything looks healthy. Next, let's set your brand voice so I write in your tone from day one.",
+      22820
+    );
+    await msg(
+      tD,
+      "user",
+      "Sounds good — go ahead and set the brand voice from the samples I gave you.",
+      22800
+    );
+
+    return insertedMemoryItems;
   });
+
+  // ─── Memory embeddings (WS11) — OUTSIDE the transaction, best-effort ────────
+  // See the comment above the transaction call for why this must not run
+  // inside it. Wrapped in try/catch: seeding must never fail because
+  // embeddings are unavailable (missing VOYAGE_API_KEY, 429 rate limit,
+  // network error) — the demo is still fully usable without semantic recall.
+  if (!opts?.skipEmbeddings && seededMemoryItems.length > 0) {
+    try {
+      // Single batched call for all six memory items — removes the Voyage
+      // free-tier 3 req/min pacing problem entirely (embedTexts, added in
+      // lib/agent/embeddings.ts, accepts a string[] `input` per the Voyage API).
+      const vectors = await embedTexts(seededMemoryItems.map((m) => m.content));
+      await Promise.all(
+        seededMemoryItems.map((item, i) =>
+          serviceDb.insert(memoryEmbeddings).values({
+            user_id: USER,
+            source_type: "memory_item",
+            source_id: item.id,
+            content: item.content,
+            embedding: vectors[i],
+          })
+        )
+      );
+    } catch (err) {
+      console.warn(
+        JSON.stringify({
+          level: "warn",
+          event: "demo.seed.embeddings_failed",
+          userId: USER,
+          error: String(err),
+        })
+      );
+    }
+  }
 }
 
 /**
