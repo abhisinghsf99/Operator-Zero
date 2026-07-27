@@ -23,6 +23,8 @@ import { writeActivity } from "@/lib/workflows/activity";
 import {
   shopifyProducts,
   shopifyProductVariants,
+  shopifyPages,
+  shopifyRedirects,
 } from "@/lib/db/schema/shopify-mirror";
 import { activityEntries } from "@/lib/db/schema";
 import { eq, and, isNull } from "drizzle-orm";
@@ -649,6 +651,695 @@ export async function updateInventory(
     .limit(1);
 
   // Backfill after_state onto the activity_entries row inserted above (T-sgu-01, T-sgu-02).
+  await backfillAfterState(userId, idempotency_key, afterRow ?? null);
+
+  return {
+    before_state,
+    after_state: afterRow ?? null,
+    idempotency_key,
+    skipped: false,
+  };
+}
+
+// ─── Image alt text update ────────────────────────────────────────────────────
+
+interface ProductImageAltUpdateInput {
+  product_gid: string;
+  image_id: string;
+  alt_text: string;
+}
+
+/**
+ * Idempotent product-image alt-text update (WS4).
+ *
+ * The shopify_products mirror has no dedicated image/alt column, so the
+ * SIMULATION branch touches the product row's sync timestamps (so the mirror
+ * write is real and observable) and records the actual alt text on the
+ * activity_entries row's after_state via backfillAfterState — that is the
+ * durable record of what alt text was set for which image.
+ *
+ * Real branch: Shopify's ProductInput has no media/alt field in API 2024-10+;
+ * alt text is set via the `fileUpdate` mutation against the image's file GID.
+ */
+export async function updateProductImageAlt(
+  userId: string,
+  input: ProductImageAltUpdateInput,
+  now: Date = new Date()
+): Promise<MutationResult<typeof shopifyProducts.$inferSelect>> {
+  const idempotency_key = buildIdempotencyKey(
+    userId,
+    "update_image_alt",
+    input.product_gid,
+    now
+  );
+
+  const [beforeRow] = await serviceDb
+    .select()
+    .from(shopifyProducts)
+    .where(
+      and(
+        eq(shopifyProducts.user_id, userId),
+        eq(shopifyProducts.product_gid, input.product_gid)
+      )
+    )
+    .limit(1);
+  const before_state = beforeRow ?? null;
+
+  await writeActivity(userId, {
+    workflow_run_id: null,
+    step_id: idempotency_key,
+    action_type: "update_image_alt",
+    summary: `Updating image alt text for product ${input.product_gid}`,
+    result: "success",
+    before_state,
+    target_type: "product",
+    target_id: input.product_gid,
+    is_revertable: true,
+  });
+
+  const adapter = new ShopifyAdapter(userId);
+  const afterStateForActivity = {
+    product_gid: input.product_gid,
+    image_id: input.image_id,
+    alt_text: input.alt_text,
+  };
+
+  // Shared upsert used by both branches — touches sync timestamps since the
+  // mirror has no column for image alt text itself.
+  async function touchProductSync(syncNow: Date): Promise<void> {
+    await serviceDb
+      .insert(shopifyProducts)
+      .values({
+        user_id: userId,
+        product_gid: input.product_gid,
+        title: before_state?.title ?? null,
+        body_html: before_state?.body_html ?? null,
+        vendor: before_state?.vendor ?? null,
+        product_type: before_state?.product_type ?? null,
+        status: before_state?.status ?? null,
+        tags: before_state?.tags ?? [],
+        meta_title: before_state?.meta_title ?? null,
+        meta_description: before_state?.meta_description ?? null,
+        shopify_created_at: before_state?.shopify_created_at ?? null,
+        shopify_updated_at: syncNow,
+        last_synced_at: syncNow,
+      })
+      .onConflictDoUpdate({
+        target: [shopifyProducts.user_id, shopifyProducts.product_gid],
+        set: { shopify_updated_at: syncNow, last_synced_at: syncNow },
+      });
+  }
+
+  if (await adapter.isSimulated()) {
+    const syncNow = new Date();
+    await touchProductSync(syncNow);
+
+    const [afterRow] = await serviceDb
+      .select()
+      .from(shopifyProducts)
+      .where(
+        and(
+          eq(shopifyProducts.user_id, userId),
+          eq(shopifyProducts.product_gid, input.product_gid)
+        )
+      )
+      .limit(1);
+
+    await backfillAfterState(userId, idempotency_key, afterStateForActivity);
+
+    return {
+      before_state,
+      after_state: afterRow ?? null,
+      idempotency_key,
+      skipped: false,
+    };
+  }
+
+  // Real branch — fileUpdate mutation against the image's file GID.
+  const mutationData = await adapter.shopifyGraphQL<{
+    fileUpdate: {
+      files: Array<{ id: string }>;
+      userErrors: Array<{ field: string[] | null; message: string }>;
+    };
+  }>(
+    `mutation UpdateFileAlt($files: [FileUpdateInput!]!) {
+      fileUpdate(files: $files) {
+        files { id }
+        userErrors { field message }
+      }
+    }`,
+    { files: [{ id: input.image_id, alt: input.alt_text }] }
+  );
+
+  if (mutationData.fileUpdate.userErrors.length > 0) {
+    throw new Error(
+      `Shopify fileUpdate failed: ${mutationData.fileUpdate.userErrors
+        .map((e) => e.message)
+        .join("; ")}`
+    );
+  }
+
+  const syncNow = new Date();
+  await touchProductSync(syncNow);
+
+  const [afterRow] = await serviceDb
+    .select()
+    .from(shopifyProducts)
+    .where(
+      and(
+        eq(shopifyProducts.user_id, userId),
+        eq(shopifyProducts.product_gid, input.product_gid)
+      )
+    )
+    .limit(1);
+
+  await backfillAfterState(userId, idempotency_key, afterStateForActivity);
+
+  return {
+    before_state,
+    after_state: afterRow ?? null,
+    idempotency_key,
+    skipped: false,
+  };
+}
+
+// ─── Variant price update ─────────────────────────────────────────────────────
+
+interface VariantPriceUpdateInput {
+  variant_gid: string;
+  price: number;
+}
+
+/**
+ * Idempotent product-variant price update (WS4).
+ *
+ * Real branch uses productVariantsBulkUpdate — the single-variant
+ * productVariantUpdate mutation was removed from the Shopify Admin API in
+ * 2024-04+. productId is resolved from the mirror's before_state (the variant
+ * must already be synced); throws a clear error otherwise.
+ */
+export async function updateVariantPrice(
+  userId: string,
+  input: VariantPriceUpdateInput,
+  now: Date = new Date()
+): Promise<MutationResult<typeof shopifyProductVariants.$inferSelect>> {
+  const idempotency_key = buildIdempotencyKey(
+    userId,
+    "update_price",
+    input.variant_gid,
+    now
+  );
+
+  const [beforeRow] = await serviceDb
+    .select()
+    .from(shopifyProductVariants)
+    .where(
+      and(
+        eq(shopifyProductVariants.user_id, userId),
+        eq(shopifyProductVariants.variant_gid, input.variant_gid)
+      )
+    )
+    .limit(1);
+  const before_state = beforeRow ?? null;
+
+  await writeActivity(userId, {
+    workflow_run_id: null,
+    step_id: idempotency_key,
+    action_type: "update_price",
+    summary: `Updating price for variant ${input.variant_gid}`,
+    result: "success",
+    before_state,
+    target_type: "product_variant",
+    target_id: input.variant_gid,
+    is_revertable: true,
+  });
+
+  const adapter = new ShopifyAdapter(userId);
+  const priceStr = input.price.toFixed(2);
+
+  if (await adapter.isSimulated()) {
+    const syncNow = new Date();
+    await serviceDb
+      .insert(shopifyProductVariants)
+      .values({
+        user_id: userId,
+        variant_gid: input.variant_gid,
+        product_gid: (before_state?.product_gid as string | undefined) ?? "",
+        price: priceStr,
+        inventory_qty: before_state?.inventory_qty ?? null,
+        sku: before_state?.sku ?? null,
+        last_synced_at: syncNow,
+      })
+      .onConflictDoUpdate({
+        target: [
+          shopifyProductVariants.user_id,
+          shopifyProductVariants.variant_gid,
+        ],
+        set: { price: priceStr, last_synced_at: syncNow },
+      });
+
+    const [afterRow] = await serviceDb
+      .select()
+      .from(shopifyProductVariants)
+      .where(
+        and(
+          eq(shopifyProductVariants.user_id, userId),
+          eq(shopifyProductVariants.variant_gid, input.variant_gid)
+        )
+      )
+      .limit(1);
+
+    await backfillAfterState(userId, idempotency_key, afterRow ?? null);
+
+    return {
+      before_state,
+      after_state: afterRow ?? null,
+      idempotency_key,
+      skipped: false,
+    };
+  }
+
+  const productId = before_state?.product_gid;
+  if (!productId) {
+    throw new Error(
+      `Cannot update price for variant ${input.variant_gid}: no mirrored product_gid — sync the catalog before writing`
+    );
+  }
+
+  const mutationData = await adapter.shopifyGraphQL<{
+    productVariantsBulkUpdate: {
+      productVariants: Array<{ id: string; price?: string }>;
+      userErrors: Array<{ field: string[] | null; message: string }>;
+    };
+  }>(
+    `mutation UpdateVariantPrice($productId: ID!, $variants: [ProductVariantsBulkInput!]!) {
+      productVariantsBulkUpdate(productId: $productId, variants: $variants) {
+        productVariants { id price }
+        userErrors { field message }
+      }
+    }`,
+    {
+      productId,
+      variants: [{ id: input.variant_gid, price: priceStr }],
+    }
+  );
+
+  if (mutationData.productVariantsBulkUpdate.userErrors.length > 0) {
+    throw new Error(
+      `Shopify productVariantsBulkUpdate failed: ${mutationData.productVariantsBulkUpdate.userErrors
+        .map((e) => e.message)
+        .join("; ")}`
+    );
+  }
+
+  const syncNow = new Date();
+  const reReadData = await adapter.shopifyGraphQL<{
+    productVariant: {
+      id: string;
+      price?: string;
+      sku?: string;
+      inventoryQuantity?: number;
+      product?: { id: string };
+    } | null;
+  }>(
+    `query GetVariant($id: ID!) {
+      productVariant(id: $id) {
+        id price sku inventoryQuantity
+        product { id }
+      }
+    }`,
+    { id: input.variant_gid }
+  );
+
+  const v = reReadData.productVariant;
+  if (v) {
+    const resolvedProductGid = v.product?.id ?? productId;
+    await serviceDb
+      .insert(shopifyProductVariants)
+      .values({
+        user_id: userId,
+        variant_gid: v.id,
+        product_gid: resolvedProductGid as string,
+        price: v.price ?? priceStr,
+        inventory_qty: v.inventoryQuantity ?? before_state?.inventory_qty ?? null,
+        sku: v.sku ?? before_state?.sku ?? null,
+        last_synced_at: syncNow,
+      })
+      .onConflictDoUpdate({
+        target: [
+          shopifyProductVariants.user_id,
+          shopifyProductVariants.variant_gid,
+        ],
+        set: {
+          price: v.price ?? priceStr,
+          last_synced_at: syncNow,
+        },
+      });
+  }
+
+  const [afterRow] = await serviceDb
+    .select()
+    .from(shopifyProductVariants)
+    .where(
+      and(
+        eq(shopifyProductVariants.user_id, userId),
+        eq(shopifyProductVariants.variant_gid, input.variant_gid)
+      )
+    )
+    .limit(1);
+
+  await backfillAfterState(userId, idempotency_key, afterRow ?? null);
+
+  return {
+    before_state,
+    after_state: afterRow ?? null,
+    idempotency_key,
+    skipped: false,
+  };
+}
+
+// ─── Redirect creation ────────────────────────────────────────────────────────
+
+/**
+ * Deterministic djb2-style hash → a short base36 slug. Used to derive a stable
+ * sandbox redirect_id from `path` so repeated calls for the same path upsert
+ * rather than duplicate (no external hashing dependency needed).
+ */
+function stableSlugFromPath(path: string): string {
+  let hash = 5381;
+  for (let i = 0; i < path.length; i++) {
+    hash = (hash * 33) ^ path.charCodeAt(i);
+  }
+  return (hash >>> 0).toString(36);
+}
+
+interface RedirectCreateInput {
+  path: string;
+  target: string;
+}
+
+/**
+ * Idempotent URL redirect creation (WS4).
+ *
+ * The sandbox redirect_id is a deterministic slug of `path` so re-running the
+ * same creation upserts instead of duplicating rows.
+ */
+export async function createRedirect(
+  userId: string,
+  input: RedirectCreateInput,
+  now: Date = new Date()
+): Promise<MutationResult<typeof shopifyRedirects.$inferSelect>> {
+  const idempotency_key = buildIdempotencyKey(
+    userId,
+    "create_redirect",
+    input.path,
+    now
+  );
+
+  const sandboxRedirectId = `sandbox-${stableSlugFromPath(input.path)}`;
+
+  const [beforeRow] = await serviceDb
+    .select()
+    .from(shopifyRedirects)
+    .where(
+      and(
+        eq(shopifyRedirects.user_id, userId),
+        eq(shopifyRedirects.redirect_id, sandboxRedirectId)
+      )
+    )
+    .limit(1);
+  const before_state = beforeRow ?? null;
+
+  await writeActivity(userId, {
+    workflow_run_id: null,
+    step_id: idempotency_key,
+    action_type: "create_redirect",
+    summary: `Creating redirect ${input.path} → ${input.target}`,
+    result: "success",
+    before_state,
+    target_type: "page",
+    target_id: input.path,
+    is_revertable: true,
+  });
+
+  const adapter = new ShopifyAdapter(userId);
+
+  if (await adapter.isSimulated()) {
+    const syncNow = new Date();
+    await serviceDb
+      .insert(shopifyRedirects)
+      .values({
+        user_id: userId,
+        redirect_id: sandboxRedirectId,
+        path: input.path,
+        target: input.target,
+        last_synced_at: syncNow,
+      })
+      .onConflictDoUpdate({
+        target: [shopifyRedirects.user_id, shopifyRedirects.redirect_id],
+        set: { path: input.path, target: input.target, last_synced_at: syncNow },
+      });
+
+    const [afterRow] = await serviceDb
+      .select()
+      .from(shopifyRedirects)
+      .where(
+        and(
+          eq(shopifyRedirects.user_id, userId),
+          eq(shopifyRedirects.redirect_id, sandboxRedirectId)
+        )
+      )
+      .limit(1);
+
+    await backfillAfterState(userId, idempotency_key, afterRow ?? null);
+
+    return {
+      before_state,
+      after_state: afterRow ?? null,
+      idempotency_key,
+      skipped: false,
+    };
+  }
+
+  const mutationData = await adapter.shopifyGraphQL<{
+    urlRedirectCreate: {
+      urlRedirect: { id: string; path: string; target: string } | null;
+      userErrors: Array<{ field: string[] | null; message: string }>;
+    };
+  }>(
+    `mutation CreateRedirect($urlRedirect: UrlRedirectInput!) {
+      urlRedirectCreate(urlRedirect: $urlRedirect) {
+        urlRedirect { id path target }
+        userErrors { field message }
+      }
+    }`,
+    { urlRedirect: { path: input.path, target: input.target } }
+  );
+
+  if (mutationData.urlRedirectCreate.userErrors.length > 0) {
+    throw new Error(
+      `Shopify urlRedirectCreate failed: ${mutationData.urlRedirectCreate.userErrors
+        .map((e) => e.message)
+        .join("; ")}`
+    );
+  }
+
+  const created = mutationData.urlRedirectCreate.urlRedirect;
+  const syncNow = new Date();
+  const redirectId = created?.id ?? sandboxRedirectId;
+
+  if (created) {
+    await serviceDb
+      .insert(shopifyRedirects)
+      .values({
+        user_id: userId,
+        redirect_id: created.id,
+        path: created.path,
+        target: created.target,
+        last_synced_at: syncNow,
+      })
+      .onConflictDoUpdate({
+        target: [shopifyRedirects.user_id, shopifyRedirects.redirect_id],
+        set: { path: created.path, target: created.target, last_synced_at: syncNow },
+      });
+  }
+
+  const [afterRow] = await serviceDb
+    .select()
+    .from(shopifyRedirects)
+    .where(
+      and(
+        eq(shopifyRedirects.user_id, userId),
+        eq(shopifyRedirects.redirect_id, redirectId)
+      )
+    )
+    .limit(1);
+
+  await backfillAfterState(userId, idempotency_key, afterRow ?? null);
+
+  return {
+    before_state,
+    after_state: afterRow ?? null,
+    idempotency_key,
+    skipped: false,
+  };
+}
+
+// ─── Page content update ──────────────────────────────────────────────────────
+
+interface PageContentUpdateInput {
+  page_gid: string;
+  body_html: string;
+  title?: string;
+}
+
+/**
+ * Idempotent Shopify page content update (WS4).
+ */
+export async function updatePageContent(
+  userId: string,
+  input: PageContentUpdateInput,
+  now: Date = new Date()
+): Promise<MutationResult<typeof shopifyPages.$inferSelect>> {
+  const idempotency_key = buildIdempotencyKey(
+    userId,
+    "update_page_content",
+    input.page_gid,
+    now
+  );
+
+  const [beforeRow] = await serviceDb
+    .select()
+    .from(shopifyPages)
+    .where(
+      and(
+        eq(shopifyPages.user_id, userId),
+        eq(shopifyPages.page_gid, input.page_gid)
+      )
+    )
+    .limit(1);
+  const before_state = beforeRow ?? null;
+
+  await writeActivity(userId, {
+    workflow_run_id: null,
+    step_id: idempotency_key,
+    action_type: "update_page_content",
+    summary: `Updating page content for ${input.page_gid}`,
+    result: "success",
+    before_state,
+    target_type: "page",
+    target_id: input.page_gid,
+    is_revertable: true,
+  });
+
+  const adapter = new ShopifyAdapter(userId);
+
+  if (await adapter.isSimulated()) {
+    const syncNow = new Date();
+    await serviceDb
+      .insert(shopifyPages)
+      .values({
+        user_id: userId,
+        page_gid: input.page_gid,
+        title: input.title ?? before_state?.title ?? null,
+        body_html: input.body_html,
+        handle: before_state?.handle ?? null,
+        last_synced_at: syncNow,
+      })
+      .onConflictDoUpdate({
+        target: [shopifyPages.user_id, shopifyPages.page_gid],
+        set: {
+          ...(input.title !== undefined ? { title: input.title } : {}),
+          body_html: input.body_html,
+          last_synced_at: syncNow,
+        },
+      });
+
+    const [afterRow] = await serviceDb
+      .select()
+      .from(shopifyPages)
+      .where(
+        and(
+          eq(shopifyPages.user_id, userId),
+          eq(shopifyPages.page_gid, input.page_gid)
+        )
+      )
+      .limit(1);
+
+    await backfillAfterState(userId, idempotency_key, afterRow ?? null);
+
+    return {
+      before_state,
+      after_state: afterRow ?? null,
+      idempotency_key,
+      skipped: false,
+    };
+  }
+
+  const mutationData = await adapter.shopifyGraphQL<{
+    pageUpdate: {
+      page: { id: string; title?: string; body?: string; handle?: string } | null;
+      userErrors: Array<{ field: string[] | null; message: string }>;
+    };
+  }>(
+    `mutation UpdatePage($id: ID!, $page: PageUpdateInput!) {
+      pageUpdate(id: $id, page: $page) {
+        page { id title body handle }
+        userErrors { field message }
+      }
+    }`,
+    {
+      id: input.page_gid,
+      page: {
+        body: input.body_html,
+        ...(input.title !== undefined ? { title: input.title } : {}),
+      },
+    }
+  );
+
+  if (mutationData.pageUpdate.userErrors.length > 0) {
+    throw new Error(
+      `Shopify pageUpdate failed: ${mutationData.pageUpdate.userErrors
+        .map((e) => e.message)
+        .join("; ")}`
+    );
+  }
+
+  const p = mutationData.pageUpdate.page;
+  const syncNow = new Date();
+  if (p) {
+    await serviceDb
+      .insert(shopifyPages)
+      .values({
+        user_id: userId,
+        page_gid: p.id,
+        title: p.title ?? null,
+        body_html: p.body ?? null,
+        handle: p.handle ?? null,
+        last_synced_at: syncNow,
+      })
+      .onConflictDoUpdate({
+        target: [shopifyPages.user_id, shopifyPages.page_gid],
+        set: {
+          title: p.title ?? null,
+          body_html: p.body ?? null,
+          handle: p.handle ?? null,
+          last_synced_at: syncNow,
+        },
+      });
+  }
+
+  const [afterRow] = await serviceDb
+    .select()
+    .from(shopifyPages)
+    .where(
+      and(
+        eq(shopifyPages.user_id, userId),
+        eq(shopifyPages.page_gid, input.page_gid)
+      )
+    )
+    .limit(1);
+
   await backfillAfterState(userId, idempotency_key, afterRow ?? null);
 
   return {

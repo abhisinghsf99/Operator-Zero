@@ -182,23 +182,30 @@ export const shopifyUpdateProductImageAlt: ToolDefinition = {
   description: "Update the alt text for a Shopify product image (accessibility + SEO).",
   inputSchema: updateImageAltSchema,
   approvalRequired: defaultApprovalRequired,
-  async execute(input, _ctx: AgentContext): Promise<ToolResult> {
+  async execute(input, ctx: AgentContext): Promise<ToolResult> {
     const parsed = updateImageAltSchema.safeParse(input);
     if (!parsed.success) {
       return { type: "tool_result", is_error: true, content: formatZodError(parsed.error) };
     }
-    // Alt text updates require a separate Shopify productImageUpdate mutation
-    // Wired in full implementation; returns ok for now with idempotency key
-    return {
-      type: "tool_result",
-      is_error: false,
-      content: JSON.stringify({
-        ok: true,
-        note: "Image alt update queued",
+    try {
+      const { updateProductImageAlt } = await import("@/lib/integrations/shopify/mutations");
+      const result = await updateProductImageAlt(ctx.userId, {
         product_gid: parsed.data.product_gid,
         image_id: parsed.data.image_id,
-      }),
-    };
+        alt_text: parsed.data.alt_text,
+      });
+      return {
+        type: "tool_result",
+        is_error: false,
+        content: JSON.stringify({ ok: true, idempotency_key: result.idempotency_key }),
+      };
+    } catch (err) {
+      return {
+        type: "tool_result",
+        is_error: true,
+        content: `Failed to update image alt text: ${String(err)}`,
+      };
+    }
   },
 };
 
@@ -256,22 +263,29 @@ export const shopifyUpdateVariantPrice: ToolDefinition = {
     "Update a product variant price. HIGH STAKES — defaults to L2 approval.",
   inputSchema: updateVariantPriceSchema,
   approvalRequired: defaultApprovalRequired,
-  async execute(input, _ctx: AgentContext): Promise<ToolResult> {
+  async execute(input, ctx: AgentContext): Promise<ToolResult> {
     const parsed = updateVariantPriceSchema.safeParse(input);
     if (!parsed.success) {
       return { type: "tool_result", is_error: true, content: formatZodError(parsed.error) };
     }
-    // Price updates require a productVariantUpdate mutation — wired in full implementation
-    return {
-      type: "tool_result",
-      is_error: false,
-      content: JSON.stringify({
-        ok: true,
-        note: "Price update queued",
+    try {
+      const { updateVariantPrice } = await import("@/lib/integrations/shopify/mutations");
+      const result = await updateVariantPrice(ctx.userId, {
         variant_gid: parsed.data.variant_gid,
         price: parsed.data.price,
-      }),
-    };
+      });
+      return {
+        type: "tool_result",
+        is_error: false,
+        content: JSON.stringify({ ok: true, idempotency_key: result.idempotency_key }),
+      };
+    } catch (err) {
+      return {
+        type: "tool_result",
+        is_error: true,
+        content: `Failed to update variant price: ${String(err)}`,
+      };
+    }
   },
 };
 
@@ -325,21 +339,29 @@ export const shopifyCreateRedirect: ToolDefinition = {
   description: "Create a URL redirect in Shopify (e.g., old product URLs to new ones).",
   inputSchema: createRedirectSchema,
   approvalRequired: defaultApprovalRequired,
-  async execute(input, _ctx: AgentContext): Promise<ToolResult> {
+  async execute(input, ctx: AgentContext): Promise<ToolResult> {
     const parsed = createRedirectSchema.safeParse(input);
     if (!parsed.success) {
       return { type: "tool_result", is_error: true, content: formatZodError(parsed.error) };
     }
-    return {
-      type: "tool_result",
-      is_error: false,
-      content: JSON.stringify({
-        ok: true,
-        note: "Redirect creation queued",
+    try {
+      const { createRedirect } = await import("@/lib/integrations/shopify/mutations");
+      const result = await createRedirect(ctx.userId, {
         path: parsed.data.path,
         target: parsed.data.target,
-      }),
-    };
+      });
+      return {
+        type: "tool_result",
+        is_error: false,
+        content: JSON.stringify({ ok: true, idempotency_key: result.idempotency_key }),
+      };
+    } catch (err) {
+      return {
+        type: "tool_result",
+        is_error: true,
+        content: `Failed to create redirect: ${String(err)}`,
+      };
+    }
   },
 };
 
@@ -356,20 +378,30 @@ export const shopifyUpdatePageContent: ToolDefinition = {
   description: "Update the HTML content (and optionally title) of a Shopify page.",
   inputSchema: updatePageContentSchema,
   approvalRequired: defaultApprovalRequired,
-  async execute(input, _ctx: AgentContext): Promise<ToolResult> {
+  async execute(input, ctx: AgentContext): Promise<ToolResult> {
     const parsed = updatePageContentSchema.safeParse(input);
     if (!parsed.success) {
       return { type: "tool_result", is_error: true, content: formatZodError(parsed.error) };
     }
-    return {
-      type: "tool_result",
-      is_error: false,
-      content: JSON.stringify({
-        ok: true,
-        note: "Page content update queued",
+    try {
+      const { updatePageContent } = await import("@/lib/integrations/shopify/mutations");
+      const result = await updatePageContent(ctx.userId, {
         page_gid: parsed.data.page_gid,
-      }),
-    };
+        body_html: parsed.data.body_html,
+        title: parsed.data.title,
+      });
+      return {
+        type: "tool_result",
+        is_error: false,
+        content: JSON.stringify({ ok: true, idempotency_key: result.idempotency_key }),
+      };
+    } catch (err) {
+      return {
+        type: "tool_result",
+        is_error: true,
+        content: `Failed to update page content: ${String(err)}`,
+      };
+    }
   },
 };
 
@@ -386,20 +418,30 @@ export const gmailDraftReply: ToolDefinition = {
   description: "Create a Gmail draft reply to a customer support thread.",
   inputSchema: gmailDraftReplySchema,
   approvalRequired: defaultApprovalRequired,
-  async execute(input, _ctx: AgentContext): Promise<ToolResult> {
+  async execute(input, ctx: AgentContext): Promise<ToolResult> {
     const parsed = gmailDraftReplySchema.safeParse(input);
     if (!parsed.success) {
       return { type: "tool_result", is_error: true, content: formatZodError(parsed.error) };
     }
-    return {
-      type: "tool_result",
-      is_error: false,
-      content: JSON.stringify({
-        ok: true,
-        note: "Draft created",
+    try {
+      const { createDraft } = await import("@/lib/integrations/gmail/client");
+      const result = await createDraft(ctx.userId, {
         thread_id: parsed.data.thread_id,
-      }),
-    };
+        body: parsed.data.body,
+        subject: parsed.data.subject,
+      });
+      return {
+        type: "tool_result",
+        is_error: false,
+        content: JSON.stringify({ ok: true, idempotency_key: result.idempotency_key }),
+      };
+    } catch (err) {
+      return {
+        type: "tool_result",
+        is_error: true,
+        content: `Failed to draft reply: ${String(err)}`,
+      };
+    }
   },
 };
 
@@ -418,21 +460,31 @@ export const gmailSendEmail: ToolDefinition = {
     "Send an email reply to a customer support thread. HIGH STAKES — defaults to L2 approval.",
   inputSchema: gmailSendEmailSchema,
   approvalRequired: defaultApprovalRequired,
-  async execute(input, _ctx: AgentContext): Promise<ToolResult> {
+  async execute(input, ctx: AgentContext): Promise<ToolResult> {
     const parsed = gmailSendEmailSchema.safeParse(input);
     if (!parsed.success) {
       return { type: "tool_result", is_error: true, content: formatZodError(parsed.error) };
     }
-    return {
-      type: "tool_result",
-      is_error: false,
-      content: JSON.stringify({
-        ok: true,
-        note: "Email sent",
+    try {
+      const { sendReply } = await import("@/lib/integrations/gmail/client");
+      const result = await sendReply(ctx.userId, {
         thread_id: parsed.data.thread_id,
+        body: parsed.data.body,
+        subject: parsed.data.subject,
         to: parsed.data.to,
-      }),
-    };
+      });
+      return {
+        type: "tool_result",
+        is_error: false,
+        content: JSON.stringify({ ok: true, idempotency_key: result.idempotency_key }),
+      };
+    } catch (err) {
+      return {
+        type: "tool_result",
+        is_error: true,
+        content: `Failed to send email: ${String(err)}`,
+      };
+    }
   },
 };
 

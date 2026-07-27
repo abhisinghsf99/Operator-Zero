@@ -7,7 +7,7 @@
  *
  * canRevert is a pure function — no mocks needed.
  */
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { canRevert, REVERT_REASON_LABELS } from "@/lib/workflows/revert";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -166,5 +166,181 @@ describe("REVERT_REASON_LABELS", () => {
       expect(REVERT_REASON_LABELS[reason]).toBeTruthy();
       expect(typeof REVERT_REASON_LABELS[reason]).toBe("string");
     }
+  });
+});
+
+// ─── executeRevertEffect — WS10: revert restores before_state for real ───────
+// executeRevertEffect dynamically imports lib/integrations/shopify/mutations
+// inside the branches it needs — mock that module per-test via vi.doMock and
+// re-import lib/workflows/revert fresh (vi.resetModules) so the dynamic import
+// resolves against the mock.
+
+describe("executeRevertEffect — restores before_state through the write path", () => {
+  it("product content restore calls updateProduct with the before_state fields", async () => {
+    vi.resetModules();
+    const updateProductMock = vi.fn().mockResolvedValue({ idempotency_key: "k" });
+    vi.doMock("@/lib/integrations/shopify/mutations", () => ({
+      updateProduct: updateProductMock,
+      updateInventory: vi.fn(),
+      updateVariantPrice: vi.fn(),
+      updatePageContent: vi.fn(),
+    }));
+
+    const { executeRevertEffect } = await import("@/lib/workflows/revert");
+
+    await executeRevertEffect(
+      {
+        action_type: "update_product",
+        target_type: "product",
+        target_id: "gid://shopify/Product/1",
+        before_state: { body_html: "<p>old</p>", meta_title: "Old title" },
+      },
+      "user-1"
+    );
+
+    expect(updateProductMock).toHaveBeenCalledWith(
+      "user-1",
+      expect.objectContaining({
+        product_gid: "gid://shopify/Product/1",
+        body_html: "<p>old</p>",
+        meta_title: "Old title",
+      })
+    );
+  });
+
+  it("inventory restore calls updateInventory", async () => {
+    vi.resetModules();
+    const updateInventoryMock = vi.fn().mockResolvedValue({ idempotency_key: "k" });
+    vi.doMock("@/lib/integrations/shopify/mutations", () => ({
+      updateProduct: vi.fn(),
+      updateInventory: updateInventoryMock,
+      updateVariantPrice: vi.fn(),
+      updatePageContent: vi.fn(),
+    }));
+
+    const { executeRevertEffect } = await import("@/lib/workflows/revert");
+
+    await executeRevertEffect(
+      {
+        action_type: "update_inventory",
+        target_type: "product_variant",
+        target_id: "gid://shopify/ProductVariant/1",
+        before_state: { inventory_qty: 12 },
+      },
+      "user-1"
+    );
+
+    expect(updateInventoryMock).toHaveBeenCalledWith("user-1", {
+      variant_gid: "gid://shopify/ProductVariant/1",
+      inventory_qty: 12,
+    });
+  });
+
+  it("price restore calls updateVariantPrice", async () => {
+    vi.resetModules();
+    const updateVariantPriceMock = vi.fn().mockResolvedValue({ idempotency_key: "k" });
+    vi.doMock("@/lib/integrations/shopify/mutations", () => ({
+      updateProduct: vi.fn(),
+      updateInventory: vi.fn(),
+      updateVariantPrice: updateVariantPriceMock,
+      updatePageContent: vi.fn(),
+    }));
+
+    const { executeRevertEffect } = await import("@/lib/workflows/revert");
+
+    await executeRevertEffect(
+      {
+        action_type: "update_price",
+        target_type: "product_variant",
+        target_id: "gid://shopify/ProductVariant/1",
+        before_state: { price: "19.99" },
+      },
+      "user-1"
+    );
+
+    expect(updateVariantPriceMock).toHaveBeenCalledWith("user-1", {
+      variant_gid: "gid://shopify/ProductVariant/1",
+      price: 19.99,
+    });
+  });
+
+  it("page content restore calls updatePageContent", async () => {
+    vi.resetModules();
+    const updatePageContentMock = vi.fn().mockResolvedValue({ idempotency_key: "k" });
+    vi.doMock("@/lib/integrations/shopify/mutations", () => ({
+      updateProduct: vi.fn(),
+      updateInventory: vi.fn(),
+      updateVariantPrice: vi.fn(),
+      updatePageContent: updatePageContentMock,
+    }));
+
+    const { executeRevertEffect } = await import("@/lib/workflows/revert");
+
+    await executeRevertEffect(
+      {
+        action_type: "update_page_content",
+        target_type: "page",
+        target_id: "gid://shopify/Page/1",
+        before_state: { body_html: "<p>old</p>", title: "Shipping" },
+      },
+      "user-1"
+    );
+
+    expect(updatePageContentMock).toHaveBeenCalledWith("user-1", {
+      page_gid: "gid://shopify/Page/1",
+      body_html: "<p>old</p>",
+      title: "Shipping",
+    });
+  });
+
+  it("sent-email is a no-op — does not import the mutations module", async () => {
+    vi.resetModules();
+    const { executeRevertEffect } = await import("@/lib/workflows/revert");
+
+    await expect(
+      executeRevertEffect(
+        {
+          action_type: "send_email_reply",
+          target_type: "email",
+          target_id: "thread-1",
+          before_state: null,
+        },
+        "user-1"
+      )
+    ).resolves.toBeUndefined();
+  });
+
+  it("empty before_state throws instead of a silent no-op", async () => {
+    vi.resetModules();
+    const { executeRevertEffect } = await import("@/lib/workflows/revert");
+
+    await expect(
+      executeRevertEffect(
+        {
+          action_type: "update_product",
+          target_type: "product",
+          target_id: "gid://shopify/Product/1",
+          before_state: null,
+        },
+        "user-1"
+      )
+    ).rejects.toThrow(/no before_state recorded/);
+  });
+
+  it("unmatched action_type/before_state shape throws instead of a silent no-op", async () => {
+    vi.resetModules();
+    const { executeRevertEffect } = await import("@/lib/workflows/revert");
+
+    await expect(
+      executeRevertEffect(
+        {
+          action_type: "some_unhandled_action",
+          target_type: "unknown",
+          target_id: "id-1",
+          before_state: { unrelated_field: 1 },
+        },
+        "user-1"
+      )
+    ).rejects.toThrow(/no matching revert path/);
   });
 });

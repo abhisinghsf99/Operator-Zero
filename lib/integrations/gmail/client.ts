@@ -19,8 +19,14 @@ import { google } from "googleapis";
 import { encryptToken, decryptToken } from "@/lib/integrations/crypto";
 import { serviceDb } from "@/lib/db/client";
 import { integrations } from "@/lib/db/schema";
+import { gmailThreads, gmailMessages } from "@/lib/db/schema/gmail-mirror";
 import { and, eq } from "drizzle-orm";
 import { inngest } from "@/lib/inngest/client";
+import { writeActivity } from "@/lib/workflows/activity";
+// buildIdempotencyKey is provider-agnostic (userId:actionType:targetId:15min-bucket) —
+// reused here rather than duplicating the bucket logic.
+import { buildIdempotencyKey } from "@/lib/integrations/shopify/mutations";
+import { SANDBOX_SENTINEL_TOKEN } from "@/lib/demo/constants";
 
 /** Gmail scope required for reading + modifying messages */
 const GMAIL_SCOPE = "https://www.googleapis.com/auth/gmail.modify";
@@ -269,4 +275,227 @@ export async function createGmailClient(userId: string) {
   auth.setCredentials({ access_token: accessToken });
 
   return google.gmail({ version: "v1", auth });
+}
+
+// ─── Gmail write path (WS4) ────────────────────────────────────────────────────
+
+interface GmailWriteInput {
+  thread_id: string;
+  body: string;
+  subject?: string;
+  to?: string;
+}
+
+interface GmailWriteResult {
+  ok: true;
+  simulated: boolean;
+  gmail_message_id: string;
+  idempotency_key: string;
+}
+
+/** RFC 2822 plain-text message, base64url-encoded per the Gmail API `raw` field. */
+function buildRfc2822Message(opts: {
+  to: string;
+  subject: string;
+  body: string;
+}): string {
+  const lines = [
+    `To: ${opts.to}`,
+    `Subject: ${opts.subject}`,
+    "Content-Type: text/plain; charset=utf-8",
+    "",
+    opts.body,
+  ];
+  return lines.join("\r\n");
+}
+
+function base64UrlEncode(input: string): string {
+  return Buffer.from(input, "utf-8")
+    .toString("base64")
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/, "");
+}
+
+/**
+ * createDraft — create a Gmail draft reply on a customer support thread.
+ *
+ * SANDBOX (sentinel token): inserts an outbound gmail_messages row into the
+ * mirror instead of calling the Gmail API — same mirror-simulation pattern as
+ * lib/integrations/shopify/mutations.ts. REAL: builds an RFC 2822 message and
+ * calls gmail.users.drafts.create(). Code-complete but exercised only when
+ * GOOGLE_CLIENT_ID/SECRET are configured (not available locally).
+ */
+export async function createDraft(
+  userId: string,
+  input: GmailWriteInput
+): Promise<GmailWriteResult> {
+  const idempotency_key = buildIdempotencyKey(userId, "send_email_draft", input.thread_id);
+
+  await writeActivity(userId, {
+    workflow_run_id: null,
+    step_id: idempotency_key,
+    action_type: "send_email_draft",
+    summary: `Drafting reply on thread ${input.thread_id}`,
+    result: "success",
+    target_type: "email",
+    target_id: input.thread_id,
+    // canRevert() already blocks send_email_draft/send_email_reply (D-11: never
+    // revertable) — is_revertable:false here is defence in depth.
+    is_revertable: false,
+  });
+
+  const [integrationRow] = await serviceDb
+    .select({ tok: integrations.access_token_encrypted })
+    .from(integrations)
+    .where(and(eq(integrations.user_id, userId), eq(integrations.provider, "gmail")))
+    .limit(1);
+
+  if (integrationRow?.tok === SANDBOX_SENTINEL_TOKEN) {
+    const [threadRow] = await serviceDb
+      .select()
+      .from(gmailThreads)
+      .where(
+        and(eq(gmailThreads.user_id, userId), eq(gmailThreads.gmail_thread_id, input.thread_id))
+      )
+      .limit(1);
+
+    if (!threadRow) {
+      throw new Error(`Gmail thread not found: ${input.thread_id}`);
+    }
+
+    const recipient = input.to ?? threadRow.participants?.[0] ?? "";
+    const subject = input.subject ?? (threadRow.subject ? `Re: ${threadRow.subject}` : "Re:");
+    const gmailMessageId = `sandbox-${idempotency_key.replace(/[^a-zA-Z0-9]/g, "-")}`;
+    const syncNow = new Date();
+
+    await serviceDb
+      .insert(gmailMessages)
+      .values({
+        user_id: userId,
+        gmail_message_id: gmailMessageId,
+        gmail_thread_id: input.thread_id,
+        from_address: "me",
+        to_addresses: [recipient],
+        subject,
+        body_text: input.body,
+        direction: "outbound",
+        gmail_received_at: syncNow,
+        last_synced_at: syncNow,
+      })
+      .onConflictDoUpdate({
+        target: [gmailMessages.user_id, gmailMessages.gmail_message_id],
+        set: { body_text: input.body, last_synced_at: syncNow },
+      });
+
+    return { ok: true, simulated: true, gmail_message_id: gmailMessageId, idempotency_key };
+  }
+
+  // REAL branch — code-complete; exercised only when GOOGLE_CLIENT_ID/SECRET are configured.
+  const gmail = await createGmailClient(userId);
+  const raw = base64UrlEncode(
+    buildRfc2822Message({
+      to: input.to ?? "",
+      subject: input.subject ?? "Re:",
+      body: input.body,
+    })
+  );
+  const draft = await gmail.users.drafts.create({
+    userId: "me",
+    requestBody: { message: { threadId: input.thread_id, raw } },
+  });
+
+  return {
+    ok: true,
+    simulated: false,
+    gmail_message_id: draft.data.message?.id ?? draft.data.id ?? "unknown",
+    idempotency_key,
+  };
+}
+
+/**
+ * sendReply — send an email reply on a customer support thread.
+ *
+ * Same SANDBOX / REAL split as createDraft above, using gmail.users.messages.send()
+ * on the REAL branch instead of drafts.create().
+ */
+export async function sendReply(
+  userId: string,
+  input: { thread_id: string; body: string; subject?: string; to: string }
+): Promise<GmailWriteResult> {
+  const idempotency_key = buildIdempotencyKey(userId, "send_email_reply", input.thread_id);
+
+  const [beforeThread] = await serviceDb
+    .select()
+    .from(gmailThreads)
+    .where(
+      and(eq(gmailThreads.user_id, userId), eq(gmailThreads.gmail_thread_id, input.thread_id))
+    )
+    .limit(1);
+
+  await writeActivity(userId, {
+    workflow_run_id: null,
+    step_id: idempotency_key,
+    action_type: "send_email_reply",
+    summary: `Sending reply on thread ${input.thread_id} to ${input.to}`,
+    result: "success",
+    target_type: "email",
+    target_id: input.thread_id,
+    is_revertable: false,
+  });
+
+  const [integrationRow] = await serviceDb
+    .select({ tok: integrations.access_token_encrypted })
+    .from(integrations)
+    .where(and(eq(integrations.user_id, userId), eq(integrations.provider, "gmail")))
+    .limit(1);
+
+  const subjectLine = input.subject ?? (beforeThread?.subject ? `Re: ${beforeThread.subject}` : "Re:");
+
+  if (integrationRow?.tok === SANDBOX_SENTINEL_TOKEN) {
+    if (!beforeThread) {
+      throw new Error(`Gmail thread not found: ${input.thread_id}`);
+    }
+
+    const gmailMessageId = `sandbox-${idempotency_key.replace(/[^a-zA-Z0-9]/g, "-")}`;
+    const syncNow = new Date();
+
+    await serviceDb
+      .insert(gmailMessages)
+      .values({
+        user_id: userId,
+        gmail_message_id: gmailMessageId,
+        gmail_thread_id: input.thread_id,
+        from_address: "me",
+        to_addresses: [input.to],
+        subject: subjectLine,
+        body_text: input.body,
+        direction: "outbound",
+        gmail_received_at: syncNow,
+        last_synced_at: syncNow,
+      })
+      .onConflictDoUpdate({
+        target: [gmailMessages.user_id, gmailMessages.gmail_message_id],
+        set: { body_text: input.body, last_synced_at: syncNow },
+      });
+
+    return { ok: true, simulated: true, gmail_message_id: gmailMessageId, idempotency_key };
+  }
+
+  // REAL branch — code-complete; exercised only when GOOGLE_CLIENT_ID/SECRET are configured.
+  const gmail = await createGmailClient(userId);
+  const raw = base64UrlEncode(
+    buildRfc2822Message({ to: input.to, subject: subjectLine, body: input.body })
+  );
+  const sent = await gmail.users.messages.send({
+    userId: "me",
+    requestBody: { threadId: input.thread_id, raw },
+  });
+
+  return {
+    ok: true,
+    simulated: false,
+    gmail_message_id: sent.data.id ?? "unknown",
+    idempotency_key,
+  };
 }
