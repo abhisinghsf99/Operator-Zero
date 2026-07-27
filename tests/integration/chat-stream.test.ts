@@ -233,7 +233,7 @@ describe("CONV-01 — SSE streaming route emits tokens", () => {
     expect(resp.headers.get("content-type")).toContain("text/event-stream");
   });
 
-  it("emits SSE data events with { text: string } shape", async () => {
+  it("emits a leading message_id event, then SSE data events with { text: string } shape", async () => {
     const { POST } = await import("@/app/api/chat/[threadId]/send/route");
     const req = new Request("http://localhost/api/chat/thread-123/send", {
       method: "POST",
@@ -263,10 +263,16 @@ describe("CONV-01 — SSE streaming route emits tokens", () => {
       .map((l) => l.slice(5).trim())
       .filter((l) => l.length > 0 && l !== "[DONE]");
 
-    // At least one text chunk should be present
     expect(dataLines.length).toBeGreaterThan(0);
 
-    for (const line of dataLines) {
+    // WS7.2 — the FIRST event is the real assistant message id, so the client
+    // can swap its optimistic id before any text arrives.
+    const firstEvent = JSON.parse(dataLines[0]!);
+    expect(firstEvent).toHaveProperty("message_id");
+    expect(typeof firstEvent.message_id).toBe("string");
+
+    // Every event after the leading message_id is a { text } delta.
+    for (const line of dataLines.slice(1)) {
       const parsed = JSON.parse(line);
       expect(parsed).toHaveProperty("text");
       expect(typeof parsed.text).toBe("string");

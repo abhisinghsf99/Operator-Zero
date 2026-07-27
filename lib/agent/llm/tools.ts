@@ -2,7 +2,7 @@
  * lib/agent/llm/tools.ts
  * Adapter: existing tool registry → Vercel AI SDK tool() definitions.
  *
- * getAiSdkTools(includeWriteTools, ctx) wraps each registry ToolDefinition as an
+ * getAiSdkTools(includeWriteTools, ctx, opts) wraps each registry ToolDefinition as an
  * AI SDK tool() whose execute delegates to dispatchTool — preserving the existing
  * Zod safeParse validation (T-2-05-01) and the never-throws correctable-error
  * contract. This retires the old lossy Zod-to-JSON-Schema shim (removed in
@@ -12,6 +12,22 @@
  * SECURITY (T-ebw-01): MUST be called per-request with the request's AgentContext
  * captured in the closure below — NEVER memoized at module scope. A module-level
  * singleton would execute one user's tools under another user's identity.
+ *
+ * opts.writeTools (WS7.13 / D-1): "all" (default) keeps the workflow engine's tool
+ * set byte-for-byte unchanged — every write tool is available. "propose-safe"
+ * restricts write tools to those with `proposeSafe === true` (the three
+ * shopify_optimize_* / shopify_propose_restock tools). Rationale: the chat route
+ * hardcodes automationLevel "L2" and dispatchTool never enforces approval, so any
+ * other write tool would hit Shopify/Gmail with no card in front of it. The
+ * propose-safe tools return a generated proposal at L2 without writing — exactly
+ * the behavior the chat surface needs. Anything requiring a real write must go
+ * through propose_workflow_plan → Save as workflow → Run.
+ *
+ * opts.excludeTools (WS12 / D-2): removes named tools from every group after the
+ * writeTools filter runs. Used by the chat route to drop ask_user_clarification —
+ * the route only renders workflow_plan/preview inline blocks, so a clarification
+ * tool call would be a dead end; the prompt guardrails tell the agent to ask
+ * clarifying questions in plain text instead.
  *
  * Server-only module. No NEXT_PUBLIC_ env vars.
  */
@@ -38,16 +54,30 @@ import {
  *
  * @param includeWriteTools — include write tools (false on hard cost cap)
  * @param ctx — the per-request AgentContext; captured in the execute closure
+ * @param opts.writeTools — "all" (default, byte-for-byte unchanged) or
+ *   "propose-safe" (D-1: only registry entries with proposeSafe === true)
+ * @param opts.excludeTools — tool names removed from the final set regardless of
+ *   group (D-2: used to drop ask_user_clarification from the chat toolset)
  */
 export function getAiSdkTools(
   includeWriteTools: boolean,
-  ctx: AgentContext
+  ctx: AgentContext,
+  opts?: { writeTools?: "all" | "propose-safe"; excludeTools?: string[] }
 ): Record<string, Tool> {
   const registry = getToolDefinitions();
+  const writeToolsMode = opts?.writeTools ?? "all";
+  const excludeTools = opts?.excludeTools ?? [];
 
-  const names = includeWriteTools
-    ? [...READ_TOOL_NAMES, ...META_TOOL_NAMES, ...WRITE_TOOL_NAMES]
-    : [...READ_TOOL_NAMES, ...META_TOOL_NAMES];
+  const writeNames =
+    writeToolsMode === "propose-safe"
+      ? WRITE_TOOL_NAMES.filter((name) => registry[name]?.proposeSafe === true)
+      : WRITE_TOOL_NAMES;
+
+  const names = (
+    includeWriteTools
+      ? [...READ_TOOL_NAMES, ...META_TOOL_NAMES, ...writeNames]
+      : [...READ_TOOL_NAMES, ...META_TOOL_NAMES]
+  ).filter((name) => !excludeTools.includes(name));
 
   const tools: Record<string, Tool> = {};
 

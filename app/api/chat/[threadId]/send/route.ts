@@ -32,6 +32,7 @@ import { checkCostCap, recordCost } from "@/lib/cost-cap";
 import { resolveModel, resolveModelChoice } from "@/lib/agent/llm/models";
 import { getAiSdkTools } from "@/lib/agent/llm/tools";
 import { costFor } from "@/lib/agent/llm/pricing";
+import { autoNameThreadIfDefault } from "@/app/app/chat/actions";
 import { streamText, stepCountIs } from "ai";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
@@ -137,21 +138,24 @@ export async function POST(
     });
   }
 
-  // 6. Load prior messages for this thread (last 8 — keeps the request small
-  // enough for Groq's free-tier 8k tokens/min cap; was 20).
+  // 6. Load prior messages for this thread (last 20 — WS6/WS7.1: the Groq
+  // free-tier 8k tokens/min concession that capped this at 8 no longer applies
+  // under the Gemini profile). WS7.1: .orderBy(messages.created_at) — the prior
+  // select had no ordering, so the model could receive scrambled context.
   let priorMessages: Array<{ role: "user" | "assistant"; content: string }> = [];
   try {
     const msgRows = await withUserRls(claims as Record<string, unknown>, async (tx) => {
       return tx
         .select()
         .from(messages)
-        .where(eq(messages.thread_id, threadId));
+        .where(eq(messages.thread_id, threadId))
+        .orderBy(messages.created_at);
     }) as Array<{ role: string; content: string | null; status: string }>;
 
     priorMessages = msgRows
       .filter((m) => m.role === "user" || m.role === "assistant")
       .filter((m) => m.status === "complete")
-      .slice(-8)
+      .slice(-20)
       .map((m) => ({
         role: m.role as "user" | "assistant",
         content: m.content ?? "",
@@ -276,6 +280,16 @@ export async function POST(
 
   const stream = new ReadableStream({
     async start(controller) {
+      // WS7.2 — emit the real assistant message UUID as the FIRST SSE event,
+      // before the streamText loop starts, so the client can swap its
+      // optimistic `asst-${Date.now()}` id for the real one. This unblocks
+      // Save as workflow, which Zod-validates messageId as a UUID.
+      if (assistantMsgId) {
+        controller.enqueue(
+          encoder.encode(`data: ${JSON.stringify({ message_id: assistantMsgId })}\n\n`)
+        );
+      }
+
       try {
         // Per-request agent context — captured in the getAiSdkTools closure below
         // (NEVER a module-level singleton — wrong-user security regression, T-ebw-01).
@@ -300,24 +314,40 @@ export async function POST(
         // keeps turns fast and preserves output budget for the actual reply.
         // Harmless on Anthropic — the groq providerOptions namespace is ignored.
         // (Same fix already applied to optimize-meta.ts / propose-restock.ts.)
-        // GROQ FREE-TIER TPM FIT (8000 tokens/min, cumulative per request):
+        // Only emitted when the resolved provider is actually "groq" — Gemini
+        // and Anthropic don't have a reasoningEffort knob in this namespace.
+        //
+        // FORMER GROQ FREE-TIER TPM FIT (8000 tokens/min, cumulative per
+        // request) — retired under the Gemini profile, kept here for context:
         //   - maxOutputTokens capped at 1536: Groq reserves input+output against
         //     the per-minute budget, so a 4096 reservation alone ate half of it.
         //   - stepCountIs(3): each extra tool round re-sends ALL prior tool
         //     results, so accumulated context blew past 8k by step 3-4. Fewer
         //     rounds = less accumulation (tool results are also capped, in
         //     getAiSdkTools).
-        // gpt-oss-120b's agentic tool loop is genuinely tight against the free
-        // tier — these keep typical single tool-using turns under the cap. The
-        // real headroom is Groq Dev tier or an Anthropic key (MODEL_PROFILE=mixed).
+        // gpt-oss-120b's agentic tool loop was genuinely tight against the free
+        // tier — those caps kept typical single tool-using turns under the cap.
+        // Gemini's generous limits mean the full budget/step count are safe again.
+        const providerOptions: { groq?: { reasoningEffort: "low" } } =
+          choice.provider === "groq" ? { groq: { reasoningEffort: "low" } } : {};
+
+        // WS7.13/WS12 (D-1/D-2): the chat toolset is read + meta tools plus ONLY
+        // the propose-safe write tools, minus ask_user_clarification (dead end —
+        // the route only renders workflow_plan/preview inline blocks).
         const result = streamText({
           model: resolveModel("ORCHESTRATOR"),
           system: systemPrompt,
           messages: allMessages,
-          tools: getAiSdkTools(includeWriteTools, agentCtx),
-          stopWhen: stepCountIs(3),
-          maxOutputTokens: Math.min(choice.maxTokens, 1536),
-          providerOptions: { groq: { reasoningEffort: "low" as const } },
+          tools: getAiSdkTools(includeWriteTools, agentCtx, {
+            writeTools: "propose-safe",
+            excludeTools: ["ask_user_clarification"],
+          }),
+          stopWhen: stepCountIs(5),
+          maxOutputTokens: choice.maxTokens,
+          providerOptions,
+          // WS7.7 — propagate the client's abort signal so a disconnect stops
+          // server-side model work instead of burning tokens/time unattended.
+          abortSignal: req.signal,
         });
 
         for await (const part of result.fullStream) {
@@ -345,6 +375,39 @@ export async function POST(
                   inlineBlockType = "workflow_plan";
                   inlineBlockPayload = parsed.inline_block_payload;
                   // Emit SSE event so client can render the visualizer
+                  controller.enqueue(
+                    encoder.encode(
+                      `data: ${JSON.stringify({
+                        inline_block_type: inlineBlockType,
+                        inline_block_payload: inlineBlockPayload,
+                      })}\n\n`
+                    )
+                  );
+                } else if (parsed.phase === "propose") {
+                  // D-1 propose-phase preview — makes the propose-safe write
+                  // tools' output visible instead of silent. Title is derived
+                  // from the tool name; content prefers `preview`, then
+                  // meta_title + meta_description, then body_html, then
+                  // rationale (whichever the specific propose-safe tool set).
+                  const toolNameLabels: Record<string, string> = {
+                    shopify_optimize_meta: "Proposed meta",
+                    shopify_optimize_product_description: "Proposed description",
+                    shopify_propose_restock: "Proposed restock",
+                  };
+                  const title = toolNameLabels[part.toolName] ?? "Proposed action";
+                  const content: string =
+                    typeof parsed.preview === "string" && parsed.preview
+                      ? parsed.preview
+                      : typeof parsed.meta_title === "string" || typeof parsed.meta_description === "string"
+                        ? `${parsed.meta_title ?? ""} — ${parsed.meta_description ?? ""}`.trim()
+                        : typeof parsed.body_html === "string"
+                          ? parsed.body_html
+                          : typeof parsed.rationale === "string"
+                            ? parsed.rationale
+                            : "";
+
+                  inlineBlockType = "preview";
+                  inlineBlockPayload = { title, content };
                   controller.enqueue(
                     encoder.encode(
                       `data: ${JSON.stringify({
@@ -431,15 +494,43 @@ export async function POST(
           }));
         }
 
+        // WS7.3 — auto-name the thread from the first user message if it's
+        // still titled "New conversation" (or blank). Thread naming must
+        // never break a reply — wrapped in try/catch and logged non-fatally.
+        try {
+          await autoNameThreadIfDefault(threadId, body.message);
+        } catch (autoNameErr) {
+          console.error(JSON.stringify({
+            level: "warn",
+            event: "chat.auto_name_thread_failed",
+            threadId,
+            error: autoNameErr instanceof Error ? autoNameErr.message : "unknown",
+            timestamp: new Date().toISOString(),
+          }));
+        }
+
         // Signal stream end
         controller.enqueue(encoder.encode(`data: [DONE]\n\n`));
         controller.close();
       } catch (err) {
-        // Emit error event so client can show retry UI (CONV-09)
+        // WS7.6 — never send the raw provider error to the client: it can leak
+        // API internals, prompts, or infra details. Emit a generic, user-facing
+        // message and log the real error server-side only, structured like the
+        // other logs in this file.
+        console.error(JSON.stringify({
+          level: "error",
+          event: "chat.stream_failed",
+          threadId,
+          error: err instanceof Error ? err.message : String(err),
+          timestamp: new Date().toISOString(),
+        }));
         try {
           controller.enqueue(
             encoder.encode(
-              `data: ${JSON.stringify({ error: "stream_error", message: String(err) })}\n\n`
+              `data: ${JSON.stringify({
+                error: "stream_error",
+                message: "Something went wrong generating that reply. Try again.",
+              })}\n\n`
             )
           );
           controller.close();
