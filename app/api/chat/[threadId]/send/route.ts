@@ -430,6 +430,18 @@ export async function POST(
             totalOutputTokens = part.totalUsage.outputTokens ?? 0;
             continue;
           }
+
+          // Provider/stream failure mid-turn (e.g. rate limit on a later tool
+          // step). fullStream reports it as an error PART — it does not throw —
+          // so without this the loop ends quietly and the user gets an empty
+          // "complete" reply. Throw into the catch path, which sends the
+          // generic error event and preserves any partial text.
+          if (part.type === "error") {
+            const cause = part.error;
+            throw new Error(
+              `model stream error: ${cause instanceof Error ? cause.message : String(cause)}`.slice(0, 500)
+            );
+          }
         }
 
         // 11. Finalize assistant message → status='complete'
