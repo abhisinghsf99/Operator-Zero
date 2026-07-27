@@ -11,7 +11,7 @@ This GSD project builds **v1, the Ship-Now MVP** — one Orchestrator chat surfa
 
 ### Constraints
 
-- **Tech stack (locked):** Next.js 15 (App Router, React 19) + TypeScript strict on Vercel; Supabase (Postgres 16, pgvector, Auth, Realtime, Storage) Pro tier; Inngest for the durable agent tier; Anthropic Claude (Opus-class primary, faster variant for classification); Voyage AI embeddings; Drizzle ORM; Zod for all external-input validation. Reason: documented and justified in TECH-SPEC.md — single vendor per layer to keep the novel work (agent/approval/workflow) the focus.
+- **Tech stack (locked):** Next.js 16 (App Router, React 19) + TypeScript strict on Vercel; Supabase (Postgres 16, pgvector, Auth, Realtime, Storage) Pro tier; Inngest for the durable agent tier; Google Gemini (primary, via Google AI Studio) with Anthropic Claude and Groq retained as MODEL_PROFILE alternatives, both via the Vercel AI SDK; Voyage AI embeddings; Drizzle ORM; Upstash (rate limits + cost caps); Sentry for error tracking; Zod for all external-input validation. Reason: documented and justified in TECH-SPEC.md — single vendor per layer to keep the novel work (agent/approval/workflow) the focus.
 - **UI:** Tailwind + shadcn/ui (copied in, not a dep) + Radix + Lucide + Framer Motion (visualizer) + Sonner. Reason: shipped-fast, accessible primitives.
 - **Multi-tenant from day one:** every user-data table carries `user_id`, every query filters by it, RLS enforces it. Reason: retrofitting tenancy later is harder.
 - **Idempotency for every external-write agent action** (Shopify writes, Gmail sends). Reason: retries are inevitable; double-writes are unacceptable.

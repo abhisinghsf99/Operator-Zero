@@ -96,13 +96,37 @@ export async function exchangeGmailCode(
 
   const scopes = (tokens.scope ?? GMAIL_SCOPE).split(" ").filter(Boolean);
 
+  // WS12: resolve the connected mailbox address so provider_account_id is a
+  // real email, not a placeholder. Best-effort — falls back to the userId
+  // placeholder (and logs a structured warning) if the lookup fails, since a
+  // failed profile lookup must never block the OAuth callback from completing.
+  let providerAccountId = userId;
+  try {
+    const profileAuth = new OAuth2Client();
+    profileAuth.setCredentials({ access_token: accessToken });
+    const profileClient = google.gmail({ version: "v1", auth: profileAuth });
+    const profile = await profileClient.users.getProfile({ userId: "me" });
+    if (profile.data.emailAddress) {
+      providerAccountId = profile.data.emailAddress;
+    }
+  } catch (err) {
+    console.warn(
+      JSON.stringify({
+        level: "warn",
+        event: "gmail.oauth.profile_lookup_failed",
+        userId,
+        error: String(err),
+      })
+    );
+  }
+
   // UPSERT the integrations row
   await serviceDb
     .insert(integrations)
     .values({
       user_id: userId,
       provider: "gmail",
-      provider_account_id: userId, // Gmail uses the user's email — userId as placeholder until profile lookup
+      provider_account_id: providerAccountId,
       status: "active",
       access_token_encrypted: encryptedAccess,
       refresh_token_encrypted: encryptedRefresh,
@@ -118,6 +142,10 @@ export async function exchangeGmailCode(
         ...(encryptedRefresh ? { refresh_token_encrypted: encryptedRefresh } : {}),
         scopes,
         last_error: null,
+        // Only overwrite provider_account_id when the lookup actually
+        // resolved a real address — never clobber a previously-stored real
+        // address with the userId placeholder on a failed re-auth lookup.
+        ...(providerAccountId !== userId ? { provider_account_id: providerAccountId } : {}),
         ...(expiresAt ? { expires_at: expiresAt } : {}),
       },
     });

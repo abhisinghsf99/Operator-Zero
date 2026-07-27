@@ -76,7 +76,7 @@ import {
 import { revokeSession as registryRevokeSession, signOutEverywhere as registrySignOutEverywhere } from "@/lib/auth/session-registry";
 import { generateText } from "ai";
 import { resolveModel } from "@/lib/agent/llm/models";
-import { isDemoUser, isSandboxClaims, isDemoConnectionLocked, DEMO_DISABLED_MESSAGE } from "@/lib/auth/demo";
+import { isSandboxClaims, DEMO_DISABLED_MESSAGE } from "@/lib/auth/demo";
 import { CURATED_OVERRIDE_TOOLS } from "@/lib/workflows/autonomy";
 
 // ─── Schemas ──────────────────────────────────────────────────────────────────
@@ -184,10 +184,17 @@ export async function disconnectIntegration(
   const userId = claims.sub as string;
   const providerValue = parsed.data;
 
-  // Demo guard: block the disconnect only when the demo connection is frozen
-  // (DEMO_SHOPIFY_LOCKED=true). When unset (default), the demo user can connect
-  // and disconnect freely.
-  if (isDemoUser(userId) && isDemoConnectionLocked()) return { error: DEMO_DISABLED_MESSAGE };
+  // Demo guard (WS8): block ANY sandbox/demo identity from disconnecting,
+  // period. The old guard here read `isDemoUser(userId) &&
+  // isDemoConnectionLocked()`, which let an ANONYMOUS sandbox visitor
+  // disconnect Shopify unconditionally (isDemoUser only matches the shared
+  // demo account, and DEMO_SHOPIFY_LOCKED defaults unset) — clearShopifyMirror()
+  // then wiped that visitor's demo dataset with no way to reconnect. The
+  // old demo-lock-flag nuance is intentionally dropped: this now matches the
+  // other five destructive actions in this file (isSandboxClaims — see
+  // updateEmail, updatePassword, revokeSession, signOutEverywhere,
+  // requestAccountDeletion below).
+  if (isSandboxClaims(claims)) return { error: DEMO_DISABLED_MESSAGE };
 
   // 3. Delete integration row via RLS (ownership enforced at DB layer)
   await withUserRls(claims, async (tx) => {

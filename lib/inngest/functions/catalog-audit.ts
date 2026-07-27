@@ -230,10 +230,72 @@ export async function getCatalogAuditSuggestions(userId: string): Promise<Workfl
       return emptyStoreSuggestions();
     }
 
-    // Non-empty store → check if audit has been run (look for products with gaps)
-    // In production, catalogAuditResults table would cache results.
-    // For now, return empty to trigger the loading state (Inngest will populate async).
-    return [];
+    // WS11: non-empty store used to `return []` here, and
+    // app/onboarding/page.tsx never re-polls against an empty array — so real
+    // -store onboarding spun forever waiting for the async Inngest audit to
+    // populate a cache table that doesn't exist. Compute suggestions
+    // SYNCHRONOUSLY and deterministically from the mirror instead — no LLM
+    // call needed for these checks, so there is nothing to wait on.
+    const products = await serviceDb
+      .select({
+        product_gid: shopifyProducts.product_gid,
+        title: shopifyProducts.title,
+        meta_description: shopifyProducts.meta_description,
+        body_html: shopifyProducts.body_html,
+      })
+      .from(shopifyProducts)
+      .where(eq(shopifyProducts.user_id, userId))
+      .limit(200);
+
+    let missingMetaDescription = 0;
+    let thinOrMissingBody = 0;
+    let placeholderTitle = 0;
+
+    for (const p of products) {
+      if (!p.meta_description || p.meta_description.trim() === "") {
+        missingMetaDescription++;
+      }
+      if (!p.body_html || p.body_html.trim().length < 120) {
+        thinOrMissingBody++;
+      }
+      if (p.title?.includes("Default Title")) {
+        placeholderTitle++;
+      }
+    }
+
+    // Reuse the exact WorkflowSuggestion shape emptyStoreSuggestions() uses
+    // (same field names, domain and level values) — one suggestion per
+    // non-zero count, with the count interpolated into the description.
+    const suggestions: WorkflowSuggestion[] = [];
+    if (missingMetaDescription > 0) {
+      suggestions.push({
+        name: "Fill missing meta descriptions",
+        description: `${missingMetaDescription} products have no meta description.`,
+        domain: "seo",
+        level: "L2",
+      });
+    }
+    if (thinOrMissingBody > 0) {
+      suggestions.push({
+        name: "Enrich thin product descriptions",
+        description: `${thinOrMissingBody} products have a missing or thin (under 120 characters) description.`,
+        domain: "catalog",
+        level: "L2",
+      });
+    }
+    if (placeholderTitle > 0) {
+      suggestions.push({
+        name: "Fix 'Default Title' products",
+        description: `${placeholderTitle} products still show the placeholder title "Default Title".`,
+        domain: "seo",
+        level: "L2",
+      });
+    }
+
+    // All three counts zero (a clean, fully-optimized catalog) — fall back to
+    // the same content/Q&A starters used for an empty store rather than
+    // returning [], which is what caused the onboarding hang in the first place.
+    return suggestions.length > 0 ? suggestions : emptyStoreSuggestions();
   } catch {
     // DB not available in test/build context — return empty
     return [];
