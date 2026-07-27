@@ -42,6 +42,11 @@ export function ThreadSidebar({ threads, activeThreadId, className }: ThreadSide
 
   const handleNewThread = () => {
     startTransition(async () => {
+      // The literal "New conversation" title here is load-bearing: it's the
+      // exact string autoNameThreadIfDefault (app/app/chat/actions.ts) checks
+      // for before renaming a thread from its first message (WS7.3). If any
+      // other call site ever creates a thread with a different placeholder
+      // title, that thread will never get auto-named.
       const result = await createThread("New conversation");
       if ("threadId" in result) {
         router.push(`/app/chat/${result.threadId}`);

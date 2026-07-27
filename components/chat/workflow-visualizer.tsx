@@ -14,7 +14,8 @@
  *   - Display-font title
  *   - Step rows with circle icon, connector line, step label + detail
  *   - Settings grid once all steps are visible
- *   - Footer: "Edit in chat" + "Save as workflow" buttons
+ *   - Footer: "Save as workflow" is the only action (WS7.12 — the ghost
+ *     button that used to sit next to it had no handler and was removed)
  *
  * ACCESSIBILITY (UX-03, WCAG 2.1 AA):
  *   - Screen-reader text equivalent: visually-hidden ordered list of all steps
@@ -62,6 +63,9 @@ export function WorkflowVisualizer({ plan, messageId }: WorkflowVisualizerProps)
   const [isSaving, setIsSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [savedId, setSavedId] = useState<string | null>(null);
+  // Snapshot of the level actually persisted — captured at save time so the
+  // confirmation label can't drift if the toggle is touched again afterward.
+  const [savedLevel, setSavedLevel] = useState<Level | null>(null);
   const [automationLevel, setAutomationLevel] = useState<Level>(
     (plan.automation_level as Level) ?? "L2"
   );
@@ -86,9 +90,16 @@ export function WorkflowVisualizer({ plan, messageId }: WorkflowVisualizerProps)
     setIsSaving(true);
     setSaveError(null);
     try {
-      const result = await saveWorkflowFromPlan(messageId);
+      // WS7.12 BUG: this used to call saveWorkflowFromPlan(messageId) with no
+      // second argument, so the LevelToggle above only ever mutated local
+      // state that nothing read — a user who picked L3 silently got a workflow
+      // saved at L2 (or whatever plan.automation_level happened to be).
+      // Passing automationLevel through is what makes the visible choice the
+      // one that actually gets persisted.
+      const result = await saveWorkflowFromPlan(messageId, automationLevel);
       if ("workflowId" in result) {
         setSavedId(result.workflowId);
+        setSavedLevel(automationLevel);
       } else {
         setSaveError(result.error);
       }
@@ -97,7 +108,7 @@ export function WorkflowVisualizer({ plan, messageId }: WorkflowVisualizerProps)
     } finally {
       setIsSaving(false);
     }
-  }, [messageId]);
+  }, [messageId, automationLevel]);
 
   return (
     <MotionConfig reducedMotion="user">
@@ -324,25 +335,23 @@ export function WorkflowVisualizer({ plan, messageId }: WorkflowVisualizerProps)
             )}
             {savedId ? (
               <span style={{ fontSize: 12, fontWeight: 500, color: "var(--success)" }}>
-                Saved as workflow
+                Saved as workflow{savedLevel ? ` (${savedLevel})` : ""}
               </span>
             ) : (
-              <>
-                <Button variant="ghost" size="sm">
-                  Edit in chat
-                </Button>
-                <Button
-                  variant="primary"
-                  accent="workflow"
-                  size="sm"
-                  icon="Check"
-                  onClick={() => void handleSave()}
-                  disabled={isSaving}
-                  aria-label={`Save "${plan.name ?? "this workflow"}" as a workflow`}
-                >
-                  {isSaving ? "Saving…" : "Save as workflow"}
-                </Button>
-              </>
+              // WS7.12: a ghost button used to live here with no onClick and
+              // no handler — dead UI. Removed; Save as workflow is now the
+              // only footer action.
+              <Button
+                variant="primary"
+                accent="workflow"
+                size="sm"
+                icon="Check"
+                onClick={() => void handleSave()}
+                disabled={isSaving}
+                aria-label={`Save "${plan.name ?? "this workflow"}" as a workflow`}
+              >
+                {isSaving ? "Saving…" : "Save as workflow"}
+              </Button>
             )}
           </div>
         )}
