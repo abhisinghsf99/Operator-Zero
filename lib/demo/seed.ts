@@ -1815,7 +1815,7 @@ export async function seedDemoFor(
         // runs on (Plan 1 WS6 — Google AI Studio / Gemini). Source of truth
         // for the active profile is MODEL_PROFILE=google (lib/agent/llm/models.ts);
         // if that flips to a different provider, update this literal too.
-        model_id: role === "assistant" ? "gemini-2.5-flash" : null,
+        model_id: role === "assistant" ? "gemini-3.6-flash" : null,
         token_input: role === "assistant" ? 1800 + mseq * 30 : null,
         token_output: role === "assistant" ? 240 + mseq * 12 : null,
         latency_ms: role === "assistant" ? 1400 + mseq * 50 : null,

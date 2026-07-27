@@ -64,34 +64,34 @@ describe("resolveModelChoice — provider routing (WS6)", () => {
 
     expect(resolveModelChoice("ORCHESTRATOR")).toMatchObject({
       provider: "google",
-      modelId: "gemini-2.5-flash",
+      modelId: "gemini-3.6-flash",
     });
     expect(resolveModelChoice("CLASSIFIER")).toMatchObject({
       provider: "google",
-      modelId: "gemini-2.5-flash-lite",
+      modelId: "gemini-3.5-flash-lite",
     });
     expect(resolveModelChoice("AUDIT")).toMatchObject({
       provider: "google",
-      modelId: "gemini-2.5-flash",
+      modelId: "gemini-3.6-flash",
     });
     expect(resolveModelChoice("DRAFTER")).toMatchObject({
       provider: "google",
-      modelId: "gemini-2.5-flash",
+      modelId: "gemini-3.6-flash",
     });
   });
 
-  it('OZ_MODEL_ORCHESTRATOR="google:gemini-2.5-pro" overrides just that role', () => {
+  it('OZ_MODEL_ORCHESTRATOR="google:gemini-3.1-pro-preview" overrides just that role', () => {
     process.env.MODEL_PROFILE = "google";
-    process.env.OZ_MODEL_ORCHESTRATOR = "google:gemini-2.5-pro";
+    process.env.OZ_MODEL_ORCHESTRATOR = "google:gemini-3.1-pro-preview";
 
     expect(resolveModelChoice("ORCHESTRATOR")).toMatchObject({
       provider: "google",
-      modelId: "gemini-2.5-pro",
+      modelId: "gemini-3.1-pro-preview",
     });
     // Other roles are unaffected by the override — still follow the profile.
     expect(resolveModelChoice("CLASSIFIER")).toMatchObject({
       provider: "google",
-      modelId: "gemini-2.5-flash-lite",
+      modelId: "gemini-3.5-flash-lite",
     });
   });
 
@@ -101,7 +101,7 @@ describe("resolveModelChoice — provider routing (WS6)", () => {
 
     expect(resolveModelChoice("ORCHESTRATOR")).toMatchObject({
       provider: "google",
-      modelId: "gemini-2.5-flash",
+      modelId: "gemini-3.6-flash",
     });
   });
 
@@ -122,8 +122,8 @@ describe("resolveModelChoice — provider routing (WS6)", () => {
 
 describe("costFor — Gemini pricing (WS6)", () => {
   it("returns a non-zero cost for each Gemini model id", () => {
-    expect(costFor("gemini-2.5-flash", 1000, 1000)).toBeGreaterThan(0);
-    expect(costFor("gemini-2.5-flash-lite", 1000, 1000)).toBeGreaterThan(0);
+    expect(costFor("gemini-3.6-flash", 1000, 1000)).toBeGreaterThan(0);
+    expect(costFor("gemini-3.5-flash-lite", 1000, 1000)).toBeGreaterThan(0);
     expect(costFor("gemini-2.5-pro", 1000, 1000)).toBeGreaterThan(0);
   });
 

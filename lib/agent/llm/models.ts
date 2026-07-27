@@ -61,7 +61,7 @@ const MAX_TOKENS: Record<AgentRole, number> = {
 //            agentic tool loop re-sends the system prompt every step, so latency
 //            and free-tier headroom matter more than per-call quality here.
 //            Flash is a strong-enough generalist for orchestration + classification.
-//            Quality upgrade path: OZ_MODEL_ORCHESTRATOR=google:gemini-2.5-pro
+//            Quality upgrade path: OZ_MODEL_ORCHESTRATOR=google:gemini-3.1-pro-preview
 //            overrides just the orchestrator role without touching this profile.
 
 const PROFILES: Record<
@@ -87,10 +87,10 @@ const PROFILES: Record<
     DRAFTER: { provider: "anthropic", modelId: "claude-opus-4-5" },
   },
   google: {
-    ORCHESTRATOR: { provider: "google", modelId: "gemini-2.5-flash" },
-    CLASSIFIER: { provider: "google", modelId: "gemini-2.5-flash-lite" },
-    AUDIT: { provider: "google", modelId: "gemini-2.5-flash" },
-    DRAFTER: { provider: "google", modelId: "gemini-2.5-flash" },
+    ORCHESTRATOR: { provider: "google", modelId: "gemini-3.6-flash" },
+    CLASSIFIER: { provider: "google", modelId: "gemini-3.5-flash-lite" },
+    AUDIT: { provider: "google", modelId: "gemini-3.6-flash" },
+    DRAFTER: { provider: "google", modelId: "gemini-3.6-flash" },
   },
 };
 
