@@ -25,6 +25,7 @@ import { catalogAudit } from "@/lib/inngest/functions/catalog-audit";
 import { exportAccountData } from "@/lib/inngest/functions/export-account-data";
 import { purgeAccount } from "@/lib/inngest/functions/purge-account";
 import { sandboxSweep } from "@/lib/inngest/functions/sandbox-sweep";
+import { sandboxExit } from "@/lib/inngest/functions/sandbox-exit";
 
 export const { GET, POST, PUT } = serve({
   client: inngest,
@@ -41,5 +42,6 @@ export const { GET, POST, PUT } = serve({
     exportAccountData,
     purgeAccount,
     sandboxSweep,
+    sandboxExit,
   ],
 });

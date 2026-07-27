@@ -1,9 +1,15 @@
 /**
  * app/api/sandbox/exit/route.ts
- * POST /api/sandbox/exit — tear down the caller's own demo sandbox.
+ * POST /api/sandbox/exit — request teardown of the caller's own demo sandbox.
  *
  * Called by SandboxExitBeacon via navigator.sendBeacon on tab close (pagehide).
  * Always returns 204 — the beacon is fire-and-forget and ignores the response.
+ *
+ * GRACE PERIOD: `pagehide` also fires on refresh (F5) and full-page navigations
+ * within the app, so this route must NOT tear down synchronously — that
+ * destroyed live sandboxes on refresh. It emits `sandbox/exit.requested`;
+ * lib/inngest/functions/sandbox-exit.ts sleeps out a short grace window and
+ * aborts if a newer heartbeat shows the visitor came back.
  *
  * SECURITY:
  *   - Acts ONLY on the caller's own validated JWT sub (getClaims) — a caller can
@@ -13,7 +19,7 @@
  *     204 no-op — we never delete a real account here.
  */
 import { createClient } from "@/lib/auth/server";
-import { teardownSandbox } from "@/lib/demo/teardown";
+import { inngest } from "@/lib/inngest/client";
 
 export const dynamic = "force-dynamic";
 
@@ -27,7 +33,10 @@ export async function POST(): Promise<Response> {
       | undefined;
 
     if (claims?.is_anonymous === true && claims.sub) {
-      await teardownSandbox(claims.sub);
+      await inngest.send({
+        name: "sandbox/exit.requested",
+        data: { userId: claims.sub, requestedAt: new Date().toISOString() },
+      });
     }
   } catch (e) {
     console.error(
