@@ -174,11 +174,12 @@ export async function recallMemory(
       similarity: sql<number>`1 - (${cosineDistance(memoryEmbeddings.embedding, queryVec)})`,
     })
     .from(memoryEmbeddings)
+    .innerJoin(memoryItems, eq(memoryItems.id, memoryEmbeddings.source_id))
     .where(
       and(
         eq(memoryEmbeddings.user_id, userId),
         eq(memoryEmbeddings.source_type, "memory_item"),
-        // Join condition — only embeddings whose source memory item is not deleted
+        // Only embeddings whose source memory item is not deleted
         eq(memoryItems.user_id, userId),
         isNull(memoryItems.soft_deleted_at)
       )

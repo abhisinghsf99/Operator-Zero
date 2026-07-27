@@ -538,13 +538,23 @@ export async function POST(
           // Already closed
         }
 
-        // Mark assistant message as errored
+        // Persist what we have. A client disconnect (refresh, navigation) is
+        // not a generation failure: keep any partial text as a complete
+        // message so it survives reload instead of becoming an empty errored
+        // bubble. Only a true provider/stream failure marks the row errored.
+        const clientAborted = req.signal.aborted;
         if (assistantMsgId) {
           try {
             await withUserRls(claims as Record<string, unknown>, async (tx) => {
               return tx
                 .update(messages)
-                .set({ status: "errored" })
+                .set({
+                  content: accumulatedContent,
+                  status:
+                    clientAborted && accumulatedContent.length > 0
+                      ? "complete"
+                      : "errored",
+                })
                 .where(eq(messages.id, assistantMsgId));
             });
           } catch (errorMarkErr) {
