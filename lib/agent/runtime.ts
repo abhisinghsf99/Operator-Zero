@@ -25,8 +25,8 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { APICallError } from "ai";
 import { checkCostCap, recordCost } from "@/lib/cost-cap";
-import { dispatchTool } from "./tools/index";
-import type { AgentContext } from "./tools/index";
+import { dispatchTool, getToolDefinitions } from "./tools/index";
+import type { AgentContext, ToolResult } from "./tools/index";
 
 // ─── Error classification ─────────────────────────────────────────────────────
 
@@ -114,6 +114,13 @@ export interface WorkflowStepResult {
   requiresApproval: boolean;
   proposedAction?: unknown;
   costUsd: number;
+  /**
+   * isError — true when the dispatched ToolResult carried is_error === true.
+   * Always false for the deferred (non-dispatched, pre-approval) branch, since
+   * no tool call was made. The engine (execute-workflow-run.ts) uses this to
+   * mark steps/runs as failed instead of recording a false "success" (WS3).
+   */
+  isError: boolean;
 }
 
 // ─── runWorkflowStep ──────────────────────────────────────────────────────────
@@ -121,8 +128,17 @@ export interface WorkflowStepResult {
 /**
  * runWorkflowStep — entry point for durable workflow step execution (02-07).
  *
- * Called by executeWorkflowRun Inngest function for each workflow step.
- * Uses a single tool dispatch rather than a full streaming conversation.
+ * TWO-PASS CONTRACT (WS2 / WS3 fix):
+ *   Pass 1 (workflow automationLevel L1/L2 — the propose pass): if the tool
+ *     requires approval and has no safe way to preview without writing
+ *     (proposeSafe !== true and no extractProposedAction), dispatchTool is
+ *     NOT called. A synthetic non-error "deferred_for_approval" ToolResult is
+ *     returned instead, so the external write does not happen before a human
+ *     sees the approval card (WS2 — previously dispatchTool ran unconditionally
+ *     and L2 writes hit Shopify/Gmail before approval).
+ *   Pass 2 (automationLevel forced to "L3" by the engine's approved re-dispatch
+ *     — see execute-workflow-run.ts `execute-approved-*` step): requiresApproval
+ *     is false, so dispatchTool always runs and performs the real write.
  *
  * Cost cap enforcement (T-2-05-02):
  *   'hard' → returns a budget_exhausted error result (caller handles degradation)
@@ -148,31 +164,63 @@ export async function runWorkflowStep(
     );
   }
 
-  // 2. Get tool definitions for the step
+  // 2. Destructure the tool + input for this step
   const { tool: toolName, input } = ctx.stepDefinition;
 
-  // 3. Dispatch the specific tool for this step
-  const toolResult = await dispatchTool(toolName, input, agentCtx);
-
-  // 4. Record approximate cost (minimal — this is a single tool dispatch)
-  const costUsd = 0.0001; // Minimal overhead for tool dispatch; LLM cost tracked separately
-  await recordCost(ctx.userId, costUsd);
-
-  // 5. Check if approval is required
-  const { getToolDefinitions } = await import("./tools/index");
+  // 3. Load the tool definition and compute approval requirement BEFORE dispatch.
   const registry = getToolDefinitions();
   const toolDef = registry[toolName];
   const requiresApproval = toolDef?.approvalRequired
     ? toolDef.approvalRequired(input, agentCtx)
     : false;
 
-  // 6. Compute proposedAction — prefer the tool's extractProposedAction when present.
+  // canProposeSafely — true when it is safe to call execute() during THIS
+  // (possibly pre-approval) pass without risking an external write:
+  //   - proposeSafe === true (declared by the tool — see ToolDefinition docs), OR
+  //   - extractProposedAction is implemented (implies the tool's propose-phase
+  //     ToolResult carries a generated preview, not an external effect).
+  const canProposeSafely =
+    toolDef?.proposeSafe === true || typeof toolDef?.extractProposedAction === "function";
+
+  let toolResult: ToolResult;
+  let isError: boolean;
+
+  if (requiresApproval && !canProposeSafely) {
+    // WS2 FIX: do NOT dispatch. This tool has no safe propose branch, so
+    // calling execute() here would perform the external write before the
+    // human has seen the approval card. Return a synthetic deferred marker —
+    // the engine's approved re-dispatch (automationLevel "L3") calls this
+    // function again with requiresApproval=false, which DOES dispatch.
+    toolResult = {
+      type: "tool_result",
+      is_error: false,
+      content: JSON.stringify({
+        ok: true,
+        phase: "deferred_for_approval",
+        tool: toolName,
+        input,
+      }),
+    };
+    isError = false;
+  } else {
+    // Dispatch as before — propose-safe tools generate their preview here
+    // (no write); tools that don't require approval execute directly.
+    toolResult = await dispatchTool(toolName, input, agentCtx);
+    isError = toolResult.is_error === true;
+  }
+
+  // 4. Record approximate cost (minimal — this is a single tool dispatch)
+  const costUsd = 0.0001; // Minimal overhead for tool dispatch; LLM cost tracked separately
+  await recordCost(ctx.userId, costUsd);
+
+  // 5. Compute proposedAction — prefer the tool's extractProposedAction when present.
   //    This lets a tool surface the generated copy (e.g. body_html) as proposedAction
   //    instead of the bare input, so the engine's approval card shows the generated
   //    copy AND the approved re-dispatch arrives with it (no content drift, no double
-  //    LLM call). Falls back to the raw input for every existing tool (backward-compat).
+  //    LLM call). Falls back to the raw input for every existing tool (backward-compat)
+  //    and for the deferred (not-safe-to-propose) branch above.
   const proposedAction = requiresApproval
-    ? (toolDef?.extractProposedAction
+    ? (canProposeSafely && toolDef?.extractProposedAction
         ? toolDef.extractProposedAction(toolResult, input, agentCtx)
         : input)
     : undefined;
@@ -182,5 +230,6 @@ export async function runWorkflowStep(
     requiresApproval,
     proposedAction,
     costUsd,
+    isError,
   };
 }

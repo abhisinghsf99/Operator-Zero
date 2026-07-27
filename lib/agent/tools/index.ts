@@ -75,6 +75,18 @@ export interface ToolDefinition {
    * MUST NOT throw — return input as a fallback on any parse failure.
    */
   extractProposedAction?: (result: ToolResult, input: unknown, ctx: AgentContext) => unknown;
+  /**
+   * proposeSafe — true when execute() has an internal propose/write branch that
+   * performs NO external write while approval is pending, so it is safe to
+   * dispatch during the pre-approval pass (WS2). Defaults to false/unsafe when
+   * omitted — the runtime then withholds dispatch until after approval.
+   *
+   * Only set this on tools whose execute() branches on the presence of the
+   * "write" fields in its input (see shopify_optimize_* / shopify_propose_restock)
+   * — i.e. calling execute() with the raw pre-approval input is guaranteed to
+   * take the read-only GENERATE/PROPOSE path, never the WRITE path.
+   */
+  proposeSafe?: boolean;
 }
 
 // ─── Tool registry ─────────────────────────────────────────────────────────────

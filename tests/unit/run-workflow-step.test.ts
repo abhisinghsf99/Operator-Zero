@@ -151,4 +151,26 @@ describe("runWorkflowStep — extractProposedAction surfacing", () => {
     // The first argument should be the ToolResult from dispatchTool
     expect(capturedArgs[0]).toEqual(customResult);
   });
+
+  it("(WS2) deferred path: approvalRequired=true, no extractProposedAction, no proposeSafe → NOT dispatched", async () => {
+    const rawInput = { product_gid: "gid://1" };
+
+    const fakeToolUnsafe: Partial<ToolDefinition> = {
+      approvalRequired: () => true,
+      // No extractProposedAction, no proposeSafe — canProposeSafely is false.
+    };
+
+    mockGetToolDefinitions.mockReturnValue({ fake_tool: fakeToolUnsafe });
+
+    const result = await runWorkflowStep(
+      makeCtx({ stepDefinition: { tool: "fake_tool", input: rawInput } })
+    );
+
+    expect(result.requiresApproval).toBe(true);
+    expect(result.proposedAction).toEqual(rawInput);
+    expect(result.isError).toBe(false);
+    // WS2 fix: the tool must NOT be dispatched before approval — the external
+    // write would otherwise happen before the human sees the approval card.
+    expect(mockDispatchTool).not.toHaveBeenCalled();
+  });
 });

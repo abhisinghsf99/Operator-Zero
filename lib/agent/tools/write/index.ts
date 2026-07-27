@@ -478,6 +478,10 @@ export const shopifyOptimizeProductDescription: ToolDefinition = {
     "Generate an optimized, on-brand HTML product description; proposes the generated copy for approval (L1/L2) or writes directly (L3).",
   inputSchema: optimizeProductDescriptionSchema,
   approvalRequired: defaultApprovalRequired,
+  // WS2: safe to dispatch during the pre-approval pass — execute() branches on
+  // body_html being present in the input, and the pre-approval call never
+  // supplies it, so this always takes the read-only GENERATE/PROPOSE path.
+  proposeSafe: true,
 
   async execute(input, ctx: AgentContext): Promise<ToolResult> {
     // 1. Zod validation
@@ -675,6 +679,10 @@ export const shopifyOptimizeMeta: ToolDefinition = {
     "Generate an optimized SEO meta title + description; proposes the generated meta for approval (L1/L2) or writes directly (L3).",
   inputSchema: optimizeMetaSchema,
   approvalRequired: defaultApprovalRequired,
+  // WS2: safe to dispatch during the pre-approval pass — execute() branches on
+  // meta_title/meta_description being present, and the pre-approval call never
+  // supplies them, so this always takes the read-only GENERATE/PROPOSE path.
+  proposeSafe: true,
 
   async execute(input, ctx: AgentContext): Promise<ToolResult> {
     // 1. Zod validation
@@ -904,6 +912,10 @@ export const shopifyProposeRestock: ToolDefinition = {
     "Reason a restock-to-target inventory quantity for a low-stock or out-of-stock variant; proposes the target qty + rationale for approval (L1/L2) or writes directly (L3).",
   inputSchema: proposeRestockSchema,
   approvalRequired: defaultApprovalRequired,
+  // WS2: safe to dispatch during the pre-approval pass — execute() branches on
+  // inventory_qty being a number in the input, and the pre-approval call never
+  // supplies it, so this always takes the read-only GENERATE/PROPOSE path.
+  proposeSafe: true,
 
   async execute(input, ctx: AgentContext): Promise<ToolResult> {
     // 1. Zod validation

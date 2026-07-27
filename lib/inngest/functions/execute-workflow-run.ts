@@ -50,6 +50,7 @@ import { eq, and } from "drizzle-orm";
 import { writeActivity } from "@/lib/workflows/activity";
 import { createApproval, resolveApprovalRow } from "@/lib/workflows/approvals";
 import { runWorkflowStep } from "@/lib/agent/runtime";
+import type { WorkflowStepResult } from "@/lib/agent/runtime";
 import { getEffectiveAutomationLevel } from "@/lib/workflows/autonomy";
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
@@ -160,6 +161,21 @@ export const executeWorkflowRun = inngest.createFunction(
       return { userId, workflowId, runId: run.id };
     });
 
+    // ── finalizeRunFailed (G8 fix) ────────────────────────────────────────────
+    // Shared terminal-failure writer. Every failure branch below (thrown step,
+    // tool is_error, rejected/expired/not-approved approvals) MUST route through
+    // this so a run can never be left in status "running" forever. Wrapped in
+    // its own step.run with a deterministic id derived from the caller so
+    // Inngest checkpoints it exactly once per failure path.
+    const finalizeRunFailed = async (idSuffix: string, summary: string): Promise<void> => {
+      await step.run(`finalize-run-failed-${idSuffix}`, async () => {
+        await serviceDb
+          .update(workflowRuns)
+          .set({ status: "failed", completed_at: new Date(), error_summary: summary })
+          .where(and(eq(workflowRuns.id, run.id), eq(workflowRuns.user_id, userId)));
+      });
+    };
+
     // ── Steps 3+: Execute workflow steps ──────────────────────────────────────
     const definition = version.definition as WorkflowVersionDefinition;
     const steps = definition.steps ?? [];
@@ -192,20 +208,60 @@ export const executeWorkflowRun = inngest.createFunction(
         return { status: "paused_manual", runId: run.id };
       }
 
-      // ── Execute the step ──────────────────────────────────────────────────
-      const stepResult = await step.run(stepRunId, async () => {
-        return runWorkflowStep({
-          userId,
-          workflowRunId: run.id,
-          stepId: workflowStep.id,
-          automationLevel: workflow.automation_level as "L1" | "L2" | "L3",
-          stepDefinition: {
-            tool: workflowStep.tool,
-            input: workflowStep.params,
-            description: workflowStep.description,
-          },
+      // ── Execute the step (G8 fix: wrapped so a thrown step, after Inngest's
+      //    own step-level retries are exhausted, still finalizes the run as
+      //    "failed" instead of leaving it stuck in "running" forever) ────────
+      let stepResult: WorkflowStepResult;
+      try {
+        stepResult = await step.run(stepRunId, async () => {
+          return runWorkflowStep({
+            userId,
+            workflowRunId: run.id,
+            stepId: workflowStep.id,
+            automationLevel: workflow.automation_level as "L1" | "L2" | "L3",
+            stepDefinition: {
+              tool: workflowStep.tool,
+              input: workflowStep.params,
+              description: workflowStep.description,
+            },
+          });
         });
-      });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        const redactedSummary = `Step ${workflowStep.name} threw: ${message}`.slice(0, 500);
+        await step.run(`write-activity-thrown-${i}-${workflowStep.id}`, async () => {
+          await writeActivity(userId, {
+            workflow_run_id: run.id,
+            step_id: `${workflowStep.id}:thrown`,
+            action_type: workflowStep.tool,
+            summary: redactedSummary,
+            result: "failed",
+            automation_level: workflow.automation_level as "L1" | "L2" | "L3",
+            workflow_id: workflowId,
+          });
+        });
+        await finalizeRunFailed(`thrown-${i}-${workflowStep.id}`, redactedSummary);
+        return { status: "failed", runId: run.id };
+      }
+
+      // ── WS3 FIX: a tool that returned is_error must fail the step + run,
+      //    never be recorded as a false "success" ────────────────────────────
+      if (stepResult.isError) {
+        const failSummary = `Step ${workflowStep.name} failed: tool returned an error`;
+        await step.run(`write-activity-tool-error-${i}-${workflowStep.id}`, async () => {
+          await writeActivity(userId, {
+            workflow_run_id: run.id,
+            step_id: `${workflowStep.id}:failed`,
+            action_type: workflowStep.tool,
+            summary: failSummary,
+            result: "failed",
+            automation_level: workflow.automation_level as "L1" | "L2" | "L3",
+            workflow_id: workflowId,
+          });
+        });
+        await finalizeRunFailed(`tool-error-${i}-${workflowStep.id}`, failSummary);
+        return { status: "failed", reason: "tool_error", runId: run.id };
+      }
 
       // ── Autonomy override gate (D-07b, Phase 4 — T-4-04-01/02) ─────────────
       // Read per-action overrides from autonomy_thresholds (serviceDb — bypasses RLS;
@@ -482,7 +538,10 @@ export const executeWorkflowRun = inngest.createFunction(
         }
 
         // Row status is 'approved' — execute the approved action — writeActivity BEFORE effect (WF-06)
-        await step.run(
+        // The pre-effect row records result "partial" (not "success") — the
+        // outcome isn't known until the effect below completes; the post-effect
+        // row (success or failed, written next) records the real outcome.
+        const approvedResult: WorkflowStepResult = await step.run(
           `execute-approved-${i}-${workflowStep.id}`,
           async () => {
             // writeActivity BEFORE executing the approved action (T-2-07-05)
@@ -491,7 +550,7 @@ export const executeWorkflowRun = inngest.createFunction(
               step_id: `${workflowStep.id}:approved`,
               action_type: workflowStep.tool,
               summary: `Executing approved step: ${workflowStep.name}`,
-              result: "success",
+              result: "partial",
               automation_level: "L2",
               workflow_id: workflowId,
               before_state: stepResult.proposedAction,
@@ -511,6 +570,28 @@ export const executeWorkflowRun = inngest.createFunction(
             });
           }
         );
+
+        // WS3 FIX: the approved re-dispatch can still fail (e.g. Shopify
+        // rejects the write) — never leave that recorded as a success.
+        if (approvedResult.isError) {
+          const failSummary = `Approved step ${workflowStep.name} failed: tool returned an error`;
+          await step.run(
+            `write-activity-approved-failed-${i}-${workflowStep.id}`,
+            async () => {
+              await writeActivity(userId, {
+                workflow_run_id: run.id,
+                step_id: `${workflowStep.id}:approved-failed`,
+                action_type: workflowStep.tool,
+                summary: failSummary,
+                result: "failed",
+                automation_level: "L2",
+                workflow_id: workflowId,
+              });
+            }
+          );
+          await finalizeRunFailed(`approved-tool-error-${i}-${workflowStep.id}`, failSummary);
+          return { status: "failed", reason: "tool_error_after_approval", runId: run.id };
+        }
 
         // Update run status back to running
         await step.run(
@@ -533,6 +614,9 @@ export const executeWorkflowRun = inngest.createFunction(
 
       // ── L3: Execute directly + writeActivity (WF-05, WF-06) ───────────────
       // Also handles L2 steps that don't requiresApproval (e.g., read-only steps)
+      // WS3: result derives from stepResult.isError. The isError===true case
+      // already returned early above, so this is defensive — but it keeps the
+      // activity row honest rather than hardcoding "success".
       await step.run(
         `write-activity-l3-${i}-${workflowStep.id}`,
         async () => {
@@ -542,7 +626,7 @@ export const executeWorkflowRun = inngest.createFunction(
             step_id: workflowStep.id,
             action_type: workflowStep.tool,
             summary: `Executing step: ${workflowStep.name}`,
-            result: "success",
+            result: stepResult.isError ? "failed" : "success",
             automation_level: effectiveAutomationLevel as "L1" | "L2" | "L3",
             workflow_id: workflowId,
           });
