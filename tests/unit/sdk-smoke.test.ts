@@ -1,29 +1,56 @@
 // tests/unit/sdk-smoke.test.ts
-// SDK smoke tests for Anthropic + Voyage AI.
-// INFRA-06: Anthropic SDK callable; Voyage returns 1024-dim vector.
+// SDK smoke tests for the provider-routing module + Voyage AI.
+// INFRA-06 (updated WS12): provider abstraction is import-safe and callable;
+// Voyage returns a 1024-dim vector.
 //
-// When real API keys are absent (CI without secrets), these tests SKIP gracefully.
-// When keys are present (developer machine or CI with secrets), they make live API calls.
+// When real API keys are absent (CI without secrets), the Voyage tests SKIP
+// gracefully. When keys are present (developer machine or CI with secrets),
+// they make live API calls. The dedicated Anthropic live smoke test was
+// removed alongside lib/agent/anthropic.ts (WS12 dead-code removal) — provider
+// routing is exercised without a live network call via resolveModel/
+// resolveModelChoice below.
 
 import { describe, it, expect } from "vitest";
 
-const HAS_ANTHROPIC_KEY = Boolean(process.env.ANTHROPIC_API_KEY);
 const HAS_VOYAGE_KEY = Boolean(process.env.VOYAGE_API_KEY);
 
 // ---------------------------------------------------------------------------
 // Module import smoke tests — always run (no keys needed)
 // ---------------------------------------------------------------------------
 
-describe("anthropic module (import + type check)", () => {
-  it("exports anthropic client and smokeTestAnthropic function", async () => {
-    const mod = await import("@/lib/agent/anthropic");
-    expect(mod.anthropic).toBeDefined();
-    expect(typeof mod.smokeTestAnthropic).toBe("function");
+// lib/agent/anthropic.ts (WS12) was dead code — a standalone Anthropic SDK
+// wiring module with no callers outside this test file; the real provider
+// routing lives in lib/agent/llm/models.ts (resolveModel / resolveModelChoice),
+// which every call site (chat route, runtime.ts, workflow steps) actually uses.
+// Replaced the module-existence checks below with provider-routing smoke
+// checks of the same test count (2) so this file still verifies the current
+// provider abstraction is import-safe and callable.
+describe("provider routing module (import + type check)", () => {
+  it("exports resolveModel and resolveModelChoice as functions", async () => {
+    const mod = await import("@/lib/agent/llm/models");
+    expect(typeof mod.resolveModel).toBe("function");
+    expect(typeof mod.resolveModelChoice).toBe("function");
   });
 
-  it("anthropic client has messages.create method", async () => {
-    const { anthropic } = await import("@/lib/agent/anthropic");
-    expect(typeof anthropic.messages.create).toBe("function");
+  it('resolveModelChoice("ORCHESTRATOR") returns an object with provider, modelId, and maxTokens', async () => {
+    const { resolveModelChoice } = await import("@/lib/agent/llm/models");
+    const choice = resolveModelChoice("ORCHESTRATOR");
+    expect(choice).toHaveProperty("provider");
+    expect(choice).toHaveProperty("modelId");
+    expect(choice).toHaveProperty("maxTokens");
+    expect(typeof choice.provider).toBe("string");
+    expect(typeof choice.modelId).toBe("string");
+    expect(typeof choice.maxTokens).toBe("number");
+  });
+
+  // Extra assertion-level test (replaces the dropped Anthropic live smoke
+  // test 1:1 on count) — resolveModel() must construct a LanguageModel
+  // instance for the default profile without making a live network call or
+  // throwing, regardless of whether a real API key is present in this env.
+  it('resolveModel("ORCHESTRATOR") returns a defined model instance without throwing (no live call)', async () => {
+    const { resolveModel } = await import("@/lib/agent/llm/models");
+    expect(() => resolveModel("ORCHESTRATOR")).not.toThrow();
+    expect(resolveModel("ORCHESTRATOR")).toBeDefined();
   });
 });
 
@@ -37,21 +64,6 @@ describe("embeddings module (import + type check)", () => {
 // ---------------------------------------------------------------------------
 // Live API smoke tests — skip when keys are absent
 // ---------------------------------------------------------------------------
-
-describe.skipIf(!HAS_ANTHROPIC_KEY)(
-  "Anthropic live smoke test (requires ANTHROPIC_API_KEY)",
-  () => {
-    it(
-      "smokeTestAnthropic() returns true (API is reachable and returns text)",
-      async () => {
-        const { smokeTestAnthropic } = await import("@/lib/agent/anthropic");
-        const result = await smokeTestAnthropic();
-        expect(result).toBe(true);
-      },
-      15_000 // 15s timeout for network call
-    );
-  }
-);
 
 describe.skipIf(!HAS_VOYAGE_KEY)(
   "Voyage AI live smoke test (requires VOYAGE_API_KEY)",

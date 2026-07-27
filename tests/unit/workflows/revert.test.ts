@@ -170,10 +170,12 @@ describe("REVERT_REASON_LABELS", () => {
 });
 
 // ─── executeRevertEffect — WS10: revert restores before_state for real ───────
-// executeRevertEffect dynamically imports lib/integrations/shopify/mutations
-// inside the branches it needs — mock that module per-test via vi.doMock and
-// re-import lib/workflows/revert fresh (vi.resetModules) so the dynamic import
-// resolves against the mock.
+// executeRevertEffect now lives in the sibling lib/workflows/revert-effect.ts
+// (split out so lib/workflows/revert.ts stays client-safe — see that module's
+// docblock). It dynamically imports lib/integrations/shopify/mutations inside
+// the branches it needs — mock that module per-test via vi.doMock and
+// re-import lib/workflows/revert-effect fresh (vi.resetModules) so the
+// dynamic import resolves against the mock.
 
 describe("executeRevertEffect — restores before_state through the write path", () => {
   it("product content restore calls updateProduct with the before_state fields", async () => {
@@ -186,7 +188,7 @@ describe("executeRevertEffect — restores before_state through the write path",
       updatePageContent: vi.fn(),
     }));
 
-    const { executeRevertEffect } = await import("@/lib/workflows/revert");
+    const { executeRevertEffect } = await import("@/lib/workflows/revert-effect");
 
     await executeRevertEffect(
       {
@@ -218,7 +220,7 @@ describe("executeRevertEffect — restores before_state through the write path",
       updatePageContent: vi.fn(),
     }));
 
-    const { executeRevertEffect } = await import("@/lib/workflows/revert");
+    const { executeRevertEffect } = await import("@/lib/workflows/revert-effect");
 
     await executeRevertEffect(
       {
@@ -246,7 +248,7 @@ describe("executeRevertEffect — restores before_state through the write path",
       updatePageContent: vi.fn(),
     }));
 
-    const { executeRevertEffect } = await import("@/lib/workflows/revert");
+    const { executeRevertEffect } = await import("@/lib/workflows/revert-effect");
 
     await executeRevertEffect(
       {
@@ -274,7 +276,7 @@ describe("executeRevertEffect — restores before_state through the write path",
       updatePageContent: updatePageContentMock,
     }));
 
-    const { executeRevertEffect } = await import("@/lib/workflows/revert");
+    const { executeRevertEffect } = await import("@/lib/workflows/revert-effect");
 
     await executeRevertEffect(
       {
@@ -295,7 +297,7 @@ describe("executeRevertEffect — restores before_state through the write path",
 
   it("sent-email is a no-op — does not import the mutations module", async () => {
     vi.resetModules();
-    const { executeRevertEffect } = await import("@/lib/workflows/revert");
+    const { executeRevertEffect } = await import("@/lib/workflows/revert-effect");
 
     await expect(
       executeRevertEffect(
@@ -312,7 +314,7 @@ describe("executeRevertEffect — restores before_state through the write path",
 
   it("empty before_state throws instead of a silent no-op", async () => {
     vi.resetModules();
-    const { executeRevertEffect } = await import("@/lib/workflows/revert");
+    const { executeRevertEffect } = await import("@/lib/workflows/revert-effect");
 
     await expect(
       executeRevertEffect(
@@ -329,7 +331,7 @@ describe("executeRevertEffect — restores before_state through the write path",
 
   it("unmatched action_type/before_state shape throws instead of a silent no-op", async () => {
     vi.resetModules();
-    const { executeRevertEffect } = await import("@/lib/workflows/revert");
+    const { executeRevertEffect } = await import("@/lib/workflows/revert-effect");
 
     await expect(
       executeRevertEffect(

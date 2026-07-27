@@ -20,6 +20,7 @@ import {
   gmailIncrementalPollFn,
 } from "@/lib/inngest/functions/gmail-sync";
 import { executeWorkflowRun } from "@/lib/inngest/functions/execute-workflow-run";
+import { scheduledWorkflowsTick } from "@/lib/inngest/functions/scheduled-workflows";
 import { catalogAudit } from "@/lib/inngest/functions/catalog-audit";
 import { exportAccountData } from "@/lib/inngest/functions/export-account-data";
 import { purgeAccount } from "@/lib/inngest/functions/purge-account";
@@ -35,6 +36,7 @@ export const { GET, POST, PUT } = serve({
     gmailInitialSyncFn,
     gmailIncrementalPollFn,
     executeWorkflowRun,
+    scheduledWorkflowsTick,
     catalogAudit,
     exportAccountData,
     purgeAccount,

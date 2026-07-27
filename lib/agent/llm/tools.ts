@@ -5,8 +5,9 @@
  * getAiSdkTools(includeWriteTools, ctx) wraps each registry ToolDefinition as an
  * AI SDK tool() whose execute delegates to dispatchTool — preserving the existing
  * Zod safeParse validation (T-2-05-01) and the never-throws correctable-error
- * contract. This retires the lossy zodToJsonSchemaShape (which advertised every
- * param as `string`) by feeding the model the REAL Zod schema.
+ * contract. This retires the old lossy Zod-to-JSON-Schema shim (removed in
+ * WS12 — it advertised every param as `string`) by feeding the model the
+ * REAL Zod schema.
  *
  * SECURITY (T-ebw-01): MUST be called per-request with the request's AgentContext
  * captured in the closure below — NEVER memoized at module scope. A module-level

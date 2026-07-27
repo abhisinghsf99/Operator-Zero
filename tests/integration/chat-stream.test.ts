@@ -140,8 +140,9 @@ vi.mock("@/lib/agent/prompt", () => ({
 }));
 
 // ─── Tools mock ──────────────────────────────────────────────────────────────
-// The route no longer imports getAnthropicToolDefinitions; keep dispatchTool /
-// getToolDefinitions for the CR-05 test that imports dispatchTool directly.
+// The route no longer imports the old Anthropic-shaped tool-definitions helper
+// (removed in WS12); keep dispatchTool / getToolDefinitions for the CR-05 test
+// that imports dispatchTool directly.
 vi.mock("@/lib/agent/tools/index", () => ({
   dispatchTool: vi.fn().mockResolvedValue({ type: "tool_result", content: "{}" }),
   getToolDefinitions: vi.fn().mockReturnValue({}),

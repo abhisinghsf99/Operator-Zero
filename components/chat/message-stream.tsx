@@ -13,8 +13,10 @@
  *   preview        → ContentPreview
  *   reasoning      → ReasoningBlock
  *
- * Realtime: Supabase Realtime channel { private: true } with user JWT for live
- * status sync (Pitfall 5, T-2-06-05).
+ * NOTE (WS12 dead-code removal): a Supabase Realtime subscription used to live
+ * here but subscribed to `thread:<id>` with zero event handlers — it did
+ * nothing observable and was removed. Re-add with real handlers if/when live
+ * status sync is actually implemented.
  *
  * ACCESSIBILITY (WCAG 2.1 AA):
  *   - Messages list is aria-live="polite"
@@ -32,7 +34,6 @@ import { useRouter } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { createBrowserClient } from "@/lib/auth/client";
 import { Composer } from "./composer";
 import { WorkflowVisualizer } from "./workflow-visualizer";
 import { ReasoningBlock } from "./reasoning-block";
@@ -137,35 +138,6 @@ export function ChatThreadView({
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages.length, isStreaming]);
-
-  // Supabase Realtime subscription for live thread updates (T-2-06-05).
-  // The `thread:<id>` channel is private; setAuth() attaches the user JWT so
-  // Realtime enforces the realtime.messages ownership policy from migration 0004
-  // (only the thread's owner may join/receive on this topic). Without setAuth a
-  // private channel cannot be authorized server-side.
-  useEffect(() => {
-    const supabase = createBrowserClient();
-    let channel: ReturnType<typeof supabase.channel> | null = null;
-    let cancelled = false;
-
-    void (async () => {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
-      await supabase.realtime.setAuth(session?.access_token ?? null);
-      if (cancelled) return;
-
-      channel = supabase.channel(`thread:${threadId}`, {
-        config: { private: true },
-      });
-      channel.subscribe();
-    })();
-
-    return () => {
-      cancelled = true;
-      if (channel) void supabase.removeChannel(channel);
-    };
-  }, [threadId]);
 
   const sendMessage = useCallback(
     async (messageText: string) => {
