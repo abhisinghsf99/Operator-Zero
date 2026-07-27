@@ -92,6 +92,296 @@ async function wipeUserData(tx: SeedTx, USER: string): Promise<void> {
   await tx.delete(gmailThreads).where(eq(gmailThreads.user_id, USER));
 }
 
+// ─── Seeded workflow definitions (module scope — WS1 regression guard) ─────────
+// [name, level, status, trigger_type, description, source, updatedAgo(hrs), steps[]]
+// WS1 fix: every step now names a REAL tool key from getToolDefinitions()
+// (lib/agent/tools) and carries params that pass that tool's Zod schema —
+// see tests/unit/seed-registry.test.ts, the regression guard for this.
+// Exported (not just used internally) so the registry-conformance test can
+// validate every step without touching the database.
+type StepTuple = [string, string, string, Record<string, unknown>];
+type WfDefTuple = [
+  string,
+  string,
+  string,
+  string,
+  string,
+  string,
+  number,
+  StepTuple[],
+];
+export const DEMO_WORKFLOW_DEFS: WfDefTuple[] = [
+  [
+    "Alt text for new product images",
+    "L3",
+    "active",
+    "schedule",
+    "Generates alt text from product name + category for any image missing it. Runs nightly.",
+    "chat",
+    3,
+    [
+      [
+        "scan",
+        "Scan catalog for images missing alt text",
+        "shopify_list_products",
+        { status: "active", limit: 50 },
+      ],
+      [
+        "write",
+        "Write alt text to Shopify",
+        "shopify_update_product_image_alt",
+        {
+          product_gid: "gid://shopify/Product/100000001",
+          image_id: "gid://shopify/MediaImage/100000001",
+          alt_text: "Full-grain leather weekender duffel in tan, standing upright",
+        },
+      ],
+    ],
+  ],
+  [
+    "Fix empty meta descriptions",
+    "L3",
+    "active",
+    "schedule",
+    "Fills missing meta descriptions in brand voice, grounded in product data.",
+    "chat",
+    9,
+    [
+      [
+        "scan",
+        "Find products with empty meta description",
+        "shopify_list_products",
+        { status: "active", limit: 50 },
+      ],
+      [
+        "optimize",
+        "Optimize meta title + description",
+        "shopify_optimize_meta",
+        { product_gid: "gid://shopify/Product/100000002" },
+      ],
+    ],
+  ],
+  [
+    "Answer customer product questions",
+    "L2",
+    "active",
+    "event",
+    "Drafts replies to product questions from the inbox; you approve before send.",
+    "chat",
+    2,
+    [
+      [
+        "triage",
+        "Check the support inbox for new questions",
+        "gmail_list_threads",
+        { support_only: true, limit: 10 },
+      ],
+      [
+        "open",
+        "Read the full thread",
+        "gmail_get_thread",
+        { gmail_thread_id: "gmail-thread-aa12" },
+      ],
+      [
+        "draft",
+        "Draft a reply grounded in product data",
+        "gmail_draft_reply",
+        {
+          thread_id: "gmail-thread-aa12",
+          subject: "Re: Leather care after rain?",
+          body: "Hi Maria — good news, a little rain won't hurt it. Let it air-dry away from heat, then rub in a thin coat of leather conditioner once it's fully dry. It'll darken slightly and even out over time.",
+        },
+      ],
+    ],
+  ],
+  [
+    "Low-stock flash-sale proposals",
+    "L2",
+    "active",
+    "event",
+    "When a slow-mover dips below threshold, proposes a weekend discount (≤20%).",
+    "promoted_from_activity",
+    26,
+    [
+      [
+        "scan",
+        "Check inventory against the low-stock threshold",
+        "shopify_get_inventory",
+        { low_stock_threshold: 5 },
+      ],
+      [
+        "propose",
+        "Propose a restock quantity for review",
+        "shopify_propose_restock",
+        { variant_gid: "gid://shopify/ProductVariant/100500014" },
+      ],
+    ],
+  ],
+  [
+    "Weekly SEO audit — Journals",
+    "L2",
+    "active",
+    "schedule",
+    "Scores Journal titles + meta against SEO best practices and proposes fixes.",
+    "chat",
+    30,
+    [
+      [
+        "pull",
+        "Pull the Journals collection",
+        "shopify_list_products",
+        { search: "Journals", limit: 50 },
+      ],
+      [
+        "optimize",
+        "Optimize meta title + description",
+        "shopify_optimize_meta",
+        { product_gid: "gid://shopify/Product/100000004" },
+      ],
+    ],
+  ],
+  [
+    "Retire long-out-of-stock products",
+    "L2",
+    "active",
+    "schedule",
+    "Flags products out of stock 90+ days and proposes retiring them.",
+    "chat",
+    50,
+    [
+      [
+        "scan",
+        "Find draft products that may be long out of stock",
+        "shopify_list_products",
+        { status: "draft", limit: 50 },
+      ],
+      [
+        "archive",
+        "Archive on approval",
+        "shopify_update_product_status",
+        { product_gid: "gid://shopify/Product/100000010", status: "archived" },
+      ],
+    ],
+  ],
+  [
+    "Tag cleanup — dedupe & fix",
+    "L1",
+    "active",
+    "manual",
+    "Finds duplicate and misspelled tags; you run it when ready.",
+    "chat",
+    96,
+    [
+      // L1 pauses at the first step by design (WR-05) — single-step definition.
+      [
+        "scan",
+        "Read all product tags",
+        "shopify_list_products",
+        { limit: 50 },
+      ],
+    ],
+  ],
+  [
+    "New collection copy — Explorer Series",
+    "L1",
+    "paused",
+    "manual",
+    "Drafts collection + product copy for new launches.",
+    "chat",
+    140,
+    [
+      [
+        "draft",
+        "Draft collection copy in brand voice",
+        "shopify_optimize_product_description",
+        {
+          product_gid: "gid://shopify/Product/100000001",
+          instructions:
+            "Collection launch copy for the Explorer Series. Lead with what it is for.",
+        },
+      ],
+    ],
+  ],
+  [
+    "Fix 'Default Title' products",
+    "L3",
+    "active",
+    "schedule",
+    "Rewrites products still showing the placeholder 'Default Title' in search.",
+    "chat",
+    6,
+    [
+      [
+        "scan",
+        "Find 'Default Title' products",
+        "shopify_list_products",
+        { status: "active", limit: 50 },
+      ],
+      [
+        "rewrite",
+        "Rewrite the product description",
+        "shopify_optimize_product_description",
+        { product_gid: "gid://shopify/Product/100000005" },
+      ],
+    ],
+  ],
+  [
+    "Weekend discount planner",
+    "L2",
+    "draft",
+    "manual",
+    "Plans a themed weekend promotion across a collection.",
+    "chat",
+    200,
+    [
+      [
+        "scan",
+        "Check inventory against the low-stock threshold",
+        "shopify_get_inventory",
+        { low_stock_threshold: 20 },
+      ],
+      [
+        "price",
+        "Set the weekend price",
+        "shopify_update_variant_price",
+        { variant_gid: "gid://shopify/ProductVariant/100500007", price: 54.4 },
+      ],
+    ],
+  ],
+];
+
+// ─── Seeded chat workflow_plan block (module scope — WS1 regression guard) ────
+// Thread A's inline workflow_plan message payload — matches workflow 5 above
+// (Weekly SEO audit — Journals): pull, optimize, then apply the approved title.
+// The old "apply" step dispatched a fake approval-gate tool name — approval is
+// an engine behavior, not a tool — replaced here with a real write so
+// Save-as-workflow still produces a runnable 3-step workflow and the
+// visualizer shows a 3-step plan.
+export const DEMO_CHAT_PLAN_STEPS = [
+  {
+    id: "pull",
+    name: "Pull the Journals collection",
+    tool: "shopify_list_products",
+    description: "31 products",
+    params: { search: "Journals", limit: 50 },
+  },
+  {
+    id: "optimize",
+    name: "Optimize meta title + description",
+    tool: "shopify_optimize_meta",
+    params: { product_gid: "gid://shopify/Product/100000004" },
+  },
+  {
+    id: "apply",
+    name: "Apply the new meta title",
+    tool: "shopify_update_meta_title",
+    params: {
+      product_gid: "gid://shopify/Product/100000004",
+      meta_title: "Refillable A5 Leather Notebook | Wanderbound",
+    },
+  },
+];
+
 /**
  * Seed the Wanderbound/Sarah demo dataset for an arbitrary user_id.
  * Wipes any existing app data for that user first, then inserts the full
@@ -545,163 +835,9 @@ export async function seedDemoFor(USER: string): Promise<void> {
     }
 
     // ─── 9. WORKFLOWS (+ versions) ────────────────────────────────────────────────
-    // [name, level, status, trigger_type, description, source, updatedAgo(hrs), steps[]]
-    type StepTuple = [string, string, string];
-    type WfDefTuple = [
-      string,
-      string,
-      string,
-      string,
-      string,
-      string,
-      number,
-      StepTuple[],
-    ];
-    const wfDefs: WfDefTuple[] = [
-      [
-        "Alt text for new product images",
-        "L3",
-        "active",
-        "schedule",
-        "Generates alt text from product name + category for any image missing it. Runs nightly.",
-        "chat",
-        3,
-        [
-          ["scan", "Scan catalog for images missing alt text", "shopify_list_products"],
-          ["generate", "Draft alt text from name + type", "anthropic_generate"],
-          ["write", "Write alt text to Shopify", "shopify_update_image_alt"],
-          ["log", "Log to activity", "activity_log"],
-        ],
-      ],
-      [
-        "Fix empty meta descriptions",
-        "L3",
-        "active",
-        "schedule",
-        "Fills missing meta descriptions in brand voice, grounded in product data.",
-        "chat",
-        9,
-        [
-          ["scan", "Find products with empty meta description", "shopify_list_products"],
-          ["generate", "Write meta description (≤155 chars)", "anthropic_generate"],
-          ["write", "Update Shopify SEO fields", "shopify_update_meta_desc"],
-        ],
-      ],
-      [
-        "Answer customer product questions",
-        "L2",
-        "active",
-        "event",
-        "Drafts replies to product questions from the inbox; you approve before send.",
-        "chat",
-        2,
-        [
-          ["watch", "New customer email arrives", "gmail_trigger"],
-          ["classify", "Is this a product question?", "anthropic_classify"],
-          ["draft", "Draft a reply grounded in product data", "anthropic_generate"],
-          ["approve", "Ask Sarah to approve", "request_approval"],
-          ["send", "Send reply", "gmail_send"],
-        ],
-      ],
-      [
-        "Low-stock flash-sale proposals",
-        "L2",
-        "active",
-        "event",
-        "When a slow-mover dips below threshold, proposes a weekend discount (≤20%).",
-        "promoted_from_activity",
-        26,
-        [
-          ["watch", "Inventory drops below threshold", "shopify_inventory_trigger"],
-          ["analyze", "Check sell-through + margin", "compute"],
-          ["propose", "Propose a discount ≤20%", "request_approval"],
-        ],
-      ],
-      [
-        "Weekly SEO audit — Journals",
-        "L2",
-        "active",
-        "schedule",
-        "Scores Journal titles + meta against SEO best practices and proposes fixes.",
-        "chat",
-        30,
-        [
-          ["pull", "Pull Journals collection", "shopify_list_products"],
-          ["score", "Score titles + meta", "seo_score"],
-          ["propose", "Propose rewrites for weak ones", "request_approval"],
-        ],
-      ],
-      [
-        "Retire long-out-of-stock products",
-        "L2",
-        "active",
-        "schedule",
-        "Flags products out of stock 90+ days and proposes retiring them.",
-        "chat",
-        50,
-        [
-          ["scan", "Find products OOS 90+ days", "shopify_list_products"],
-          ["propose", "Propose retiring them", "request_approval"],
-          ["archive", "Archive on approval", "shopify_update_status"],
-        ],
-      ],
-      [
-        "Tag cleanup — dedupe & fix",
-        "L1",
-        "active",
-        "manual",
-        "Finds duplicate and misspelled tags; you run it when ready.",
-        "chat",
-        96,
-        [
-          ["scan", "Read all product tags", "shopify_list_products"],
-          ["cluster", "Cluster duplicates + misspellings", "compute"],
-          ["report", "Show proposed merges", "preview"],
-        ],
-      ],
-      [
-        "New collection copy — Explorer Series",
-        "L1",
-        "paused",
-        "manual",
-        "Drafts collection + product copy for new launches.",
-        "chat",
-        140,
-        [
-          ["brief", "Read collection brief", "read"],
-          ["draft", "Draft copy in brand voice", "anthropic_generate"],
-          ["preview", "Show drafts for review", "preview"],
-        ],
-      ],
-      [
-        "Fix 'Default Title' products",
-        "L3",
-        "active",
-        "schedule",
-        "Rewrites products still showing the placeholder 'Default Title' in search.",
-        "chat",
-        6,
-        [
-          ["scan", "Find 'Default Title' products", "shopify_list_products"],
-          ["generate", "Write a real title", "anthropic_generate"],
-          ["write", "Update product title", "shopify_update_product"],
-        ],
-      ],
-      [
-        "Weekend discount planner",
-        "L2",
-        "draft",
-        "manual",
-        "Plans a themed weekend promotion across a collection.",
-        "chat",
-        200,
-        [
-          ["pick", "Pick a collection + theme", "read"],
-          ["plan", "Plan discount + email", "compute"],
-          ["preview", "Show the plan", "preview"],
-        ],
-      ],
-    ];
+    // Definitions live at module scope (DEMO_WORKFLOW_DEFS, below wipeUserData) so
+    // tests/unit/seed-registry.test.ts can import + validate them without a DB.
+    const wfDefs = DEMO_WORKFLOW_DEFS;
 
     const wf: Record<
       string,
@@ -727,6 +863,7 @@ export async function seedDemoFor(USER: string): Promise<void> {
           name: s[1],
           tool: s[2],
           type: "action",
+          params: s[3],
           next_step: steps[i + 1]?.[0] ?? null,
         })),
       };
@@ -903,7 +1040,7 @@ export async function seedDemoFor(USER: string): Promise<void> {
         "Low-stock flash-sale proposals",
       ],
       [
-        "shopify_update_product",
+        "shopify_update_product_description",
         "Rewrite flagship description: The Voyager Weekender",
         "high",
         {
@@ -1550,24 +1687,7 @@ export async function seedDemoFor(USER: string): Promise<void> {
           "Score Journal titles + meta against SEO best practices and propose fixes.",
         automation_level: "L2",
         trigger_type: "schedule",
-        steps: [
-          {
-            id: "pull",
-            name: "Pull the Journals collection",
-            tool: "shopify_list_products",
-            description: "31 products",
-          },
-          {
-            id: "score",
-            name: "Score titles + meta descriptions",
-            tool: "seo_score",
-          },
-          {
-            id: "propose",
-            name: "Propose rewrites for the weak ones",
-            tool: "request_approval",
-          },
-        ],
+        steps: DEMO_CHAT_PLAN_STEPS,
       }
     );
     await msg(

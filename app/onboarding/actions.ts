@@ -257,6 +257,104 @@ const starterWorkflowsSchema = z
   )
   .min(1, "At least one workflow must be selected.");
 
+// ─── Starter workflow definitions (WS11) ───────────────────────────────────────
+// The old shape was `{ steps: [], version: 1, source: "onboarding" }` — an
+// empty step array that made the workflow uneditable/unrunnable (CR-02 already
+// fixed current_version_id; this fixes the definition itself). Every starter
+// now gets a real minimal definition using ONLY real registry tools with
+// schema-valid params (see tests/unit/seed-registry.test.ts).
+//
+// Rule: a starter workflow must never contain a step whose params reference a
+// GID that may not exist in the user's store — a real user's catalog has
+// different GIDs than the demo dataset. So every domain gets a GID-free
+// `scan` first step (shopify_list_products), and ONLY domains with a
+// GID-free, domain-appropriate second read tool get one:
+//   - qa:        gmail_list_threads   (no GID required)
+//   - inventory: shopify_get_inventory (no GID required — variant_gid/product_gid
+//                are both optional filters)
+// catalog / seo / content stay single-step scan-only: their natural next step
+// (optimize_meta / optimize_product_description) requires a concrete
+// product_gid we cannot safely assume exists in a brand-new real store.
+type StarterStep = {
+  id: string;
+  name: string;
+  tool: string;
+  type: "action";
+  params: Record<string, unknown>;
+  next_step: string | null;
+};
+
+type StarterDefinition = { entry_step: string; steps: StarterStep[] };
+
+function buildStarterDefinition(
+  domain: WorkflowSuggestion["domain"]
+): StarterDefinition {
+  const scanStep: StarterStep = {
+    id: "scan",
+    name: "Scan the catalog",
+    tool: "shopify_list_products",
+    type: "action",
+    params: { status: "active", limit: 20 },
+    next_step: null,
+  };
+
+  if (domain === "qa") {
+    scanStep.next_step = "act";
+    return {
+      entry_step: "scan",
+      steps: [
+        scanStep,
+        {
+          id: "act",
+          name: "Check the support inbox",
+          tool: "gmail_list_threads",
+          type: "action",
+          params: { support_only: true, limit: 10 },
+          next_step: null,
+        },
+      ],
+    };
+  }
+
+  if (domain === "inventory") {
+    scanStep.next_step = "act";
+    return {
+      entry_step: "scan",
+      steps: [
+        scanStep,
+        {
+          id: "act",
+          name: "Check low-stock inventory",
+          tool: "shopify_get_inventory",
+          type: "action",
+          params: { low_stock_threshold: 5 },
+          next_step: null,
+        },
+      ],
+    };
+  }
+
+  // catalog / seo / content: scan-only.
+  return { entry_step: "scan", steps: [scanStep] };
+}
+
+/**
+ * STARTER_WORKFLOW_DEFINITIONS — one definition per onboarding domain,
+ * computed once at module load. Exported (pure, no DB) so
+ * tests/unit/seed-registry.test.ts can validate every step against the live
+ * tool registry without touching the database.
+ */
+export const STARTER_WORKFLOW_DEFINITIONS: Record<
+  WorkflowSuggestion["domain"],
+  StarterDefinition
+> = {
+  catalog: buildStarterDefinition("catalog"),
+  seo: buildStarterDefinition("seo"),
+  qa: buildStarterDefinition("qa"),
+  inventory: buildStarterDefinition("inventory"),
+  content: buildStarterDefinition("content"),
+};
+
 /**
  * createStarterWorkflows — insert selected starters as Draft L2 workflows.
  *
@@ -304,13 +402,18 @@ export async function createStarterWorkflows(
 
       if (!workflowRow?.id) continue;
 
-      // Insert initial version row
+      // Insert initial version row — real minimal definition (WS11), never an
+      // empty steps array; see STARTER_WORKFLOW_DEFINITIONS above.
       const [versionRow] = await tx
         .insert(workflowVersions)
         .values({
           workflow_id: workflowRow.id,
           version_number: 1,
-          definition: { steps: [], version: 1, source: "onboarding" },
+          definition: {
+            ...STARTER_WORKFLOW_DEFINITIONS[starter.domain],
+            version: 1,
+            source: "onboarding",
+          },
         })
         .returning();
 
