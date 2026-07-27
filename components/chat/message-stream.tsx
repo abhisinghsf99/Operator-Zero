@@ -18,6 +18,23 @@
  * nothing observable and was removed. Re-add with real handlers if/when live
  * status sync is actually implemented.
  *
+ * NOTE (WS7.2, message_id adoption): sendMessage creates an optimistic
+ * `asst-${Date.now()}` id for the assistant placeholder. The route emits a
+ * `{ message_id }` SSE event as the FIRST event of the stream carrying the
+ * real assistant message UUID; sendMessage swaps every subsequent
+ * setMessages call to key off the real id (tracked in a local
+ * `currentAsstId` variable) so later actions — notably Save as workflow,
+ * which Zod-validates a UUID — operate on a real row id, not the optimistic
+ * placeholder.
+ *
+ * NOTE (WS7.5, serialized queue flush): the Composer's onStreamEnd used to
+ * fire `sendMessage` for every queued message in a tight loop; each call
+ * aborts the previous in-flight stream (see abortRef below), so only the
+ * LAST queued message ever actually sent. handleStreamEnd now appends
+ * incoming queued messages to `pendingQueueRef` and a small effect drains it
+ * one at a time as isStreaming transitions back to false, so queued sends
+ * are genuinely serialized.
+ *
  * ACCESSIBILITY (WCAG 2.1 AA):
  *   - Messages list is aria-live="polite"
  *   - Latency indicator is aria-live
@@ -128,16 +145,29 @@ export function ChatThreadView({
     else bubbleRefs.current.delete(id);
   }, []);
 
-  // Detect reduced-motion preference for scroll behavior
-  const prefersReducedMotion =
+  // Detect reduced-motion preference for scroll behavior. Read once via a
+  // useState initializer (WS7.4) rather than on every render — this also
+  // keeps it out of the scroll effect's exhaustive-deps churn below.
+  const [prefersReducedMotion] = useState(() =>
     typeof window !== "undefined"
       ? window.matchMedia("(prefers-reduced-motion: reduce)").matches
-      : false;
+      : false
+  );
 
-  // Scroll to bottom on new messages
+  // WS7.4 — follow the stream as text arrives. The old effect only depended
+  // on messages.length + isStreaming, so it never re-ran while a single
+  // message's content grew during streaming (only fired once when the
+  // placeholder was first appended). Deriving a key from the last message's
+  // content length forces a re-run on every delta.
+  const lastMessage = messages[messages.length - 1];
+  const lastMessageContentLength =
+    (lastMessage?.streamingContent ?? lastMessage?.content ?? "").length;
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages.length, isStreaming]);
+    messagesEndRef.current?.scrollIntoView({
+      behavior: prefersReducedMotion ? "auto" : "smooth",
+      block: "end",
+    });
+  }, [messages.length, isStreaming, lastMessageContentLength, prefersReducedMotion]);
 
   const sendMessage = useCallback(
     async (messageText: string) => {
@@ -154,8 +184,13 @@ export function ChatThreadView({
         },
       ]);
 
-      // 2. Add streaming placeholder for assistant
+      // 2. Add streaming placeholder for assistant. WS7.2 — currentAsstId is a
+      // mutable local (not the const asstMsgId) because the route swaps this
+      // optimistic id for the real assistant message UUID via the `message_id`
+      // SSE event; every subsequent setMessages call below must key off
+      // currentAsstId's CURRENT value, not the initial placeholder id.
       const asstMsgId = `asst-${Date.now()}`;
+      let currentAsstId = asstMsgId;
       setMessages((prev) => [
         ...prev,
         {
@@ -221,11 +256,23 @@ export function ChatThreadView({
                 throw new Error(event.message ?? "The reply stream was interrupted. Try sending again.");
               }
 
+              if (event.message_id) {
+                // WS7.2 — adopt the real assistant message UUID. Swap the
+                // placeholder's id in state, then repoint currentAsstId so
+                // every later branch in this loop (text, inline blocks,
+                // finalize, error) targets the real row.
+                const realId = event.message_id as string;
+                setMessages((prev) =>
+                  prev.map((m) => (m.id === currentAsstId ? { ...m, id: realId } : m))
+                );
+                currentAsstId = realId;
+              }
+
               if (event.text) {
                 // Append text delta
                 setMessages((prev) =>
                   prev.map((m) =>
-                    m.id === asstMsgId
+                    m.id === currentAsstId
                       ? {
                           ...m,
                           streamingContent:
@@ -242,7 +289,7 @@ export function ChatThreadView({
                 // Tool result — update inline block
                 setMessages((prev) =>
                   prev.map((m) =>
-                    m.id === asstMsgId
+                    m.id === currentAsstId
                       ? {
                           ...m,
                           inline_block_type: event.inline_block_type,
@@ -266,7 +313,7 @@ export function ChatThreadView({
         // 5. Finalize assistant message
         setMessages((prev) =>
           prev.map((m) =>
-            m.id === asstMsgId
+            m.id === currentAsstId
               ? { ...m, status: "complete" as const, streamingContent: undefined }
               : m
           )
@@ -280,7 +327,7 @@ export function ChatThreadView({
         // Mark assistant message as errored
         setMessages((prev) =>
           prev.map((m) =>
-            m.id === asstMsgId ? { ...m, status: "errored" as const } : m
+            m.id === currentAsstId ? { ...m, status: "errored" as const } : m
           )
         );
       } finally {
@@ -290,15 +337,44 @@ export function ChatThreadView({
     [threadId]
   );
 
-  // Handle queued messages flushed after streaming ends
+  // WS7.5 — serialized queue flush. pendingQueueRef holds every queued
+  // message that hasn't been sent yet, across possibly-multiple onStreamEnd
+  // calls (the Composer flushes ITS queue once per streaming->false
+  // transition, but a new send re-enters streaming=true immediately, so a
+  // user who queues 3 messages during one long reply gets 3 separate
+  // onStreamEnd calls over time, one per completed reply).
+  //
+  // The old implementation looped `void sendMessage(msg)` over every queued
+  // message at once — each sendMessage call aborts the previous in-flight
+  // stream (abortRef.current?.abort() above), so only the LAST queued
+  // message ever actually completed. This drains exactly one at a time.
+  const pendingQueueRef = useRef<string[]>([]);
+  const isStreamingRef = useRef(false);
+  useEffect(() => {
+    isStreamingRef.current = isStreaming;
+  }, [isStreaming]);
+
   const handleStreamEnd = useCallback(
     (queuedMessages: string[]) => {
-      for (const msg of queuedMessages) {
-        void sendMessage(msg);
+      pendingQueueRef.current.push(...queuedMessages);
+      if (!isStreamingRef.current) {
+        const next = pendingQueueRef.current.shift();
+        if (next) void sendMessage(next);
       }
     },
     [sendMessage]
   );
+
+  // When a stream finishes and there's still a queued message waiting
+  // (queued while THIS reply was in flight), send the next one. Guards
+  // against the ordering race with handleStreamEnd above via the plain
+  // shift() — whichever runs first empties the ref, the other is a no-op.
+  useEffect(() => {
+    if (!isStreaming && pendingQueueRef.current.length > 0) {
+      const next = pendingQueueRef.current.shift();
+      if (next) void sendMessage(next);
+    }
+  }, [isStreaming, sendMessage]);
 
   return (
     <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0, background: "var(--bg)", overflow: "hidden" }}>
@@ -431,7 +507,7 @@ export function ChatThreadView({
           </div>
         </div>
       ) : (
-        <ThreadEmptyState />
+        <ThreadEmptyState onSuggestion={(t) => void sendMessage(t)} />
       )}
 
       {/* Stream error */}
@@ -646,13 +722,18 @@ function MessageBubble({ message, registerRef, highlighted = false }: MessageBub
           />
         )}
 
-        {/* Errored state */}
+        {/* Errored state — covers both a live send failure and a reaped stale
+            stream (WS7.9: listMessages marks abandoned 'streaming' rows
+            'errored' on reload). This block is intentionally a sibling of the
+            text-content div above, not nested inside it, so a message with
+            empty content (the reaped case — nothing ever streamed) still
+            renders this notice instead of an empty bubble. */}
         {message.status === "errored" && (
           <div
             role="alert"
             style={{ fontSize: 12.5, color: "var(--danger)" }}
           >
-            Message failed to send.
+            This reply was interrupted.
           </div>
         )}
       </div>
@@ -682,11 +763,19 @@ function InlineBlock({ type, payload, messageId }: InlineBlockProps) {
     }
 
     case "approval_card": {
+      // WS7.11 — status/reasoning/preview/risk are populated server-side by
+      // listMessages (Plan 2 task 1 Part C) from the live approvals row.
+      // Reading them here (instead of hardcoding "pending"/"") is what makes
+      // a resolved approval render its resolved state on reload rather than
+      // live Approve/Reject buttons.
       const card = payload as {
         approval_id?: string;
         action_type?: string;
         summary?: string;
         risk?: string;
+        status?: "pending" | "approved" | "rejected" | "expired" | "snoozed";
+        reasoning?: string;
+        preview?: Record<string, unknown>;
       };
       if (!card?.approval_id) return null;
       return (
@@ -695,8 +784,9 @@ function InlineBlock({ type, payload, messageId }: InlineBlockProps) {
           actionType={card.action_type ?? "unknown"}
           summary={card.summary ?? "Approval required"}
           stakes={(card.risk as "low" | "med" | "high") ?? "med"}
-          reasoning=""
-          initialStatus="pending"
+          preview={card.preview}
+          reasoning={card.reasoning ?? ""}
+          initialStatus={card.status ?? "pending"}
         />
       );
     }
@@ -723,7 +813,12 @@ function InlineBlock({ type, payload, messageId }: InlineBlockProps) {
 
 // ─── ThreadEmptyState ─────────────────────────────────────────────────────────
 
-function ThreadEmptyState() {
+interface ThreadEmptyStateProps {
+  /** WS7.8 — called with the suggestion text when a pill is clicked. */
+  onSuggestion: (text: string) => void;
+}
+
+function ThreadEmptyState({ onSuggestion }: ThreadEmptyStateProps) {
   const suggestions = [
     "Audit my catalog for missing meta titles",
     "Find slow-moving inventory",
@@ -772,7 +867,7 @@ function ThreadEmptyState() {
         {/* Suggestion pills */}
         <div style={{ display: "flex", flexWrap: "wrap", gap: 8, justifyContent: "center", maxWidth: 480 }}>
           {suggestions.map((s) => (
-            <SuggestionPill key={s} text={s} />
+            <SuggestionPill key={s} text={s} onClick={onSuggestion} />
           ))}
         </div>
       </div>
@@ -780,9 +875,17 @@ function ThreadEmptyState() {
   );
 }
 
-function SuggestionPill({ text }: { text: string }) {
+interface SuggestionPillProps {
+  text: string;
+  /** WS7.8 — invoked with the pill's text on click. */
+  onClick: (text: string) => void;
+}
+
+function SuggestionPill({ text, onClick }: SuggestionPillProps) {
   return (
     <button
+      type="button"
+      onClick={() => onClick(text)}
       style={{
         all: "unset",
         cursor: "pointer",
