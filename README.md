@@ -2,7 +2,7 @@
 
 > An AI agent that runs the day-to-day operations of a Shopify store, from the catalog and SEO to customer questions and inventory, so the founder can stop being the operator and get back to growing the business.
 
-**Status:** v1 MVP. Code-complete across 4 build phases, deployed against a live Shopify Sandbox store, 400+ tests passing, TypeScript strict.
+**Status:** v1 MVP. Code-complete across 4 build phases, deployed against a live Shopify Sandbox store, 560+ tests passing, TypeScript strict.
 
 🔗 **[Live demo](https://shopifyoperatorzero.vercel.app/login)**
 
@@ -29,7 +29,7 @@ The system splits into a stateless web tier and a durable agent tier:
 - **Observability before effect:** every action is logged before it touches Shopify or Gmail, and every external write is idempotent, so retries never apply the same change twice.
 - **Multi-tenant from day one:** every table carries `user_id`, every query filters by it, and Postgres RLS enforces it.
 
-An **Orchestrator** reads each request and routes it to one of four specialist agents: Content, SEO, Q&A, and Inventory.
+A single **Orchestrator** agent carries four embedded domain playbooks — Catalog, SEO, Q&A, and Inventory — rather than routing to separate specialist agents. Per-domain specialist agents are a v2 direction, not a v1 architecture.
 
 ## Features
 
@@ -48,7 +48,7 @@ An **Orchestrator** reads each request and routes it to one of four specialist a
 | Data | Supabase (Postgres 16, pgvector, Auth, Realtime, Storage) |
 | ORM / migrations | Drizzle |
 | Agent tier | Inngest (durable workflow runtime) |
-| LLM | Anthropic Claude (primary) · Groq (fast path) via the Vercel AI SDK |
+| LLM | Google Gemini (primary, via Google AI Studio) · Anthropic Claude and Groq supported via MODEL_PROFILE — all through the Vercel AI SDK |
 | Embeddings | Voyage AI |
 | UI | Tailwind · shadcn/ui · Radix · Lucide · Framer Motion · Sonner |
 | Validation | Zod (all external input) |
@@ -76,7 +76,7 @@ tests/          unit · integration · e2e · smoke
 
 ## Getting started
 
-**Prerequisites:** Node (see [`.nvmrc`](./.nvmrc)), a Supabase project, and API keys for Anthropic (or Groq), Voyage, Shopify, and Gmail OAuth.
+**Prerequisites:** Node (see [`.nvmrc`](./.nvmrc)), a Supabase project, and API keys for Google AI Studio (or Anthropic / Groq), Voyage, Shopify, and Gmail OAuth.
 
 ```bash
 # 1. Install

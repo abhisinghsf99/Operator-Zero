@@ -74,8 +74,9 @@ import {
   softDeleteMemoryItem,
 } from "@/lib/agent/memory";
 import { revokeSession as registryRevokeSession, signOutEverywhere as registrySignOutEverywhere } from "@/lib/auth/session-registry";
-import Anthropic from "@anthropic-ai/sdk";
-import { isDemoUser, DEMO_DISABLED_MESSAGE } from "@/lib/auth/demo";
+import { generateText } from "ai";
+import { resolveModel } from "@/lib/agent/llm/models";
+import { isSandboxClaims, DEMO_DISABLED_MESSAGE } from "@/lib/auth/demo";
 import { CURATED_OVERRIDE_TOOLS } from "@/lib/workflows/autonomy";
 
 // ─── Schemas ──────────────────────────────────────────────────────────────────
@@ -183,8 +184,17 @@ export async function disconnectIntegration(
   const userId = claims.sub as string;
   const providerValue = parsed.data;
 
-  // Demo guard: block destructive action for the demo user
-  if (isDemoUser(userId)) return { error: DEMO_DISABLED_MESSAGE };
+  // Demo guard (WS8): block ANY sandbox/demo identity from disconnecting,
+  // period. The old guard here read `isDemoUser(userId) &&
+  // isDemoConnectionLocked()`, which let an ANONYMOUS sandbox visitor
+  // disconnect Shopify unconditionally (isDemoUser only matches the shared
+  // demo account, and DEMO_SHOPIFY_LOCKED defaults unset) — clearShopifyMirror()
+  // then wiped that visitor's demo dataset with no way to reconnect. The
+  // old demo-lock-flag nuance is intentionally dropped: this now matches the
+  // other five destructive actions in this file (isSandboxClaims — see
+  // updateEmail, updatePassword, revokeSession, signOutEverywhere,
+  // requestAccountDeletion below).
+  if (isSandboxClaims(claims)) return { error: DEMO_DISABLED_MESSAGE };
 
   // 3. Delete integration row via RLS (ownership enforced at DB layer)
   await withUserRls(claims, async (tx) => {
@@ -361,11 +371,10 @@ export async function regenerateBrandVoice(): Promise<
       ? samples.map((s, i) => `Sample ${i + 1}:\n${s.sample_text}`).join("\n\n")
       : "(No samples available — generate based on a generic ecommerce brand voice.)";
 
-  // 3. Call Claude to produce a draft markdown (no DB write — T-4-03-04)
-  const client = new Anthropic();
-  const message = await client.messages.create({
-    model: "claude-opus-4-5",
-    max_tokens: 1024,
+  // 3. Call the DRAFTER model to produce a draft markdown (no DB write — T-4-03-04)
+  const result = await generateText({
+    model: resolveModel("DRAFTER"),
+    maxOutputTokens: 1024,
     messages: [
       {
         role: "user",
@@ -374,13 +383,13 @@ export async function regenerateBrandVoice(): Promise<
     ],
   });
 
-  const textContent = message.content.find((c) => c.type === "text");
-  if (!textContent || textContent.type !== "text") {
+  const draftText = result.text ?? "";
+  if (!draftText) {
     return { error: "Failed to generate brand voice draft. Please try again." };
   }
 
   // T-4-03-04: return draft only — caller must explicitly save
-  return { draft: textContent.text };
+  return { draft: draftText };
 }
 
 // ─── Memory CRUD ─────────────────────────────────────────────────────────────
@@ -630,7 +639,7 @@ export async function updateEmail(
   const userId = claims.sub as string;
 
   // Demo guard: block destructive action for the demo user
-  if (isDemoUser(userId)) return { error: DEMO_DISABLED_MESSAGE };
+  if (isSandboxClaims(claims)) return { error: DEMO_DISABLED_MESSAGE };
 
   // 3. Update via Supabase Auth (sends confirmation email)
   const supabase = await createClient();
@@ -670,7 +679,7 @@ export async function updatePassword(
   const userId = claims.sub as string;
 
   // Demo guard: block destructive action for the demo user
-  if (isDemoUser(userId)) return { error: DEMO_DISABLED_MESSAGE };
+  if (isSandboxClaims(claims)) return { error: DEMO_DISABLED_MESSAGE };
 
   // 3. Update via Supabase Auth
   const supabase = await createClient();
@@ -797,7 +806,7 @@ export async function revokeSession(
   const userId = claims.sub as string;
 
   // Demo guard: block destructive action for the demo user
-  if (isDemoUser(userId)) return { error: DEMO_DISABLED_MESSAGE };
+  if (isSandboxClaims(claims)) return { error: DEMO_DISABLED_MESSAGE };
 
   // 3. Delegate to session-registry helper (ownership re-check inside)
   const result = await registryRevokeSession(userId, parsed.data.sessionId);
@@ -825,7 +834,7 @@ export async function signOutEverywhere(): Promise<{ success: true } | { error: 
   const userId = claims.sub as string;
 
   // Demo guard: block destructive action for the demo user
-  if (isDemoUser(userId)) return { error: DEMO_DISABLED_MESSAGE };
+  if (isSandboxClaims(claims)) return { error: DEMO_DISABLED_MESSAGE };
 
   // 2. Delegate to session-registry helper
   const result = await registrySignOutEverywhere(userId);
@@ -976,7 +985,7 @@ export async function requestAccountDeletion(): Promise<
   const userId = claims.sub as string;
 
   // Demo guard: block destructive action for the demo user
-  if (isDemoUser(userId)) return { error: DEMO_DISABLED_MESSAGE };
+  if (isSandboxClaims(claims)) return { error: DEMO_DISABLED_MESSAGE };
 
   // 2. Active-run gate (D-09, Pitfall 4): block if any run is mid-execution
   const activeRuns = await serviceDb

@@ -13,8 +13,27 @@
  *   preview        → ContentPreview
  *   reasoning      → ReasoningBlock
  *
- * Realtime: Supabase Realtime channel { private: true } with user JWT for live
- * status sync (Pitfall 5, T-2-06-05).
+ * NOTE (WS12 dead-code removal): a Supabase Realtime subscription used to live
+ * here but subscribed to `thread:<id>` with zero event handlers — it did
+ * nothing observable and was removed. Re-add with real handlers if/when live
+ * status sync is actually implemented.
+ *
+ * NOTE (WS7.2, message_id adoption): sendMessage creates an optimistic
+ * `asst-${Date.now()}` id for the assistant placeholder. The route emits a
+ * `{ message_id }` SSE event as the FIRST event of the stream carrying the
+ * real assistant message UUID; sendMessage swaps every subsequent
+ * setMessages call to key off the real id (tracked in a local
+ * `currentAsstId` variable) so later actions — notably Save as workflow,
+ * which Zod-validates a UUID — operate on a real row id, not the optimistic
+ * placeholder.
+ *
+ * NOTE (WS7.5, serialized queue flush): the Composer's onStreamEnd used to
+ * fire `sendMessage` for every queued message in a tight loop; each call
+ * aborts the previous in-flight stream (see abortRef below), so only the
+ * LAST queued message ever actually sent. handleStreamEnd now appends
+ * incoming queued messages to `pendingQueueRef` and a small effect drains it
+ * one at a time as isStreaming transitions back to false, so queued sends
+ * are genuinely serialized.
  *
  * ACCESSIBILITY (WCAG 2.1 AA):
  *   - Messages list is aria-live="polite"
@@ -28,12 +47,17 @@
  */
 
 import { useState, useEffect, useRef, useCallback } from "react";
-import { createBrowserClient } from "@/lib/auth/client";
+import { useRouter } from "next/navigation";
+import { ArrowLeft } from "lucide-react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { Composer } from "./composer";
 import { WorkflowVisualizer } from "./workflow-visualizer";
 import { ReasoningBlock } from "./reasoning-block";
 import { ContentPreview } from "./content-preview";
 import { InlineApprovalCard } from "./inline-approval-card";
+import { ChatHeaderMenu } from "./chat-header-menu";
+import { ChatSearchBar } from "./chat-search-bar";
 import { Avatar, IconButton } from "@/components/design/primitives";
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
@@ -69,6 +93,10 @@ interface ChatThreadViewProps {
   threadId: string;
   /** Persisted messages loaded server-side, rendered as history on open. */
   initialMessages?: InitialMessage[];
+  /** Initial pinned_at value from the server — seeds the pinned state for ChatHeaderMenu. */
+  initialPinnedAt?: Date | null;
+  /** Initial thread title from the server — seeds the header title state. */
+  initialTitle?: string | null;
 }
 
 /**
@@ -77,7 +105,13 @@ interface ChatThreadViewProps {
  * Renders the message list and composer in a flex column.
  * The SSE stream is initiated per-send from the Composer.
  */
-export function ChatThreadView({ threadId, initialMessages = [] }: ChatThreadViewProps) {
+export function ChatThreadView({
+  threadId,
+  initialMessages = [],
+  initialPinnedAt = null,
+  initialTitle = null,
+}: ChatThreadViewProps) {
+  const router = useRouter();
   const [messages, setMessages] = useState<StreamMessage[]>(() =>
     initialMessages
       .filter((m) => m.role === "user" || m.role === "assistant")
@@ -98,39 +132,42 @@ export function ChatThreadView({ threadId, initialMessages = [] }: ChatThreadVie
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController | null>(null);
 
-  // Scroll to bottom on new messages
+  // ─── Header / search state ──────────────────────────────────────────────────
+  const [headerTitle, setHeaderTitle] = useState(initialTitle ?? "Orchestrator");
+  const [pinned, setPinned] = useState(initialPinnedAt != null);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [activeMatchId, setActiveMatchId] = useState<string | null>(null);
+
+  // Message ref map — maps message.id → bubble container HTMLDivElement for scroll
+  const bubbleRefs = useRef<Map<string, HTMLDivElement>>(new Map());
+  const registerBubbleRef = useCallback((id: string, el: HTMLDivElement | null) => {
+    if (el) bubbleRefs.current.set(id, el);
+    else bubbleRefs.current.delete(id);
+  }, []);
+
+  // Detect reduced-motion preference for scroll behavior. Read once via a
+  // useState initializer (WS7.4) rather than on every render — this also
+  // keeps it out of the scroll effect's exhaustive-deps churn below.
+  const [prefersReducedMotion] = useState(() =>
+    typeof window !== "undefined"
+      ? window.matchMedia("(prefers-reduced-motion: reduce)").matches
+      : false
+  );
+
+  // WS7.4 — follow the stream as text arrives. The old effect only depended
+  // on messages.length + isStreaming, so it never re-ran while a single
+  // message's content grew during streaming (only fired once when the
+  // placeholder was first appended). Deriving a key from the last message's
+  // content length forces a re-run on every delta.
+  const lastMessage = messages[messages.length - 1];
+  const lastMessageContentLength =
+    (lastMessage?.streamingContent ?? lastMessage?.content ?? "").length;
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages.length, isStreaming]);
-
-  // Supabase Realtime subscription for live thread updates (T-2-06-05).
-  // The `thread:<id>` channel is private; setAuth() attaches the user JWT so
-  // Realtime enforces the realtime.messages ownership policy from migration 0004
-  // (only the thread's owner may join/receive on this topic). Without setAuth a
-  // private channel cannot be authorized server-side.
-  useEffect(() => {
-    const supabase = createBrowserClient();
-    let channel: ReturnType<typeof supabase.channel> | null = null;
-    let cancelled = false;
-
-    void (async () => {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
-      await supabase.realtime.setAuth(session?.access_token ?? null);
-      if (cancelled) return;
-
-      channel = supabase.channel(`thread:${threadId}`, {
-        config: { private: true },
-      });
-      channel.subscribe();
-    })();
-
-    return () => {
-      cancelled = true;
-      if (channel) void supabase.removeChannel(channel);
-    };
-  }, [threadId]);
+    messagesEndRef.current?.scrollIntoView({
+      behavior: prefersReducedMotion ? "auto" : "smooth",
+      block: "end",
+    });
+  }, [messages.length, isStreaming, lastMessageContentLength, prefersReducedMotion]);
 
   const sendMessage = useCallback(
     async (messageText: string) => {
@@ -147,8 +184,13 @@ export function ChatThreadView({ threadId, initialMessages = [] }: ChatThreadVie
         },
       ]);
 
-      // 2. Add streaming placeholder for assistant
+      // 2. Add streaming placeholder for assistant. WS7.2 — currentAsstId is a
+      // mutable local (not the const asstMsgId) because the route swaps this
+      // optimistic id for the real assistant message UUID via the `message_id`
+      // SSE event; every subsequent setMessages call below must key off
+      // currentAsstId's CURRENT value, not the initial placeholder id.
       const asstMsgId = `asst-${Date.now()}`;
+      let currentAsstId = asstMsgId;
       setMessages((prev) => [
         ...prev,
         {
@@ -214,11 +256,23 @@ export function ChatThreadView({ threadId, initialMessages = [] }: ChatThreadVie
                 throw new Error(event.message ?? "The reply stream was interrupted. Try sending again.");
               }
 
+              if (event.message_id) {
+                // WS7.2 — adopt the real assistant message UUID. Swap the
+                // placeholder's id in state, then repoint currentAsstId so
+                // every later branch in this loop (text, inline blocks,
+                // finalize, error) targets the real row.
+                const realId = event.message_id as string;
+                setMessages((prev) =>
+                  prev.map((m) => (m.id === currentAsstId ? { ...m, id: realId } : m))
+                );
+                currentAsstId = realId;
+              }
+
               if (event.text) {
                 // Append text delta
                 setMessages((prev) =>
                   prev.map((m) =>
-                    m.id === asstMsgId
+                    m.id === currentAsstId
                       ? {
                           ...m,
                           streamingContent:
@@ -235,7 +289,7 @@ export function ChatThreadView({ threadId, initialMessages = [] }: ChatThreadVie
                 // Tool result — update inline block
                 setMessages((prev) =>
                   prev.map((m) =>
-                    m.id === asstMsgId
+                    m.id === currentAsstId
                       ? {
                           ...m,
                           inline_block_type: event.inline_block_type,
@@ -259,7 +313,7 @@ export function ChatThreadView({ threadId, initialMessages = [] }: ChatThreadVie
         // 5. Finalize assistant message
         setMessages((prev) =>
           prev.map((m) =>
-            m.id === asstMsgId
+            m.id === currentAsstId
               ? { ...m, status: "complete" as const, streamingContent: undefined }
               : m
           )
@@ -273,7 +327,7 @@ export function ChatThreadView({ threadId, initialMessages = [] }: ChatThreadVie
         // Mark assistant message as errored
         setMessages((prev) =>
           prev.map((m) =>
-            m.id === asstMsgId ? { ...m, status: "errored" as const } : m
+            m.id === currentAsstId ? { ...m, status: "errored" as const } : m
           )
         );
       } finally {
@@ -283,33 +337,92 @@ export function ChatThreadView({ threadId, initialMessages = [] }: ChatThreadVie
     [threadId]
   );
 
-  // Handle queued messages flushed after streaming ends
+  // WS7.5 — serialized queue flush. pendingQueueRef holds every queued
+  // message that hasn't been sent yet, across possibly-multiple onStreamEnd
+  // calls (the Composer flushes ITS queue once per streaming->false
+  // transition, but a new send re-enters streaming=true immediately, so a
+  // user who queues 3 messages during one long reply gets 3 separate
+  // onStreamEnd calls over time, one per completed reply).
+  //
+  // The old implementation looped `void sendMessage(msg)` over every queued
+  // message at once — each sendMessage call aborts the previous in-flight
+  // stream (abortRef.current?.abort() above), so only the LAST queued
+  // message ever actually completed. This drains exactly one at a time.
+  const pendingQueueRef = useRef<string[]>([]);
+  const isStreamingRef = useRef(false);
+  useEffect(() => {
+    isStreamingRef.current = isStreaming;
+  }, [isStreaming]);
+
   const handleStreamEnd = useCallback(
     (queuedMessages: string[]) => {
-      for (const msg of queuedMessages) {
-        void sendMessage(msg);
+      pendingQueueRef.current.push(...queuedMessages);
+      if (!isStreamingRef.current) {
+        const next = pendingQueueRef.current.shift();
+        if (next) void sendMessage(next);
       }
     },
     [sendMessage]
   );
 
+  // When a stream finishes and there's still a queued message waiting
+  // (queued while THIS reply was in flight), send the next one. Guards
+  // against the ordering race with handleStreamEnd above via the plain
+  // shift() — whichever runs first empties the ref, the other is a no-op.
+  useEffect(() => {
+    if (!isStreaming && pendingQueueRef.current.length > 0) {
+      const next = pendingQueueRef.current.shift();
+      if (next) void sendMessage(next);
+    }
+  }, [isStreaming, sendMessage]);
+
   return (
     <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0, background: "var(--bg)", overflow: "hidden" }}>
-      {/* Thread header — matches design ThreadHeader */}
+      {/* Thread header — matches design ThreadHeader, responsive padding */}
       <div
+        className="px-4 md:px-8"
         style={{
           display: "flex",
           alignItems: "center",
           gap: 12,
-          padding: "20px 32px",
-          borderBottom: "0.5px solid var(--border)",
+          paddingTop: 20,
+          paddingBottom: 20,
+          borderBottom: searchOpen ? "none" : "0.5px solid var(--border)",
           background: "var(--bg)",
         }}
       >
+        {/* Mobile-only: back to threads navigation (D-11) */}
+        <button
+          className="md:hidden"
+          onClick={() => router.push("/app/chat")}
+          aria-label="Back to threads"
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            background: "transparent",
+            border: "none",
+            cursor: "pointer",
+            color: "var(--text-secondary)",
+            padding: "6px",
+            borderRadius: "var(--r-sm)",
+            flexShrink: 0,
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.background = "var(--bg-subtle)";
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.background = "transparent";
+          }}
+        >
+          <ArrowLeft size={18} aria-hidden="true" />
+        </button>
         <Avatar agent size={32} />
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <span style={{ fontSize: 14, fontWeight: 500, color: "var(--text)" }}>Orchestrator</span>
+            <span style={{ fontSize: 14, fontWeight: 500, color: "var(--text)" }}>
+              {headerTitle}
+            </span>
             <span
               style={{ width: 5, height: 5, borderRadius: "50%", background: "var(--success)" }}
               aria-hidden="true"
@@ -317,9 +430,42 @@ export function ChatThreadView({ threadId, initialMessages = [] }: ChatThreadVie
             <span style={{ fontSize: 12, color: "var(--text-tertiary)" }}>here &amp; remembering</span>
           </div>
         </div>
-        <IconButton icon="Search" title="Search conversation" />
-        <IconButton icon="More" title="More options" />
+        <IconButton
+          icon="Search"
+          title="Search conversation"
+          active={searchOpen}
+          onClick={() => setSearchOpen((v) => !v)}
+        />
+        <ChatHeaderMenu
+          threadId={threadId}
+          threadTitle={headerTitle}
+          pinned={pinned}
+          messages={messages.map((m) => ({ role: m.role, content: m.content }))}
+          onRenamed={(t) => setHeaderTitle(t)}
+          onPinnedChange={setPinned}
+        />
       </div>
+
+      {/* In-thread search bar — shown when searchOpen */}
+      {searchOpen && (
+        <ChatSearchBar
+          messages={messages.map((m) => ({ id: m.id, content: m.content }))}
+          onActiveMatchChange={(id) => {
+            setActiveMatchId(id);
+            if (id) {
+              const el = bubbleRefs.current.get(id);
+              el?.scrollIntoView({
+                behavior: prefersReducedMotion ? "auto" : "smooth",
+                block: "center",
+              });
+            }
+          }}
+          onClose={() => {
+            setSearchOpen(false);
+            setActiveMatchId(null);
+          }}
+        />
+      )}
 
       {/* Messages area */}
       {messages.length > 0 ? (
@@ -329,9 +475,14 @@ export function ChatThreadView({ threadId, initialMessages = [] }: ChatThreadVie
           aria-live="polite"
           aria-label="Conversation messages"
         >
-          <div style={{ maxWidth: 760, margin: "0 auto", padding: "0 32px", display: "flex", flexDirection: "column", gap: 28 }}>
+          <div className="px-4 md:px-8" style={{ maxWidth: 760, margin: "0 auto", display: "flex", flexDirection: "column", gap: 28 }}>
             {messages.map((message) => (
-              <MessageBubble key={message.id} message={message} />
+              <MessageBubble
+                key={message.id}
+                message={message}
+                registerRef={registerBubbleRef}
+                highlighted={message.id === activeMatchId}
+              />
             ))}
 
             {/* Streaming "thinking" indicator — matches design exactly */}
@@ -356,7 +507,7 @@ export function ChatThreadView({ threadId, initialMessages = [] }: ChatThreadVie
           </div>
         </div>
       ) : (
-        <ThreadEmptyState />
+        <ThreadEmptyState onSuggestion={(t) => void sendMessage(t)} />
       )}
 
       {/* Stream error */}
@@ -406,10 +557,30 @@ export function ChatThreadView({ threadId, initialMessages = [] }: ChatThreadVie
 
 // ─── MessageBubble ────────────────────────────────────────────────────────────
 
-function MessageBubble({ message }: { message: StreamMessage }) {
+interface MessageBubbleProps {
+  message: StreamMessage;
+  registerRef?: (id: string, el: HTMLDivElement | null) => void;
+  highlighted?: boolean;
+}
+
+function MessageBubble({ message, registerRef, highlighted = false }: MessageBubbleProps) {
   if (message.role === "user") {
     return (
-      <div className="anim-pop" style={{ display: "flex", justifyContent: "flex-end" }}>
+      <div
+        className="anim-pop"
+        ref={(el) => registerRef?.(message.id, el)}
+        style={{
+          display: "flex",
+          justifyContent: "flex-end",
+          ...(highlighted
+            ? {
+                outline: "2px solid var(--acc-chat-ink)",
+                outlineOffset: "2px",
+                borderRadius: "var(--r-lg)",
+              }
+            : {}),
+        }}
+      >
         <div
           style={{
             maxWidth: "78%",
@@ -430,21 +601,101 @@ function MessageBubble({ message }: { message: StreamMessage }) {
 
   // Assistant message
   return (
-    <div className="anim-pop" style={{ display: "flex", gap: 12 }}>
+    <div
+      className="anim-pop"
+      ref={(el) => registerRef?.(message.id, el)}
+      style={{
+        display: "flex",
+        gap: 12,
+        ...(highlighted
+          ? {
+              outline: "2px solid var(--acc-chat-ink)",
+              outlineOffset: "2px",
+              borderRadius: "var(--r-md)",
+            }
+          : {}),
+      }}
+    >
       <Avatar agent size={28} />
 
       <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 12, paddingTop: 2 }}>
-        {/* Text content with optional streaming cursor */}
+        {/* Text content — rendered as sanitized markdown for assistant messages */}
         {(message.streamingContent || message.content) && (
-          <div
-            style={{
-              fontSize: 14,
-              lineHeight: 1.55,
-              color: "var(--text)",
-              whiteSpace: "pre-wrap",
-            }}
-          >
-            {message.streamingContent ?? message.content}
+          <div style={{ fontSize: 14, lineHeight: 1.55, color: "var(--text)" }}>
+            <ReactMarkdown
+              // SECURITY: rehype-raw is intentionally NOT included — raw HTML passthrough
+              // is disabled. react-markdown's default renderer produces safe React elements
+              // only, preventing XSS from model-generated markdown content (T-2-06-02).
+              remarkPlugins={[remarkGfm]}
+              components={{
+                h1: ({ children }) => (
+                  <h1 style={{ fontWeight: 600, color: "var(--text)", fontSize: "1.1em", margin: "1em 0 0.4em" }}>{children}</h1>
+                ),
+                h2: ({ children }) => (
+                  <h2 style={{ fontWeight: 600, color: "var(--text)", fontSize: "1em", margin: "0.9em 0 0.35em" }}>{children}</h2>
+                ),
+                h3: ({ children }) => (
+                  <h3 style={{ fontWeight: 600, color: "var(--text)", fontSize: "0.95em", margin: "0.8em 0 0.3em" }}>{children}</h3>
+                ),
+                p: ({ children }) => (
+                  <p style={{ marginBottom: "0.65em", color: "var(--text)" }}>{children}</p>
+                ),
+                ul: ({ children }) => (
+                  <ul style={{ listStyleType: "disc", paddingLeft: "1.25em", marginBottom: "0.65em", color: "var(--text)" }}>{children}</ul>
+                ),
+                ol: ({ children }) => (
+                  <ol style={{ listStyleType: "decimal", paddingLeft: "1.25em", marginBottom: "0.65em", color: "var(--text)" }}>{children}</ol>
+                ),
+                li: ({ children }) => (
+                  <li style={{ marginBottom: "0.2em", color: "var(--text)" }}>{children}</li>
+                ),
+                strong: ({ children }) => (
+                  <strong style={{ fontWeight: 600, color: "var(--text)" }}>{children}</strong>
+                ),
+                em: ({ children }) => (
+                  <em style={{ fontStyle: "italic", color: "var(--text-secondary)" }}>{children}</em>
+                ),
+                a: ({ href, children }) => (
+                  <a
+                    href={href}
+                    target="_blank"
+                    rel="noreferrer noopener"
+                    style={{ color: "var(--text)", textDecoration: "underline" }}
+                  >
+                    {children}
+                  </a>
+                ),
+                code: ({ children }) => (
+                  <code style={{ fontFamily: "monospace", background: "var(--bg-deeper)", borderRadius: "var(--r-sm)", padding: "1px 4px", fontSize: "0.85em" }}>{children}</code>
+                ),
+                pre: ({ children }) => (
+                  <pre style={{ fontFamily: "monospace", background: "var(--bg-deeper)", borderRadius: "var(--r-sm)", padding: "10px 14px", overflowX: "auto", marginBottom: "0.65em", fontSize: "0.85em" }}>{children}</pre>
+                ),
+                blockquote: ({ children }) => (
+                  <blockquote style={{ borderLeft: "2px solid var(--border)", paddingLeft: "0.75em", margin: "0.5em 0", color: "var(--text-secondary)", fontStyle: "italic" }}>{children}</blockquote>
+                ),
+                hr: () => (
+                  <hr style={{ border: "none", borderTop: "0.5px solid var(--border)", margin: "0.75em 0" }} />
+                ),
+                // GFM table elements — priority styling for inventory reports
+                table: ({ children }) => (
+                  <div style={{ display: "block", overflowX: "auto", marginBottom: "0.65em" }}>
+                    <table style={{ borderCollapse: "collapse", width: "100%", fontSize: "0.9em" }}>{children}</table>
+                  </div>
+                ),
+                thead: ({ children }) => <thead>{children}</thead>,
+                tbody: ({ children }) => <tbody>{children}</tbody>,
+                tr: ({ children }) => <tr>{children}</tr>,
+                th: ({ children }) => (
+                  <th style={{ fontWeight: 600, background: "var(--bg-subtle)", color: "var(--text)", border: "0.5px solid var(--border)", padding: "6px 10px", textAlign: "left" }}>{children}</th>
+                ),
+                td: ({ children }) => (
+                  <td style={{ color: "var(--text)", border: "0.5px solid var(--border)", padding: "6px 10px" }}>{children}</td>
+                ),
+              }}
+            >
+              {message.streamingContent ?? message.content}
+            </ReactMarkdown>
             {message.status === "streaming" && (
               <span
                 aria-hidden="true"
@@ -471,13 +722,18 @@ function MessageBubble({ message }: { message: StreamMessage }) {
           />
         )}
 
-        {/* Errored state */}
+        {/* Errored state — covers both a live send failure and a reaped stale
+            stream (WS7.9: listMessages marks abandoned 'streaming' rows
+            'errored' on reload). This block is intentionally a sibling of the
+            text-content div above, not nested inside it, so a message with
+            empty content (the reaped case — nothing ever streamed) still
+            renders this notice instead of an empty bubble. */}
         {message.status === "errored" && (
           <div
             role="alert"
             style={{ fontSize: 12.5, color: "var(--danger)" }}
           >
-            Message failed to send.
+            This reply was interrupted.
           </div>
         )}
       </div>
@@ -507,11 +763,19 @@ function InlineBlock({ type, payload, messageId }: InlineBlockProps) {
     }
 
     case "approval_card": {
+      // WS7.11 — status/reasoning/preview/risk are populated server-side by
+      // listMessages (Plan 2 task 1 Part C) from the live approvals row.
+      // Reading them here (instead of hardcoding "pending"/"") is what makes
+      // a resolved approval render its resolved state on reload rather than
+      // live Approve/Reject buttons.
       const card = payload as {
         approval_id?: string;
         action_type?: string;
         summary?: string;
         risk?: string;
+        status?: "pending" | "approved" | "rejected" | "expired" | "snoozed";
+        reasoning?: string;
+        preview?: Record<string, unknown>;
       };
       if (!card?.approval_id) return null;
       return (
@@ -520,8 +784,9 @@ function InlineBlock({ type, payload, messageId }: InlineBlockProps) {
           actionType={card.action_type ?? "unknown"}
           summary={card.summary ?? "Approval required"}
           stakes={(card.risk as "low" | "med" | "high") ?? "med"}
-          reasoning=""
-          initialStatus="pending"
+          preview={card.preview}
+          reasoning={card.reasoning ?? ""}
+          initialStatus={card.status ?? "pending"}
         />
       );
     }
@@ -548,7 +813,12 @@ function InlineBlock({ type, payload, messageId }: InlineBlockProps) {
 
 // ─── ThreadEmptyState ─────────────────────────────────────────────────────────
 
-function ThreadEmptyState() {
+interface ThreadEmptyStateProps {
+  /** WS7.8 — called with the suggestion text when a pill is clicked. */
+  onSuggestion: (text: string) => void;
+}
+
+function ThreadEmptyState({ onSuggestion }: ThreadEmptyStateProps) {
   const suggestions = [
     "Audit my catalog for missing meta titles",
     "Find slow-moving inventory",
@@ -597,7 +867,7 @@ function ThreadEmptyState() {
         {/* Suggestion pills */}
         <div style={{ display: "flex", flexWrap: "wrap", gap: 8, justifyContent: "center", maxWidth: 480 }}>
           {suggestions.map((s) => (
-            <SuggestionPill key={s} text={s} />
+            <SuggestionPill key={s} text={s} onClick={onSuggestion} />
           ))}
         </div>
       </div>
@@ -605,9 +875,17 @@ function ThreadEmptyState() {
   );
 }
 
-function SuggestionPill({ text }: { text: string }) {
+interface SuggestionPillProps {
+  text: string;
+  /** WS7.8 — invoked with the pill's text on click. */
+  onClick: (text: string) => void;
+}
+
+function SuggestionPill({ text, onClick }: SuggestionPillProps) {
   return (
     <button
+      type="button"
+      onClick={() => onClick(text)}
       style={{
         all: "unset",
         cursor: "pointer",

@@ -22,14 +22,18 @@
 import { createClient } from "@/lib/auth/server";
 import {
   withUserRls,
+  serviceDb,
   threads,
   messages,
   workflows,
   workflowVersions,
+  approvals,
 } from "@/lib/db";
-import { eq, desc, isNull, and } from "drizzle-orm";
+import { eq, desc, isNull, and, inArray, sql } from "drizzle-orm";
 import { z } from "zod";
 import { toClientError } from "@/lib/errors";
+import { resolveGidTitles } from "@/lib/activity/gid-titles.server";
+import { humanizeGids, humanizeGidsDeep } from "@/lib/activity/humanize-gids";
 
 // ─── Input schemas ─────────────────────────────────────────────────────────────
 
@@ -42,9 +46,29 @@ const renameThreadSchema = z.object({
   newTitle: z.string().min(1).max(256),
 });
 
+const deleteThreadSchema = z.object({
+  threadId: z.string().uuid("threadId must be a UUID"),
+});
+
+const togglePinThreadSchema = z.object({
+  threadId: z.string().uuid("threadId must be a UUID"),
+});
+
 const saveWorkflowFromPlanSchema = z.object({
   messageId: z.string().uuid("messageId must be a UUID"),
+  automationLevel: z.enum(["L1", "L2", "L3"]).optional(),
 });
+
+const autoNameThreadIfDefaultSchema = z.object({
+  threadId: z.string().uuid("threadId must be a UUID"),
+  firstMessage: z.string().min(1).max(8000),
+});
+
+const DEFAULT_THREAD_TITLE = "New conversation";
+/** Titles treated as "still default" and eligible for auto-naming (WS7.3). */
+function isDefaultThreadTitle(title: string | null): boolean {
+  return title === null || title.trim() === "" || title === DEFAULT_THREAD_TITLE;
+}
 
 // ─── Auto-name helper ─────────────────────────────────────────────────────────
 
@@ -58,6 +82,20 @@ function autoNameThread(firstMessage: string): string {
   const trimmed = firstMessage.trim();
   if (trimmed.length <= 60) return trimmed;
   return trimmed.slice(0, 60).trim() + "…";
+}
+
+/**
+ * truncateThreadTitle — 40-char variant used specifically by
+ * autoNameThreadIfDefault (WS7.3). The audit asked for ~40 chars here even
+ * though createThread's autoNameThread above uses 60 — both are kept: 60 is
+ * the initial create-time title (more room before any renaming UI exists),
+ * 40 is what the sidebar/header actually has room to show once a real reply
+ * has landed and the header chrome (search icon, menu) is present.
+ */
+function truncateThreadTitle(firstMessage: string): string {
+  const trimmed = firstMessage.trim();
+  if (trimmed.length <= 40) return trimmed;
+  return trimmed.slice(0, 40).trim() + "…";
 }
 
 // ─── createThread ─────────────────────────────────────────────────────────────
@@ -162,6 +200,107 @@ export async function openWorkflowInChat(
   }
 }
 
+// ─── autoNameThreadIfDefault ──────────────────────────────────────────────────
+
+/**
+ * autoNameThreadIfDefault — rename a thread from its first user message if the
+ * thread is still titled "New conversation" (or null/blank). WS7.3: the New
+ * Thread sidebar button (components/chat/thread-sidebar.tsx) always creates
+ * threads with the literal title "New conversation" — this is the coupling
+ * that makes the "still default" check meaningful. Called from the chat send
+ * route after the first reply completes; never throws — thread naming must
+ * never break a reply.
+ *
+ * Returns { ok: true, renamed: boolean } — renamed is false when the thread
+ * already had a non-default title (a no-op, not an error).
+ */
+export async function autoNameThreadIfDefault(
+  threadId: string,
+  firstMessage: string
+): Promise<{ ok: true; renamed: boolean } | { error: string }> {
+  const parsed = autoNameThreadIfDefaultSchema.safeParse({ threadId, firstMessage });
+  if (!parsed.success) {
+    return { error: parsed.error.errors[0]?.message ?? "invalid input" };
+  }
+
+  try {
+    const supabase = await createClient();
+    const { data } = await supabase.auth.getClaims();
+    const claims = data?.claims ?? null;
+    if (!claims?.sub) return { error: "unauthenticated" };
+
+    const renamed = await withUserRls(claims as Record<string, unknown>, async (tx) => {
+      const rows = (await tx
+        .select({ id: threads.id, title: threads.title })
+        .from(threads)
+        .where(eq(threads.id, parsed.data.threadId))) as Array<{ id: string; title: string | null }>;
+
+      const row = rows[0];
+      if (!row || !isDefaultThreadTitle(row.title)) return false;
+
+      await tx
+        .update(threads)
+        .set({ title: truncateThreadTitle(parsed.data.firstMessage) })
+        .where(eq(threads.id, parsed.data.threadId));
+
+      return true;
+    });
+
+    return { ok: true, renamed };
+  } catch (err) {
+    // Never throw — thread naming must never break a reply (WS7.3).
+    return { error: toClientError(err, "autoNameThreadIfDefault") };
+  }
+}
+
+// ─── reapStaleStreamingMessages ────────────────────────────────────────────────
+
+/** How long a message may sit in status='streaming' before it's considered abandoned. */
+const STALE_STREAM_THRESHOLD = sql`now() - interval '2 minutes'`;
+
+/**
+ * reapStaleStreamingMessages — mark messages abandoned mid-stream as 'errored'.
+ *
+ * D-3 (WS7.9): an interrupted stream (tab closed, network drop, server
+ * restart) leaves its assistant message row stuck at status='streaming'
+ * forever, which renders as a permanent empty bubble on reload. Rather than
+ * standing up a cron, this reaps lazily — one UPDATE, run from listMessages
+ * on thread open, so the fix is visible immediately the next time the thread
+ * is viewed. Never throws.
+ *
+ * Returns the number of rows marked errored (0 on any failure).
+ */
+export async function reapStaleStreamingMessages(threadId: string): Promise<number> {
+  const parsed = z.string().uuid().safeParse(threadId);
+  if (!parsed.success) return 0;
+
+  try {
+    const supabase = await createClient();
+    const { data } = await supabase.auth.getClaims();
+    const claims = data?.claims ?? null;
+    if (!claims?.sub) return 0;
+
+    const updated = (await withUserRls(claims as Record<string, unknown>, async (tx) => {
+      return tx
+        .update(messages)
+        .set({ status: "errored" })
+        .where(
+          and(
+            eq(messages.thread_id, parsed.data),
+            eq(messages.status, "streaming"),
+            sql`${messages.created_at} < ${STALE_STREAM_THRESHOLD}`
+          )
+        )
+        .returning({ id: messages.id });
+    })) as Array<{ id: string }>;
+
+    return updated.length;
+  } catch {
+    // Never throw — reaping is best-effort; the thread still renders.
+    return 0;
+  }
+}
+
 // ─── renameThread ─────────────────────────────────────────────────────────────
 
 /**
@@ -197,6 +336,85 @@ export async function renameThread(
   }
 }
 
+// ─── deleteThread ─────────────────────────────────────────────────────────────
+
+/**
+ * deleteThread — soft-delete a thread by stamping archived_at.
+ *
+ * SOFT DELETE ONLY: sets archived_at = now(). Row is never hard-deleted.
+ * listThreads excludes archived rows (isNull(archived_at) filter).
+ *
+ * Returns { ok: true } on success or { error } on failure.
+ */
+export async function deleteThread(
+  threadId: string
+): Promise<{ ok: true } | { error: string }> {
+  const parsed = deleteThreadSchema.safeParse({ threadId });
+  if (!parsed.success) {
+    return { error: parsed.error.errors[0]?.message ?? "invalid input" };
+  }
+
+  const supabase = await createClient();
+  const { data } = await supabase.auth.getClaims();
+  const claims = data?.claims ?? null;
+  if (!claims?.sub) return { error: "unauthenticated" };
+
+  try {
+    await withUserRls(claims as Record<string, unknown>, async (tx) => {
+      return tx
+        .update(threads)
+        .set({ archived_at: new Date() })
+        .where(eq(threads.id, parsed.data.threadId));
+    });
+
+    return { ok: true };
+  } catch (err) {
+    return { error: toClientError(err, "deleteThread") };
+  }
+}
+
+// ─── togglePinThread ──────────────────────────────────────────────────────────
+
+/**
+ * togglePinThread — atomically flip pinned_at for a thread.
+ *
+ * Uses a single UPDATE with a CASE expression to avoid TOCTOU race:
+ *   pinned_at = CASE WHEN pinned_at IS NULL THEN now() ELSE NULL END
+ *
+ * Returns { ok: true, pinned } where pinned reflects the NEW state (true if
+ * the thread is now pinned). Requires migration 0010 to be applied in prod.
+ */
+export async function togglePinThread(
+  threadId: string
+): Promise<{ ok: true; pinned: boolean } | { error: string }> {
+  const parsed = togglePinThreadSchema.safeParse({ threadId });
+  if (!parsed.success) {
+    return { error: parsed.error.errors[0]?.message ?? "invalid input" };
+  }
+
+  const supabase = await createClient();
+  const { data } = await supabase.auth.getClaims();
+  const claims = data?.claims ?? null;
+  if (!claims?.sub) return { error: "unauthenticated" };
+
+  try {
+    const rows = await withUserRls(claims as Record<string, unknown>, async (tx) => {
+      return tx
+        .update(threads)
+        .set({
+          pinned_at: sql`CASE WHEN ${threads.pinned_at} IS NULL THEN now() ELSE NULL END`,
+        })
+        .where(eq(threads.id, parsed.data.threadId))
+        .returning({ pinned_at: threads.pinned_at });
+    }) as Array<{ pinned_at: Date | null }>;
+
+    const newPinnedAt = rows[0]?.pinned_at ?? null;
+    return { ok: true, pinned: newPinnedAt !== null };
+  } catch (err) {
+    return { error: toClientError(err, "togglePinThread") };
+  }
+}
+
 // ─── listThreads ─────────────────────────────────────────────────────────────
 
 export type ThreadListItem = {
@@ -204,12 +422,14 @@ export type ThreadListItem = {
   title: string | null;
   last_message_at: Date | null;
   created_at: Date;
+  pinned_at: Date | null;
 };
 
 /**
- * listThreads — list user's threads reverse-chronologically.
+ * listThreads — list user's threads, pinned-first then reverse-chronologically.
  *
- * Returns threads sorted by last_message_at DESC (most recently active first).
+ * Pinned threads (pinned_at IS NOT NULL) sort above all unpinned threads.
+ * Within each group, most recently active first (last_message_at DESC).
  * Archived threads (archived_at IS NOT NULL) are excluded.
  * (CONV-04)
  */
@@ -229,10 +449,14 @@ export async function listThreads(): Promise<
           title: threads.title,
           last_message_at: threads.last_message_at,
           created_at: threads.created_at,
+          pinned_at: threads.pinned_at,
         })
         .from(threads)
         .where(isNull(threads.archived_at))
-        .orderBy(desc(threads.last_message_at));
+        .orderBy(
+          sql`${threads.pinned_at} DESC NULLS LAST`,
+          desc(threads.last_message_at)
+        );
     }) as ThreadListItem[];
 
     return { threads: rows };
@@ -250,12 +474,18 @@ export async function listThreads(): Promise<
  * Called when the user clicks "Save as Workflow" on the inline WorkflowVisualizer.
  * The payload from propose_workflow_plan is used to seed the workflow definition.
  *
+ * WS7.12: automationLevel is optional so existing callers are unaffected. When
+ * supplied it's the level the user actually picked on the LevelToggle in the
+ * visualizer — it takes precedence over plan.automation_level (which is just
+ * the model's initial suggestion) and finally over the "L2" default.
+ *
  * Returns { workflowId } on success or { error } on failure.
  */
 export async function saveWorkflowFromPlan(
-  messageId: string
+  messageId: string,
+  automationLevel?: "L1" | "L2" | "L3"
 ): Promise<{ workflowId: string } | { error: string }> {
-  const parsed = saveWorkflowFromPlanSchema.safeParse({ messageId });
+  const parsed = saveWorkflowFromPlanSchema.safeParse({ messageId, automationLevel });
   if (!parsed.success) {
     return { error: parsed.error.errors[0]?.message ?? "invalid input" };
   }
@@ -334,7 +564,10 @@ export async function saveWorkflowFromPlan(
             user_id: userId,
             name: plan.name,
             description: plan.description ?? null,
-            automation_level: (plan.automation_level as "L1" | "L2" | "L3") ?? "L2",
+            automation_level:
+              parsed.data.automationLevel ??
+              (plan.automation_level as "L1" | "L2" | "L3") ??
+              "L2",
             status: "draft",
             trigger_type: resolvedTriggerType,
           })
@@ -408,6 +641,12 @@ export interface ThreadMessage {
  *
  * RLS scopes rows to the current user; the explicit thread_id filter scopes to the
  * thread. Tool rows are excluded — only user/assistant messages render in the UI.
+ *
+ * D-3 (WS7.9): reaps stale streaming rows for this thread before selecting, so
+ * an abandoned stream renders as an errored bubble instead of an empty one.
+ * WS7.11: approval_card payloads are enriched with the approval's live status
+ * (status/reasoning/risk/action_type/preview) so a reload shows the resolved
+ * state instead of live Approve/Reject buttons.
  */
 export async function listMessages(
   threadId: string
@@ -421,6 +660,14 @@ export async function listMessages(
   if (!claims?.sub) return { error: "unauthenticated" };
 
   try {
+    // D-3 (WS7.9) — reap before selecting. Never throws; best-effort.
+    try {
+      await reapStaleStreamingMessages(parsed.data);
+    } catch {
+      // reapStaleStreamingMessages already swallows its own errors; this is
+      // belt-and-suspenders in case that contract ever changes.
+    }
+
     const rows = (await withUserRls(claims as Record<string, unknown>, async (tx) => {
       return tx
         .select({
@@ -437,8 +684,91 @@ export async function listMessages(
         .orderBy(messages.created_at);
     })) as ThreadMessage[];
 
+    const visible = rows.filter(
+      (m) => m.role === "user" || m.role === "assistant"
+    );
+
+    // Humanize raw Shopify GIDs in message text + inline-block payloads
+    // (e.g. approval-card summaries, workflow-plan steps) → product titles.
+    // NOTE (memory: gid-resolve-outside-rls-tx): the postgres client is max:1
+    // — resolveGidTitles/serviceDb calls MUST stay OUTSIDE withUserRls
+    // transactions, hence this runs after the tx above has already returned.
+    const titles = await resolveGidTitles(
+      claims.sub as string,
+      visible.flatMap((m) => [
+        typeof m.content === "string" ? m.content : "",
+        m.inline_block_payload ? JSON.stringify(m.inline_block_payload) : "",
+      ])
+    );
+
+    // WS7.11 — enrich approval_card payloads with live approval state. Also
+    // OUTSIDE the withUserRls tx, same max:1-client reasoning as above.
+    const approvalIds = visible
+      .filter((m) => m.inline_block_type === "approval_card")
+      .map(
+        (m) => (m.inline_block_payload as { approval_id?: string } | null)?.approval_id
+      )
+      .filter((id): id is string => typeof id === "string" && id.length > 0);
+
+    const approvalById = new Map<
+      string,
+      {
+        status: string;
+        reasoning_summary: string;
+        stakes: string;
+        action_type: string;
+        preview: unknown;
+      }
+    >();
+
+    if (approvalIds.length > 0) {
+      const approvalRows = await serviceDb
+        .select({
+          id: approvals.id,
+          status: approvals.status,
+          reasoning_summary: approvals.reasoning_summary,
+          stakes: approvals.stakes,
+          action_type: approvals.action_type,
+          preview: approvals.preview,
+        })
+        .from(approvals)
+        .where(
+          and(inArray(approvals.id, approvalIds), eq(approvals.user_id, claims.sub as string))
+        );
+
+      for (const row of approvalRows) {
+        approvalById.set(row.id, row);
+      }
+    }
+
     return {
-      messages: rows.filter((m) => m.role === "user" || m.role === "assistant"),
+      messages: visible.map((m) => {
+        let payload = humanizeGidsDeep(m.inline_block_payload, titles);
+
+        if (m.inline_block_type === "approval_card" && payload && typeof payload === "object") {
+          const approvalId = (payload as { approval_id?: string }).approval_id;
+          const approvalRow = approvalId ? approvalById.get(approvalId) : undefined;
+          if (approvalRow) {
+            payload = {
+              ...payload,
+              status: approvalRow.status,
+              reasoning: approvalRow.reasoning_summary,
+              risk: approvalRow.stakes,
+              action_type: approvalRow.action_type,
+              preview: approvalRow.preview,
+            };
+          }
+        }
+
+        return {
+          ...m,
+          content:
+            typeof m.content === "string"
+              ? humanizeGids(m.content, titles)
+              : m.content,
+          inline_block_payload: payload,
+        };
+      }),
     };
   } catch (err) {
     return { error: toClientError(err, "listMessages") };

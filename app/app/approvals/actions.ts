@@ -43,7 +43,10 @@ import { serviceDb } from "@/lib/db/client";
 import { approvals } from "@/lib/db/schema";
 import { eq, and, lte, isNull, or, desc } from "drizzle-orm";
 import { storeMemoryItem } from "@/lib/agent/memory";
-import { canRevert, executeRevertEffect } from "@/lib/workflows/revert";
+import { canRevert } from "@/lib/workflows/revert";
+import { executeRevertEffect } from "@/lib/workflows/revert-effect";
+import { resolveGidTitles } from "@/lib/activity/gid-titles.server";
+import { humanizeGids } from "@/lib/activity/humanize-gids";
 
 // ─── Schemas ──────────────────────────────────────────────────────────────────
 
@@ -634,7 +637,17 @@ export async function getPendingApprovals(
     return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
   });
 
-  return filtered as PendingApproval[];
+  // Humanize raw Shopify GIDs in the summary + reasoning → product titles.
+  const titles = await resolveGidTitles(
+    userId,
+    filtered.flatMap((r) => [r.action_summary, r.reasoning_summary])
+  );
+
+  return filtered.map((r) => ({
+    ...r,
+    action_summary: humanizeGids(r.action_summary, titles),
+    reasoning_summary: humanizeGids(r.reasoning_summary, titles),
+  })) as PendingApproval[];
 }
 
 // ─── fetchPendingCount ────────────────────────────────────────────────────────

@@ -111,6 +111,8 @@ export function IconButton({
   accent,
   active,
   "aria-label": ariaLabel,
+  "aria-haspopup": ariaHasPopup,
+  "aria-expanded": ariaExpanded,
 }: {
   icon: IconName;
   onClick?: () => void;
@@ -119,14 +121,22 @@ export function IconButton({
   accent?: Accent;
   active?: boolean;
   "aria-label"?: string;
+  "aria-haspopup"?: boolean | "menu" | "dialog" | "listbox" | "tree" | "grid" | "false" | "true";
+  "aria-expanded"?: boolean;
 }) {
   const Ico = Icons[icon];
+  // When the button acts as a popup trigger (aria-haspopup set), it must NOT
+  // also announce as a toggle button — expose menu-button semantics instead of
+  // aria-pressed so screen readers describe it as a menu button (WCAG 2.1 AA).
+  const isPopupTrigger = ariaHasPopup != null;
   return (
     <button
       onClick={onClick}
       title={title}
       aria-label={ariaLabel ?? title}
-      aria-pressed={active}
+      aria-pressed={isPopupTrigger ? undefined : active}
+      aria-haspopup={ariaHasPopup}
+      aria-expanded={ariaExpanded}
       style={{
         width: size,
         height: size,
@@ -368,8 +378,10 @@ export function SurfaceHeader({
 }) {
   return (
     <header
+      className="px-4 md:px-10"
       style={{
-        padding: "32px 40px 22px",
+        paddingTop: 32,
+        paddingBottom: 22,
         borderBottom: "0.5px solid var(--border)",
         background: "var(--bg)",
       }}

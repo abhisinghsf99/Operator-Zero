@@ -18,3 +18,14 @@ export const chatRateLimit = new Ratelimit({
   prefix: "oz:chat:ratelimit",
   analytics: true,
 });
+
+// Public demo sandbox creation, keyed by client IP. Each enter creates an
+// anonymous auth user + seeds a full dataset, so this guards against floods that
+// would bloat auth.users and the DB. Sliding window: 10 new sandboxes per hour
+// per IP — generous for legit retries, tight enough to blunt abuse.
+export const sandboxCreateRateLimit = new Ratelimit({
+  redis: Redis.fromEnv(),
+  limiter: Ratelimit.slidingWindow(10, "1 h"),
+  prefix: "oz:sandbox:create",
+  analytics: true,
+});

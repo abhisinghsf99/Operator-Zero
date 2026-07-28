@@ -11,7 +11,7 @@
  * Requirements:
  *   ONBOARD-06 — Abandoned onboarding saves progress and resumes
  *   ONBOARD-02 — Shopify required; Gmail skippable
- *   ONBOARD-08 — Post-onboarding lands in Conversation with welcome
+ *   ONBOARD-08 — Post-onboarding lands on the Workflows surface (D-16)
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
@@ -235,7 +235,7 @@ describe("ONBOARD-08 — completeOnboarding sets timestamp + redirects", () => {
     expect(hasCompletedAt).toBe(true);
   });
 
-  it("redirects to /app/chat after completing onboarding (ONBOARD-08)", async () => {
+  it("redirects to /app/workflows after completing onboarding (ONBOARD-08)", async () => {
     try {
       await completeOnboarding();
     } catch {
@@ -244,7 +244,7 @@ describe("ONBOARD-08 — completeOnboarding sets timestamp + redirects", () => {
     const redirectFn = navigation.redirect as unknown as ReturnType<typeof vi.fn>;
     const redirectCalls = redirectFn.mock.calls as [string, ...unknown[]][];
     if (redirectCalls.length > 0) {
-      expect(redirectCalls[0]?.[0]).toMatch(/\/app\/chat/);
+      expect(redirectCalls[0]?.[0]).toMatch(/\/app\/workflows/);
     }
   });
 });

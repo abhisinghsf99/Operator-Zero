@@ -50,6 +50,7 @@ import { Icons } from "@/components/design/icons";
 import { BeforeAfterDiff } from "./before-after-diff";
 import { ReasoningChain } from "./reasoning-chain";
 import { RevertTooltip } from "./revert-tooltip";
+import { humanizeGids } from "@/lib/activity/humanize-gids";
 import type { ActivityEntryRow } from "@/app/app/activity/actions";
 import type { CanRevertResult } from "@/lib/workflows/revert";
 
@@ -70,10 +71,16 @@ function formatFullTime(date: Date): string {
 
 interface ActivityDetailProps {
   entry: ActivityEntryRow;
+  /** Shopify GID → product title map for humanizing the heading + diff. */
+  gidTitles?: Record<string, string>;
   onClose?: () => void;
 }
 
-export function ActivityDetail({ entry, onClose }: ActivityDetailProps) {
+export function ActivityDetail({
+  entry,
+  gidTitles,
+  onClose,
+}: ActivityDetailProps) {
   const router = useRouter();
   const [isReverting, setIsReverting] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -206,7 +213,7 @@ export function ActivityDetail({ entry, onClose }: ActivityDetailProps) {
           letterSpacing: "-0.015em",
         }}
       >
-        {entry.action_summary}
+        {humanizeGids(entry.action_summary, gidTitles)}
       </h2>
 
       {/* Parent workflow link (ACT-03) */}
@@ -272,6 +279,7 @@ export function ActivityDetail({ entry, onClose }: ActivityDetailProps) {
             before={entry.before_state as Record<string, unknown> | null}
             after={entry.after_state as Record<string, unknown> | null}
             targetType={entry.target_type}
+            gidTitles={gidTitles}
           />
         </Card>
       )}

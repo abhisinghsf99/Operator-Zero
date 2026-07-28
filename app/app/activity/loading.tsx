@@ -13,14 +13,14 @@ export default function ActivityLoading() {
   return (
     <div className="flex h-full flex-col overflow-hidden bg-[var(--bg)] animate-pulse">
       {/* Surface header skeleton */}
-      <div className="shrink-0 border-b border-[var(--border)] bg-[var(--bg)] px-10 py-7">
+      <div className="shrink-0 border-b border-[var(--border)] bg-[var(--bg)] px-4 md:px-10 py-7">
         <div className="h-[11px] w-[90px] rounded-full bg-[var(--bg-elevated)]" />
         <div className="mt-3 h-[28px] w-[220px] rounded-[var(--r-sm)] bg-[var(--bg-elevated)]" />
         <div className="mt-2 h-[14px] w-[320px] rounded-full bg-[var(--bg-elevated)]" />
       </div>
 
       {/* Filter chips skeleton */}
-      <div className="flex shrink-0 items-center gap-2 border-b border-[var(--border)] px-10 py-[14px]">
+      <div className="flex shrink-0 items-center gap-2 border-b border-[var(--border)] px-4 md:px-10 py-[14px]">
         {[60, 80, 70, 90].map((w, i) => (
           <div
             key={i}
@@ -32,7 +32,7 @@ export default function ActivityLoading() {
 
       {/* Activity entries skeleton */}
       <div className="flex-1 overflow-y-auto">
-        <div className="mx-auto max-w-[800px] px-10 py-4 space-y-3">
+        <div className="mx-auto max-w-[800px] px-4 md:px-10 py-4 space-y-3">
           {[...Array(6)].map((_, i) => (
             <div
               key={i}

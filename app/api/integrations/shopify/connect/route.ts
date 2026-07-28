@@ -18,6 +18,7 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { sanitizeShopDomain } from "@/lib/integrations/shopify/client";
 import { storeOAuthNonce } from "@/lib/integrations/oauth-nonce";
+import { isDemoUser, isDemoConnectionLocked } from "@/lib/auth/demo";
 import crypto from "crypto";
 
 /** Generate a cryptographically random nonce (32 hex bytes = 64 chars). */
@@ -36,6 +37,16 @@ export async function GET(request: NextRequest) {
     return NextResponse.redirect(`${origin}/login`);
   }
   const userId = claims.sub as string;
+
+  // ── Demo / sandbox connection lock guard ──────────────────────────────────
+  // Anonymous sandbox visitors can NEVER wire a real Shopify store into their
+  // throwaway tenant — that would escape write-simulation and touch a live store.
+  // The shared demo account is additionally blocked only when DEMO_SHOPIFY_LOCKED
+  // is set (default unset = it can connect freely for testing).
+  const isAnonymous = (claims as { is_anonymous?: boolean }).is_anonymous === true;
+  if (isAnonymous || (isDemoUser(userId) && isDemoConnectionLocked())) {
+    return NextResponse.redirect(`${origin}/app/settings`);
+  }
 
   // ── Shop validation (T-2-03-03) ──────────────────────────────────────────
   const rawShop = request.nextUrl.searchParams.get("shop");

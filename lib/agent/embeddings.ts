@@ -52,3 +52,38 @@ export async function embedText(
   }
   return embedding;
 }
+
+/**
+ * Embed a batch of text strings in a single Voyage AI call.
+ *
+ * The Voyage `embed` endpoint accepts `input` as either a single string or a
+ * list of strings (max 128 per the API docs) and returns one `data[]` entry
+ * per input, in the same order. Preferred over N sequential embedText() calls
+ * when embedding multiple short texts (e.g. seeded memory items) — one round
+ * trip instead of N, which also sidesteps per-minute rate limits on the free
+ * tier (lib/demo/seed.ts WS11).
+ *
+ * @param texts - the texts to embed (order preserved in the returned array)
+ * @param inputType - "document" for content to store; "query" for search queries
+ * @throws if Voyage returns a different number of embeddings than inputs
+ */
+export async function embedTexts(
+  texts: string[],
+  inputType: "query" | "document" = "document"
+): Promise<number[][]> {
+  if (texts.length === 0) return [];
+  const result = await voyage.embed({
+    input: texts,
+    model: "voyage-4",
+    inputType,
+  });
+  const embeddings = (result.data ?? []).map((d) => d?.embedding).filter(
+    (e): e is number[] => Array.isArray(e)
+  );
+  if (embeddings.length !== texts.length) {
+    throw new Error(
+      `Voyage AI returned ${embeddings.length} embeddings for ${texts.length} inputs`
+    );
+  }
+  return embeddings;
+}

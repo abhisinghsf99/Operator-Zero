@@ -9,6 +9,13 @@
  *
  * Design contract: surface-conversation.jsx ThreadSidebar section.
  *
+ * Mobile drill-down:
+ *   - When a thread is active ([threadId]/page.tsx), caller passes
+ *     className="hidden md:flex" to hide the sidebar below md.
+ *   - On the chat index (page.tsx), caller passes className="flex w-full md:w-[260px]"
+ *     so the sidebar fills full width below md (it IS the thread list the user picks from).
+ *   - Desktop (md+): sidebar is always 260px; className overrides are additive.
+ *
  * ACCESSIBILITY (WCAG 2.1 AA):
  *   - Thread list items are buttons with full keyboard nav
  *   - Active thread indicated by aria-current="page"
@@ -25,14 +32,21 @@ import { Icons } from "@/components/design/icons";
 interface ThreadSidebarProps {
   threads: ThreadListItem[];
   activeThreadId: string | null;
+  /** Optional className applied to the <aside> — used for mobile breakpoint gating. */
+  className?: string;
 }
 
-export function ThreadSidebar({ threads, activeThreadId }: ThreadSidebarProps) {
+export function ThreadSidebar({ threads, activeThreadId, className }: ThreadSidebarProps) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
 
   const handleNewThread = () => {
     startTransition(async () => {
+      // The literal "New conversation" title here is load-bearing: it's the
+      // exact string autoNameThreadIfDefault (app/app/chat/actions.ts) checks
+      // for before renaming a thread from its first message (WS7.3). If any
+      // other call site ever creates a thread with a different placeholder
+      // title, that thread will never get auto-named.
       const result = await createThread("New conversation");
       if ("threadId" in result) {
         router.push(`/app/chat/${result.threadId}`);
@@ -57,6 +71,7 @@ export function ThreadSidebar({ threads, activeThreadId }: ThreadSidebarProps) {
 
   return (
     <aside
+      className={className}
       style={{
         width: 260,
         flexShrink: 0,
@@ -139,6 +154,16 @@ export function ThreadSidebar({ threads, activeThreadId }: ThreadSidebarProps) {
                   gap: 6,
                 }}
               >
+                {thread.pinned_at != null && (
+                  <>
+                    <Icons.Pin
+                      size={11}
+                      style={{ color: "var(--text-tertiary)", flexShrink: 0 }}
+                      aria-hidden
+                    />
+                    <span className="sr-only">Pinned. </span>
+                  </>
+                )}
                 {thread.title ?? "Untitled thread"}
               </span>
               <span style={{ fontSize: 11, color: "var(--text-tertiary)", fontFamily: "var(--font-mono)" }}>

@@ -1,22 +1,17 @@
 /**
  * lib/agent/runtime.ts
- * Shared agent runtime — entry points for chat and workflow execution.
+ * Shared agent runtime — entry point for workflow step execution + error classification.
  *
  * SECURITY: Server-only module. No NEXT_PUBLIC_ env vars read here.
  *   Do NOT import this module in Client Components.
  *
  * Entry points:
- *   streamChat(ctx)         — SSE streaming chat entry point (02-06 wires this)
  *   runWorkflowStep(ctx)    — Workflow step execution entry point (02-07 wires this)
+ *   classifyAgentError(err) — map provider API errors to agent error types (AGENT-06)
  *
- * Both entry points:
- *   1. Check checkCostCap(userId) before every LLM call (T-2-05-02)
- *      - 'hard' → disable write tools (chat continues degraded)
- *      - 'soft' → inject cost warning into system prompt
- *   2. Build system prompt via buildSystemPrompt()
- *   3. Call anthropic.messages.stream() with getAnthropicToolDefinitions()
- *   4. On error, use classifyAgentError() → auth/transient/budget (rethrow unknown)
- *   5. After finalMessage, recordCost() from usage
+ * NOTE: the streaming chat path lives in app/api/chat/[threadId]/send/route.ts and
+ * runs on the Vercel AI SDK (streamText). The legacy chat-streaming helper that
+ * used to live here was dead code (nothing called it) and has been removed.
  *
  * Error classification (AGENT-06):
  *   classifyAgentError(err) → { type: 'auth_error' | 'transient' | 'budget_exhausted' }
@@ -28,11 +23,10 @@
  */
 
 import Anthropic from "@anthropic-ai/sdk";
-import { anthropic } from "./anthropic";
-import { buildSystemPrompt } from "./prompt";
+import { APICallError } from "ai";
 import { checkCostCap, recordCost } from "@/lib/cost-cap";
-import { getAnthropicToolDefinitions, dispatchTool } from "./tools/index";
-import type { AgentContext } from "./tools/index";
+import { dispatchTool, getToolDefinitions } from "./tools/index";
+import type { AgentContext, ToolResult } from "./tools/index";
 
 // ─── Error classification ─────────────────────────────────────────────────────
 
@@ -79,26 +73,25 @@ export function classifyAgentError(err: unknown): AgentErrorClassification {
     throw err;
   }
 
-  // Not an Anthropic API error — rethrow for Inngest to handle
+  // ADDITIVE: AI SDK provider errors (Anthropic OR Groq via streamText/generateText)
+  // surface as APICallError with a .statusCode. Map the same way as the Anthropic
+  // branch above. This does not alter the Anthropic.APIError branch or its tests.
+  if (APICallError.isInstance(err)) {
+    const status = err.statusCode;
+    if (status === 401) {
+      return { type: "auth_error" };
+    }
+    if (status === 529 || status === 503 || status === 429) {
+      return { type: "transient" };
+    }
+    if (status !== undefined && status >= 500) {
+      return { type: "transient" };
+    }
+    throw err;
+  }
+
+  // Not a recognized provider API error — rethrow for Inngest to handle
   throw err;
-}
-
-// ─── Chat context ─────────────────────────────────────────────────────────────
-
-export interface ChatContext {
-  userId: string;
-  threadId: string;
-  automationLevel: "L1" | "L2" | "L3";
-  messages: Array<{ role: "user" | "assistant"; content: string }>;
-  query?: string;
-}
-
-export interface ChatResult {
-  content: string;
-  toolsUsed: string[];
-  costUsd: number;
-  degraded: boolean;
-  warningInjected: boolean;
 }
 
 // ─── Workflow step context ─────────────────────────────────────────────────────
@@ -121,108 +114,13 @@ export interface WorkflowStepResult {
   requiresApproval: boolean;
   proposedAction?: unknown;
   costUsd: number;
-}
-
-// ─── Cost warning injection ───────────────────────────────────────────────────
-
-const COST_WARNING =
-  "\n\n⚠️ COST WARNING: You are approaching your daily usage limit. " +
-  "Please complete this task efficiently. Write tools remain available.";
-
-// ─── streamChat ───────────────────────────────────────────────────────────────
-
-/**
- * streamChat — entry point for the chat SSE path.
- *
- * Called by app/api/chat/[threadId]/send/route.ts for each user message.
- * Returns the assembled response; streaming is handled by the route handler
- * that wraps this function with a ReadableStream.
- *
- * Cost cap enforcement (T-2-05-02):
- *   'hard' → write tools stripped from toolDefinitions; chat continues
- *   'soft' → warning appended to system prompt; all tools available
- *
- * @param ctx — ChatContext (userId from authenticated session — never trusted from body)
- */
-export async function streamChat(ctx: ChatContext): Promise<ChatResult> {
-  const agentCtx: AgentContext = {
-    userId: ctx.userId,
-    automationLevel: ctx.automationLevel,
-    threadId: ctx.threadId,
-  };
-
-  // 1. Check cost cap BEFORE any LLM call (T-2-05-02)
-  const capStatus = await checkCostCap(ctx.userId);
-  const includeWriteTools = capStatus !== "hard";
-
-  // 2. Build system prompt
-  let systemPrompt = await buildSystemPrompt(ctx.userId, ctx.query, {
-    budget: "chat",
-  });
-
-  // Inject soft warning into prompt
-  if (capStatus === "soft") {
-    systemPrompt += COST_WARNING;
-  }
-
-  // 3. Get tool definitions (write tools stripped on hard cap)
-  const toolDefs = getAnthropicToolDefinitions(includeWriteTools);
-
-  const toolsUsed: string[] = [];
-  let responseContent = "";
-
-  try {
-    const stream = anthropic.messages.stream({
-      model: "claude-opus-4-7",
-      system: systemPrompt,
-      messages: ctx.messages,
-      tools: toolDefs as Parameters<typeof anthropic.messages.stream>[0]["tools"],
-      max_tokens: 4096,
-    });
-
-    // Process stream events
-    for await (const event of stream) {
-      if (
-        event.type === "content_block_delta" &&
-        event.delta.type === "text_delta"
-      ) {
-        responseContent += event.delta.text;
-      }
-
-      if (
-        event.type === "content_block_start" &&
-        event.content_block.type === "tool_use"
-      ) {
-        const toolBlock = event.content_block;
-        toolsUsed.push(toolBlock.name);
-        // Tool calls are dispatched inline; results fed back on next turn
-        await dispatchTool(toolBlock.name, toolBlock.input, agentCtx);
-      }
-    }
-
-    // 5. Record cost from final message usage
-    const finalMsg = await stream.finalMessage();
-    const usage = finalMsg.usage;
-    // Approximate cost: $3/MTok input, $15/MTok output (claude-opus-4-7)
-    const costUsd =
-      (usage.input_tokens * 3 + (usage.output_tokens ?? 0) * 15) / 1_000_000;
-
-    await recordCost(ctx.userId, costUsd);
-
-    return {
-      content: responseContent,
-      toolsUsed,
-      costUsd,
-      degraded: capStatus === "hard",
-      warningInjected: capStatus === "soft",
-    };
-  } catch (err) {
-    // 4. Classify error (rethrows unknown)
-    const classification = classifyAgentError(err);
-    throw Object.assign(new Error(`Agent error: ${classification.type}`), {
-      classification,
-    });
-  }
+  /**
+   * isError — true when the dispatched ToolResult carried is_error === true.
+   * Always false for the deferred (non-dispatched, pre-approval) branch, since
+   * no tool call was made. The engine (execute-workflow-run.ts) uses this to
+   * mark steps/runs as failed instead of recording a false "success" (WS3).
+   */
+  isError: boolean;
 }
 
 // ─── runWorkflowStep ──────────────────────────────────────────────────────────
@@ -230,8 +128,17 @@ export async function streamChat(ctx: ChatContext): Promise<ChatResult> {
 /**
  * runWorkflowStep — entry point for durable workflow step execution (02-07).
  *
- * Called by executeWorkflowRun Inngest function for each workflow step.
- * Uses a single tool dispatch rather than a full streaming conversation.
+ * TWO-PASS CONTRACT (WS2 / WS3 fix):
+ *   Pass 1 (workflow automationLevel L1/L2 — the propose pass): if the tool
+ *     requires approval and has no safe way to preview without writing
+ *     (proposeSafe !== true and no extractProposedAction), dispatchTool is
+ *     NOT called. A synthetic non-error "deferred_for_approval" ToolResult is
+ *     returned instead, so the external write does not happen before a human
+ *     sees the approval card (WS2 — previously dispatchTool ran unconditionally
+ *     and L2 writes hit Shopify/Gmail before approval).
+ *   Pass 2 (automationLevel forced to "L3" by the engine's approved re-dispatch
+ *     — see execute-workflow-run.ts `execute-approved-*` step): requiresApproval
+ *     is false, so dispatchTool always runs and performs the real write.
  *
  * Cost cap enforcement (T-2-05-02):
  *   'hard' → returns a budget_exhausted error result (caller handles degradation)
@@ -257,28 +164,72 @@ export async function runWorkflowStep(
     );
   }
 
-  // 2. Get tool definitions for the step
+  // 2. Destructure the tool + input for this step
   const { tool: toolName, input } = ctx.stepDefinition;
 
-  // 3. Dispatch the specific tool for this step
-  const toolResult = await dispatchTool(toolName, input, agentCtx);
-
-  // 4. Record approximate cost (minimal — this is a single tool dispatch)
-  const costUsd = 0.0001; // Minimal overhead for tool dispatch; LLM cost tracked separately
-  await recordCost(ctx.userId, costUsd);
-
-  // 5. Check if approval is required
-  const { getToolDefinitions } = await import("./tools/index");
+  // 3. Load the tool definition and compute approval requirement BEFORE dispatch.
   const registry = getToolDefinitions();
   const toolDef = registry[toolName];
   const requiresApproval = toolDef?.approvalRequired
     ? toolDef.approvalRequired(input, agentCtx)
     : false;
 
+  // canProposeSafely — true when it is safe to call execute() during THIS
+  // (possibly pre-approval) pass without risking an external write:
+  //   - proposeSafe === true (declared by the tool — see ToolDefinition docs), OR
+  //   - extractProposedAction is implemented (implies the tool's propose-phase
+  //     ToolResult carries a generated preview, not an external effect).
+  const canProposeSafely =
+    toolDef?.proposeSafe === true || typeof toolDef?.extractProposedAction === "function";
+
+  let toolResult: ToolResult;
+  let isError: boolean;
+
+  if (requiresApproval && !canProposeSafely) {
+    // WS2 FIX: do NOT dispatch. This tool has no safe propose branch, so
+    // calling execute() here would perform the external write before the
+    // human has seen the approval card. Return a synthetic deferred marker —
+    // the engine's approved re-dispatch (automationLevel "L3") calls this
+    // function again with requiresApproval=false, which DOES dispatch.
+    toolResult = {
+      type: "tool_result",
+      is_error: false,
+      content: JSON.stringify({
+        ok: true,
+        phase: "deferred_for_approval",
+        tool: toolName,
+        input,
+      }),
+    };
+    isError = false;
+  } else {
+    // Dispatch as before — propose-safe tools generate their preview here
+    // (no write); tools that don't require approval execute directly.
+    toolResult = await dispatchTool(toolName, input, agentCtx);
+    isError = toolResult.is_error === true;
+  }
+
+  // 4. Record approximate cost (minimal — this is a single tool dispatch)
+  const costUsd = 0.0001; // Minimal overhead for tool dispatch; LLM cost tracked separately
+  await recordCost(ctx.userId, costUsd);
+
+  // 5. Compute proposedAction — prefer the tool's extractProposedAction when present.
+  //    This lets a tool surface the generated copy (e.g. body_html) as proposedAction
+  //    instead of the bare input, so the engine's approval card shows the generated
+  //    copy AND the approved re-dispatch arrives with it (no content drift, no double
+  //    LLM call). Falls back to the raw input for every existing tool (backward-compat)
+  //    and for the deferred (not-safe-to-propose) branch above.
+  const proposedAction = requiresApproval
+    ? (canProposeSafely && toolDef?.extractProposedAction
+        ? toolDef.extractProposedAction(toolResult, input, agentCtx)
+        : input)
+    : undefined;
+
   return {
     toolResult,
     requiresApproval,
-    proposedAction: requiresApproval ? input : undefined,
+    proposedAction,
     costUsd,
+    isError,
   };
 }

@@ -12,7 +12,7 @@
  */
 "use client";
 
-import { login, enterDemo } from "./actions";
+import { login, enterSandbox } from "./actions";
 import Link from "next/link";
 import { useActionState, useState, useTransition, type CSSProperties } from "react";
 import { Button } from "@/components/design/primitives";
@@ -117,12 +117,12 @@ export default function LoginPage() {
           onClick={() => {
             setDemoError(null);
             startTransition(async () => {
-              const res = await enterDemo();
+              const res = await enterSandbox();
               if (res && "error" in res) setDemoError(res.error);
             });
           }}
         >
-          {isDemoPending ? "Entering demo…" : "View the live demo →"}
+          {isDemoPending ? "Preparing your sandbox…" : "Try the live demo →"}
         </Button>
 
         {/* Demo disclaimer line */}
@@ -135,7 +135,7 @@ export default function LoginPage() {
             textAlign: "center",
           }}
         >
-          This is a portfolio demo of Operator Zero — not the real product. Data is illustrative.
+          A private, hands-on sandbox of Operator Zero. Edit anything — your changes stay yours and reset when you leave.
         </p>
 
         {/* Divider separating demo from standard login */}

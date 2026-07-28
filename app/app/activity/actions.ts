@@ -24,6 +24,7 @@ import { createClient } from "@/lib/auth/server";
 import { withUserRls } from "@/lib/db/client";
 import { activityEntries, shopifyProducts, workflows } from "@/lib/db/schema";
 import { sql } from "drizzle-orm";
+import { resolveGidTitles } from "@/lib/activity/gid-titles.server";
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
@@ -108,8 +109,20 @@ async function requireAuth(): Promise<{
 // ─── fetchActivityPage ────────────────────────────────────────────────────────
 
 export type FetchActivityPageResult =
-  | { entries: ActivityEntryRow[]; nextCursor: ActivityCursor | null }
+  | {
+      entries: ActivityEntryRow[];
+      nextCursor: ActivityCursor | null;
+      /**
+       * Map of Shopify GID → resolved product title for every Product/
+       * ProductVariant GID referenced by this page's entries. Variant GIDs
+       * resolve to their parent product's title. Consumed at render time to
+       * humanize summaries and the before/after diff. GIDs with no local
+       * mirror row are simply absent (the client falls back to a short label).
+       */
+      gidTitles: Record<string, string>;
+    }
   | { error: string };
+
 
 /**
  * fetchActivityPage — cursor-paginated activity entries with AND filters.
@@ -200,7 +213,10 @@ export async function fetchActivityPage(
         .limit(PAGE_SIZE);
 
       if (entries.length === 0) {
-        return { entries: [] as ActivityEntryRow[], nextCursor: null };
+        return {
+          entries: [] as ActivityEntryRow[],
+          nextCursor: null,
+        };
       }
 
       // Fetch shopify_updated_at for product/page targets in one join query
@@ -270,10 +286,29 @@ export async function fetchActivityPage(
             }
           : null;
 
+      // NOTE: GID→title resolution runs AFTER this transaction closes (below).
+      // resolveGidTitles uses serviceDb, and the postgres client is created with
+      // max:1 (one connection per invocation). Calling it inside this withUserRls
+      // transaction deadlocks — the open tx holds the only connection while
+      // resolveGidTitles waits for one. Mirrors workflows/page.tsx ordering.
       return { entries: enrichedEntries, nextCursor };
     });
 
-    return result;
+    // Resolve Product/ProductVariant GIDs → product titles OUTSIDE the RLS
+    // transaction (single-connection pool — see note above).
+    const gidTitles: Record<string, string> = result.entries.length
+      ? await resolveGidTitles(
+          userId,
+          result.entries.flatMap((e) => [
+            e.action_summary,
+            e.target_id ?? "",
+            e.before_state ? JSON.stringify(e.before_state) : "",
+            e.after_state ? JSON.stringify(e.after_state) : "",
+          ])
+        )
+      : {};
+
+    return { ...result, gidTitles };
   } catch (err) {
     return { error: String(err) };
   }

@@ -33,6 +33,8 @@ import { createBrowserClient } from "@/lib/auth/client";
 import { approveItem, rejectItem } from "@/app/app/approvals/actions";
 import { Button, StakesIndicator } from "@/components/design/primitives";
 import { Icons } from "@/components/design/icons";
+import { buildPreviewModel } from "@/lib/approvals/preview-model";
+import { sanitizeHtml } from "@/lib/html/sanitize";
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
@@ -380,7 +382,7 @@ export function InlineApprovalCard({
 
         {/* Preview */}
         {preview && Object.keys(preview).length > 0 && (
-          <ApprovalPreview preview={preview} />
+          <ApprovalPreview preview={preview} actionType={actionType} />
         )}
 
         {/* Downstream impact (high-stakes warning) */}
@@ -488,137 +490,233 @@ export function InlineApprovalCard({
 
 type PreviewPayload = Record<string, unknown>;
 
-function ApprovalPreview({ preview }: { preview: PreviewPayload }) {
-  const kind = preview.kind as string | undefined;
+function ApprovalPreview({
+  preview,
+  actionType,
+}: {
+  preview: PreviewPayload;
+  actionType: string;
+}) {
+  const model = buildPreviewModel(preview, actionType);
 
-  if (kind === "content-diff") {
-    return (
-      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-        <PreviewRow label="From" body={String(preview.before ?? "")} tone="muted" />
-        <PreviewRow label="To" body={String(preview.after ?? "")} tone="primary" />
-      </div>
-    );
-  }
+  switch (model.kind) {
+    case "diff":
+      return (
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          <PreviewRow label="From" body={model.before} tone="muted" />
+          <PreviewRow label="To" body={model.after} tone="primary" />
+        </div>
+      );
 
-  if (kind === "email") {
-    return (
-      <div
-        style={{
-          border: "0.5px solid var(--border)",
-          borderRadius: "var(--r-sm)",
-          overflow: "hidden",
-        }}
-      >
-        <div
-          style={{
-            padding: "10px 14px",
-            background: "var(--bg-subtle)",
-            display: "flex",
-            alignItems: "center",
-            gap: 8,
-            borderBottom: "0.5px solid var(--border-hairline)",
-          }}
-        >
-          <Icons.Gmail size={14} style={{ color: "var(--text-tertiary)" }} />
-          <div style={{ fontSize: 12, color: "var(--text-tertiary)", display: "flex", gap: 16, flex: 1 }}>
-            <span>
-              <strong style={{ color: "var(--text)", fontWeight: 500 }}>To:</strong>{" "}
-              {String(preview.to ?? "")}
-            </span>
-          </div>
-        </div>
-        <div style={{ padding: "10px 14px", background: "var(--bg-elevated)", borderBottom: "0.5px solid var(--border-hairline)" }}>
-          <div style={{ fontSize: 13, color: "var(--text)", fontWeight: 500 }}>
-            {String(preview.subject ?? "")}
-          </div>
-        </div>
-        <div
-          style={{
-            padding: "14px 16px",
-            fontSize: 13.5,
-            lineHeight: 1.6,
-            color: "var(--text)",
-            whiteSpace: "pre-wrap",
-            fontFamily: "var(--font-serif)",
-          }}
-        >
-          {String(preview.body ?? "")}
-        </div>
-      </div>
-    );
-  }
-
-  if (kind === "list" && Array.isArray(preview.items)) {
-    const items = preview.items as Array<{ from?: string; to?: string }>;
-    return (
-      <div style={{ border: "0.5px solid var(--border)", borderRadius: "var(--r-sm)", overflow: "hidden" }}>
-        {items.map((it, i) => (
+    case "email": {
+      // Full email card (to/subject/body style)
+      if (model.to !== undefined || model.subject !== undefined || model.body !== undefined) {
+        return (
           <div
-            key={i}
             style={{
-              padding: "9px 14px",
-              borderBottom: i === items.length - 1 ? "none" : "0.5px solid var(--border-hairline)",
-              display: "grid",
-              gridTemplateColumns: "1fr 16px 1.5fr",
-              alignItems: "center",
-              gap: 12,
-              fontSize: 12.5,
+              border: "0.5px solid var(--border)",
+              borderRadius: "var(--r-sm)",
+              overflow: "hidden",
             }}
           >
-            <span
-              style={{
-                color: "var(--text-tertiary)",
-                textDecoration: it.to ? "line-through" : "none",
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-                whiteSpace: "nowrap",
-              }}
-            >
-              {String(it.from ?? "")}
-            </span>
-            {it.to && <Icons.ArrowRight size={11} style={{ color: "var(--text-faint)" }} />}
-            <span
-              style={{
-                color: "var(--text)",
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-                whiteSpace: "nowrap",
-              }}
-            >
-              {String(it.to ?? "")}
-            </span>
+            {model.to !== undefined && (
+              <div
+                style={{
+                  padding: "10px 14px",
+                  background: "var(--bg-subtle)",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8,
+                  borderBottom: "0.5px solid var(--border-hairline)",
+                }}
+              >
+                <Icons.Gmail size={14} style={{ color: "var(--text-tertiary)" }} />
+                <div style={{ fontSize: 12, color: "var(--text-tertiary)", display: "flex", gap: 16, flex: 1 }}>
+                  <span>
+                    <strong style={{ color: "var(--text)", fontWeight: 500 }}>To:</strong>{" "}
+                    {model.to}
+                  </span>
+                </div>
+              </div>
+            )}
+            {model.subject !== undefined && (
+              <div style={{ padding: "10px 14px", background: "var(--bg-elevated)", borderBottom: "0.5px solid var(--border-hairline)" }}>
+                <div style={{ fontSize: 13, color: "var(--text)", fontWeight: 500 }}>
+                  {model.subject}
+                </div>
+              </div>
+            )}
+            {model.body !== undefined && (
+              <div
+                style={{
+                  padding: "14px 16px",
+                  fontSize: 13.5,
+                  lineHeight: 1.6,
+                  color: "var(--text)",
+                  whiteSpace: "pre-wrap",
+                  fontFamily: "var(--font-serif)",
+                }}
+              >
+                {model.body}
+              </div>
+            )}
           </div>
-        ))}
-      </div>
-    );
-  }
+        );
+      }
+      // Q&A style: customer/question + draft
+      return (
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {model.question !== undefined && (
+            <PreviewRow label={model.customer ?? "Customer"} body={model.question} tone="muted" />
+          )}
+          {model.draft !== undefined && (
+            <PreviewRow label="Draft" body={model.draft} tone="primary" />
+          )}
+        </div>
+      );
+    }
 
-  // Fallback: generic pre-formatted JSON preview
-  return (
-    <div
-      style={{
-        padding: "10px 12px",
-        background: "var(--bg-subtle)",
-        borderRadius: "var(--r-sm)",
-        fontSize: 12,
-        color: "var(--text)",
-      }}
-    >
-      <pre
-        style={{
-          margin: 0,
-          fontFamily: "var(--font-mono)",
-          fontSize: 12,
-          overflow: "auto",
-          maxHeight: 200,
-          whiteSpace: "pre-wrap",
-          wordBreak: "break-word",
-        }}
-      >
-        {JSON.stringify(preview, null, 2)}
-      </pre>
-    </div>
-  );
+    case "list": {
+      const items = model.items as Array<{ from?: string; to?: string }>;
+      return (
+        <div style={{ border: "0.5px solid var(--border)", borderRadius: "var(--r-sm)", overflow: "hidden" }}>
+          {items.map((it, i) => (
+            <div
+              key={i}
+              style={{
+                padding: "9px 14px",
+                borderBottom: i === items.length - 1 ? "none" : "0.5px solid var(--border-hairline)",
+                display: "grid",
+                gridTemplateColumns: "1fr 16px 1.5fr",
+                alignItems: "center",
+                gap: 12,
+                fontSize: 12.5,
+              }}
+            >
+              <span
+                style={{
+                  color: "var(--text-tertiary)",
+                  textDecoration: it.to ? "line-through" : "none",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {String(it.from ?? "")}
+              </span>
+              {it.to && <Icons.ArrowRight size={11} style={{ color: "var(--text-faint)" }} />}
+              <span
+                style={{
+                  color: "var(--text)",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {String(it.to ?? "")}
+              </span>
+            </div>
+          ))}
+        </div>
+      );
+    }
+
+    case "html":
+      return (
+        <div
+          style={{
+            padding: "10px 12px",
+            background: "var(--bg-subtle)",
+            borderRadius: "var(--r-sm)",
+          }}
+        >
+          <div
+            style={{
+              fontSize: 13.5,
+              lineHeight: 1.6,
+              color: "var(--text)",
+            }}
+            dangerouslySetInnerHTML={{ __html: sanitizeHtml(model.html) }}
+          />
+        </div>
+      );
+
+    case "fields":
+      return (
+        <dl style={{ margin: 0, display: "flex", flexDirection: "column", gap: 8 }}>
+          {model.fields.map((field, idx) => (
+            <div key={idx} style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+              <dt
+                style={{
+                  fontSize: 10.5,
+                  fontFamily: "var(--font-mono)",
+                  color: "var(--text-tertiary)",
+                  textTransform: "uppercase",
+                  letterSpacing: "0.06em",
+                }}
+              >
+                {field.label}
+              </dt>
+              <dd style={{ margin: 0 }}>
+                {field.html === true ? (
+                  <div
+                    style={{ fontSize: 13, lineHeight: 1.55, color: "var(--text)" }}
+                    dangerouslySetInnerHTML={{ __html: sanitizeHtml(field.value) }}
+                  />
+                ) : (
+                  <div
+                    style={{
+                      fontSize: 13,
+                      lineHeight: 1.55,
+                      color: "var(--text)",
+                      padding: "6px 10px",
+                      background: "var(--bg-elevated)",
+                      borderRadius: "var(--r-sm)",
+                      border: "0.5px solid var(--acc-approval-ink)",
+                    }}
+                  >
+                    {field.value}
+                  </div>
+                )}
+                {field.count !== undefined && (
+                  <span
+                    style={{
+                      display: "block",
+                      marginTop: 2,
+                      fontSize: 10.5,
+                      fontFamily: "var(--font-mono)",
+                      color: "var(--text-tertiary)",
+                    }}
+                  >
+                    {field.count}
+                  </span>
+                )}
+              </dd>
+            </div>
+          ))}
+        </dl>
+      );
+
+    case "text":
+      return (
+        <div
+          style={{
+            padding: "10px 12px",
+            background: "var(--bg-subtle)",
+            borderRadius: "var(--r-sm)",
+            fontSize: 13,
+            lineHeight: 1.55,
+            color: "var(--text-secondary)",
+            whiteSpace: "pre-wrap",
+          }}
+        >
+          {model.text}
+        </div>
+      );
+
+    case "empty":
+      return null;
+  }
 }
 
 // ─── PreviewRow ───────────────────────────────────────────────────────────────

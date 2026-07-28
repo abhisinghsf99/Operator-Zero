@@ -23,7 +23,8 @@ import {
   gmailSyncState,
 } from "@/lib/db/schema/gmail-mirror";
 import { integrations } from "@/lib/db/schema";
-import { eq, and } from "drizzle-orm";
+import { eq, and, ne } from "drizzle-orm";
+import { SANDBOX_SENTINEL_TOKEN } from "@/lib/demo/constants";
 
 /** Helper: extract header value from a Gmail message header array */
 function getHeader(
@@ -420,7 +421,10 @@ export async function getActiveGmailUserIds(): Promise<string[]> {
     .where(
       and(
         eq(integrations.provider, "gmail"),
-        eq(integrations.status, "active")
+        eq(integrations.status, "active"),
+        // Exclude sandbox connections — their sentinel token has no real Gmail
+        // account behind it. The seeded inbox is static; nothing to poll.
+        ne(integrations.access_token_encrypted, SANDBOX_SENTINEL_TOKEN)
       )
     );
 

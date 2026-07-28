@@ -1,6 +1,6 @@
 /**
  * lib/workflows/revert.ts
- * Revert eligibility check and revert execution helpers.
+ * Revert eligibility check (pure — safe for client components).
  *
  * canRevert — pure function: determines whether an activity entry can be
  *   reverted. Called from both the Activity UI (show/disable button) and
@@ -10,17 +10,21 @@
  * REVERT_REASON_LABELS — human-readable labels for each failure reason.
  *   Used in D-09 disabled-button tooltips and bulk-revert confirmation modal.
  *
- * executeRevertEffect — stub for external Shopify/Gmail revert execution.
- *   The actual adapters are wired in Phase 4; this stub is safe to call
- *   (no-op) so the Server Action flow compiles and is testable end-to-end.
- *
  * DRIFT WINDOWS (D-11 / DATA-FLOW.md §10.6):
  *   content    = 7 days  (product descriptions, meta fields, page content)
  *   structural = 24 hours (price, inventory, status, redirects)
  *   sent       = never   (sent emails cannot be unsent)
  *
- * SERVER-ONLY NOTE: This module may be imported by both client components
- *   (canRevert is pure — safe in browser) and Server Actions.
+ * CLIENT-SAFE NOTE: This module is imported by both client components
+ *   (components/activity/activity-detail.tsx uses canRevert to show/disable
+ *   the revert button) and Server Actions — it MUST NOT import anything that
+ *   transitively reaches server-only code (DB clients, Shopify/Gmail
+ *   adapters), or Next.js will try to bundle that code for the browser and
+ *   the build fails on Node builtins (net/tls/perf_hooks) that postgres.js
+ *   needs. executeRevertEffect (the actual write-path executor, which DOES
+ *   need server-only imports) lives in the sibling module
+ *   lib/workflows/revert-effect.ts for exactly this reason — import it only
+ *   from Server Actions, never from a client component.
  */
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
@@ -159,33 +163,3 @@ export const REVERT_REASON_LABELS: Record<
   already_reverted: "This action has already been reverted",
   is_revert_entry: "Revert actions themselves cannot be reverted",
 };
-
-// ─── executeRevertEffect ──────────────────────────────────────────────────────
-
-/**
- * executeRevertEffect — execute the external revert for an activity entry.
- *
- * Phase 3 stub: the actual Shopify/Gmail adapter calls are wired in Phase 4.
- * This function is safe to call (no-op) and allows the Server Action flow to
- * be fully tested without live external API credentials.
- *
- * When Phase 4 wires the adapters, this function will:
- *   - For product/page targets: call the Shopify adapter to restore before_state
- *   - For email targets: no-op (sent emails cannot be unsent per D-11)
- *
- * @param entry  - The activity entry to revert
- * @param userId - The authenticated user UUID (for adapter auth)
- */
-export async function executeRevertEffect(
-  entry: { action_type: string; target_type?: string | null; target_id?: string | null; before_state: Record<string, unknown> | null },
-  userId: string
-): Promise<void> {
-  // Phase 3 stub — Phase 4 wires real adapters
-  // Log for observability during testing
-  if (process.env["NODE_ENV"] === "development") {
-    console.log(
-      `[executeRevertEffect] STUB: would revert ${entry.action_type} for ${entry.target_type}:${entry.target_id} (userId=${userId})`
-    );
-  }
-  // No-op in Phase 3 — the DB writes (reverted_at, revert_* entry) still happen
-}

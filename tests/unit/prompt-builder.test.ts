@@ -115,6 +115,24 @@ describe("AGENT-01 — Prompt construction fits token budget", () => {
     expect(prompt).toContain("SEMANTIC RECALL");
   });
 
+  it("WS5: SYSTEM ROLE names all four domain playbooks and TOOLS is registry-generated", () => {
+    const prompt = assemblePrompt(BASE_CTX);
+
+    // Four domain playbooks present in the SYSTEM ROLE section.
+    expect(prompt).toContain("### CATALOG");
+    expect(prompt).toContain("### SEO");
+    expect(prompt).toContain("### Q&A");
+    expect(prompt).toContain("### INVENTORY");
+    expect(prompt).toContain("### GUARDRAILS");
+
+    // TOOLS section is generated from the live registry — previously the
+    // hand-written list omitted these three smart write tools entirely.
+    expect(prompt).toContain("shopify_optimize_meta");
+    expect(prompt).toContain("shopify_optimize_product_description");
+    expect(prompt).toContain("shopify_propose_restock");
+    expect(prompt).toContain("TOOLS");
+  });
+
   it("includes top-K semantic recall results from memory_embeddings", () => {
     const recalls = makeSemanticRecalls(3);
     const ctx: PromptContext = { ...BASE_CTX, semanticRecall: recalls };
@@ -164,10 +182,13 @@ describe("AGENT-01 — Prompt construction fits token budget", () => {
       semanticRecall: makeSemanticRecalls(1),
     };
     const prompt = assemblePrompt(ctx);
-    // Verify all 6 sections are present in order
+    // Verify all 6 sections are present in order. Use the "## " header prefix
+    // for BRAND VOICE specifically — WS5's SYSTEM ROLE playbook mentions
+    // "BRAND VOICE" by name as guidance, so a bare substring match would find
+    // that in-SYSTEM-ROLE reference instead of the actual section header.
     const systemIdx = prompt.indexOf("SYSTEM ROLE");
     const storeIdx = prompt.indexOf("STORE CONTEXT");
-    const brandIdx = prompt.indexOf("BRAND VOICE");
+    const brandIdx = prompt.indexOf("## BRAND VOICE");
     const memIdx = prompt.indexOf("MEMORY");
     const recallIdx = prompt.indexOf("SEMANTIC RECALL");
     const toolsIdx = prompt.indexOf("TOOLS");
@@ -194,7 +215,11 @@ describe("AGENT-01 — Prompt construction fits token budget", () => {
   it("omits brand voice section gracefully when no profile exists", () => {
     const ctx: PromptContext = { ...BASE_CTX, brandVoice: null };
     const prompt = assemblePrompt(ctx);
-    expect(prompt).not.toContain("BRAND VOICE");
+    // WS5: the SYSTEM ROLE's CATALOG playbook references "BRAND VOICE" by name
+    // as guidance ("obey the BRAND VOICE section below verbatim"), so a bare
+    // substring check is no longer sufficient — assert the actual section
+    // header ("## BRAND VOICE") is absent instead.
+    expect(prompt).not.toContain("## BRAND VOICE");
   });
 
   it("includes Shopify store context summary (product count, shop domain)", () => {

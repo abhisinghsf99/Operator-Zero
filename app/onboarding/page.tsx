@@ -15,7 +15,7 @@
  *
  * SECURITY:
  *   - Middleware redirects unauthenticated /onboarding to /login (T-2-08-01)
- *   - Authenticated users with onboarding_completed_at set are redirected to /app
+ *   - Authenticated users with onboarding_completed_at set are redirected to /app/workflows
  *   - User ID comes from getClaims().sub — never from URL/query params
  *
  * WCAG 2.1 AA:
@@ -47,9 +47,9 @@ export default async function OnboardingPage({ searchParams }: OnboardingPagePro
   // 1. Validate session + get/create profile (middleware has already checked auth)
   const profile = await getOrCreateProfile();
 
-  // 2. If onboarding already completed, redirect to app
+  // 2. If onboarding already completed, redirect to the Workflows surface (D-16)
   if (profile.onboarding_completed_at) {
-    redirect("/app/chat");
+    redirect("/app/workflows");
   }
 
   // 3. Resolve the current step

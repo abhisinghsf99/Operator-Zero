@@ -30,6 +30,32 @@ export function isDemoUser(userId: string | null | undefined): boolean {
 }
 
 /**
+ * Minimal shape of the validated JWT claims we care about for demo gating.
+ * `is_anonymous` is set by Supabase on anonymous sign-ins.
+ */
+export type SandboxClaims = {
+  sub?: string;
+  is_anonymous?: boolean;
+} | null | undefined;
+
+/**
+ * isSandboxClaims — returns true for any "restricted demo" identity:
+ *   - an anonymous user (per-visitor sandbox via signInAnonymously), OR
+ *   - the shared demo account (sub === DEMO_USER_ID).
+ *
+ * Use this (not isDemoUser) for guards that should apply to BOTH the shared demo
+ * and every throwaway sandbox visitor: blocking destructive account actions,
+ * freezing external OAuth connects, and showing the demo banner.
+ *
+ * Safe to call with null/undefined claims — returns false.
+ */
+export function isSandboxClaims(claims: SandboxClaims): boolean {
+  if (!claims) return false;
+  if (claims.is_anonymous === true) return true;
+  return isDemoUser(claims.sub);
+}
+
+/**
  * getDemoCredentials — read demo credentials from server-side env vars.
  *
  * Returns { email, password } only when BOTH DEMO_EMAIL and DEMO_PASSWORD are set.
@@ -43,4 +69,26 @@ export function getDemoCredentials(): { email: string; password: string } | null
   const password = process.env.DEMO_PASSWORD;
   if (!email || !password) return null;
   return { email, password };
+}
+
+/**
+ * isDemoConnectionLocked — controls whether the demo account's Shopify
+ * connect/disconnect flow is frozen.
+ *
+ * When true, the demo account cannot initiate a new Shopify OAuth connection
+ * (connect route redirects to /app/settings) and cannot disconnect an existing
+ * integration (disconnectIntegration returns DEMO_DISABLED_MESSAGE).
+ *
+ * Controlled entirely by the DEMO_SHOPIFY_LOCKED env var — no code change
+ * needed to freeze or unfreeze the demo connection:
+ *   - FREEZE (lock):   set DEMO_SHOPIFY_LOCKED=true in Vercel env + redeploy
+ *   - UNFREEZE (unlock): unset (or set to any other value) + redeploy
+ *
+ * Default (env unset) = UNLOCKED — demo visitor can exercise the full
+ * connect/disconnect flow.
+ *
+ * SECURITY: Server-only. Never expose DEMO_SHOPIFY_LOCKED to the client bundle.
+ */
+export function isDemoConnectionLocked(): boolean {
+  return process.env.DEMO_SHOPIFY_LOCKED === "true";
 }

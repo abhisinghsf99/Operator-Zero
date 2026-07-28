@@ -11,7 +11,7 @@
  *   1. saveBrandVoice exists and calls encryptToken before DB write
  *   2. regenerateBrandVoice exists and returns { draft } without writing to DB
  */
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 // ─── Mocks (hoisted) ─────────────────────────────────────────────────────────
 
@@ -26,13 +26,15 @@ vi.mock("@/lib/integrations/crypto", () => ({
   }),
 }));
 
-// Mock Supabase auth — authenticated user
+// Mock Supabase auth — authenticated user by default; individual tests (WS8)
+// override mockGetClaims to exercise anonymous / shared-demo identities.
+const mockGetClaims = vi.fn().mockResolvedValue({
+  data: { claims: { sub: "user-uuid-test-123" } },
+});
 vi.mock("@/lib/auth/server", () => ({
   createClient: vi.fn().mockResolvedValue({
     auth: {
-      getClaims: vi.fn().mockResolvedValue({
-        data: { claims: { sub: "user-uuid-test-123" } },
-      }),
+      getClaims: mockGetClaims,
       updateUser: vi.fn().mockResolvedValue({ error: null }),
     },
   }),
@@ -59,6 +61,15 @@ const mockSelect = vi.fn().mockReturnValue({
   }),
 });
 
+// Tracks whether disconnectIntegration's RLS-scoped delete ever ran — WS8
+// tests assert this stays untouched when a sandbox/demo identity is blocked.
+const mockTxDeleteWhere = vi.fn().mockResolvedValue([]);
+const mockTxDelete = vi.fn().mockReturnValue({ where: mockTxDeleteWhere });
+const mockWithUserRls = vi.fn(
+  (_claims: unknown, fn: (tx: unknown) => Promise<unknown>) =>
+    fn({ delete: mockTxDelete })
+);
+
 vi.mock("@/lib/db/client", () => ({
   serviceDb: {
     update: mockUpdate,
@@ -75,6 +86,10 @@ vi.mock("@/lib/db/client", () => ({
       where: vi.fn().mockResolvedValue([]),
     }),
   },
+  // disconnectIntegration (WS8) imports withUserRls via "@/lib/db", which
+  // re-exports it from this module (lib/db/index.ts: `export { withUserRls,
+  // serviceDb } from "./client"`) — mock it here so that re-export resolves.
+  withUserRls: mockWithUserRls,
 }));
 
 // Mock next/cache
@@ -82,24 +97,16 @@ vi.mock("next/cache", () => ({
   revalidatePath: vi.fn(),
 }));
 
-// Mock Anthropic SDK — returns a predictable draft
-vi.mock("@anthropic-ai/sdk", () => {
-  const MockAnthropic = vi.fn().mockImplementation(function () {
-    return {
-      messages: {
-        create: vi.fn().mockResolvedValue({
-          content: [
-            {
-              type: "text",
-              text: "# Generated Voice\n\nWarm, direct, and human.",
-            },
-          ],
-        }),
-      },
-    };
-  });
-  return { default: MockAnthropic };
-});
+// Mock the AI SDK boundary (regenerateBrandVoice now uses generateText) —
+// returns a predictable draft.
+vi.mock("ai", () => ({
+  generateText: vi.fn().mockResolvedValue({
+    text: "# Generated Voice\n\nWarm, direct, and human.",
+  }),
+}));
+vi.mock("@/lib/agent/llm/models", () => ({
+  resolveModel: vi.fn().mockReturnValue({ provider: "anthropic", modelId: "claude-opus-4-5" }),
+}));
 
 // Mock memory functions
 vi.mock("@/lib/agent/memory", () => ({
@@ -178,5 +185,71 @@ describe("SET-02 — brand voice", () => {
 
     // serviceDb.update should NOT have been called (no DB write — T-4-03-04)
     expect(serviceDb.update).not.toHaveBeenCalled();
+  });
+});
+
+// ─── WS8: sandbox guard on disconnectIntegration ──────────────────────────────
+
+describe("WS8 — disconnectIntegration blocks every sandbox/demo identity", () => {
+  const REAL_DEMO_USER_ID = process.env.DEMO_USER_ID;
+
+  beforeEach(() => {
+    vi.resetModules();
+    vi.clearAllMocks();
+    mockGetClaims.mockResolvedValue({
+      data: { claims: { sub: "user-uuid-test-123" } },
+    });
+  });
+
+  afterEach(() => {
+    if (REAL_DEMO_USER_ID === undefined) {
+      delete process.env.DEMO_USER_ID;
+    } else {
+      process.env.DEMO_USER_ID = REAL_DEMO_USER_ID;
+    }
+  });
+
+  it("blocks an anonymous sandbox visitor (is_anonymous: true) and performs no delete", async () => {
+    mockGetClaims.mockResolvedValue({
+      data: { claims: { sub: "anon-visitor-1", is_anonymous: true } },
+    });
+
+    const { disconnectIntegration } = await import("@/app/app/settings/actions");
+    const { DEMO_DISABLED_MESSAGE } = await import("@/lib/auth/demo");
+
+    const result = await disconnectIntegration("shopify");
+
+    expect(result).toEqual({ error: DEMO_DISABLED_MESSAGE });
+    expect(mockTxDelete).not.toHaveBeenCalled();
+  });
+
+  it("blocks the shared demo user's claims regardless of DEMO_SHOPIFY_LOCKED and performs no delete", async () => {
+    process.env.DEMO_USER_ID = "shared-demo-user-id";
+    delete process.env.DEMO_SHOPIFY_LOCKED; // unset = "unlocked" under the OLD guard
+    mockGetClaims.mockResolvedValue({
+      data: { claims: { sub: "shared-demo-user-id" } },
+    });
+
+    const { disconnectIntegration } = await import("@/app/app/settings/actions");
+    const { DEMO_DISABLED_MESSAGE } = await import("@/lib/auth/demo");
+
+    const result = await disconnectIntegration("shopify");
+
+    expect(result).toEqual({ error: DEMO_DISABLED_MESSAGE });
+    expect(mockTxDelete).not.toHaveBeenCalled();
+  });
+
+  it("does not block an ordinary authenticated user", async () => {
+    mockGetClaims.mockResolvedValue({
+      data: { claims: { sub: "ordinary-user-1" } },
+    });
+
+    const { disconnectIntegration } = await import("@/app/app/settings/actions");
+    const result = await disconnectIntegration("shopify");
+
+    expect(result).not.toEqual(
+      expect.objectContaining({ error: expect.any(String) })
+    );
+    expect(mockTxDelete).toHaveBeenCalled();
   });
 });

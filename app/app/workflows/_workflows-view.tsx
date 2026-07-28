@@ -124,7 +124,7 @@ export function WorkflowsView({
       />
 
       {/* Recent activity strip — live counts via Realtime (D-15) */}
-      <div style={{ margin: "20px 40px 0" }}>
+      <div className="mx-4 md:mx-10 mt-5">
         <RecentActivityStrip stats={stripStats} userId={userId} />
       </div>
 
@@ -132,8 +132,10 @@ export function WorkflowsView({
       {searchQuery.trim() && !hasAnyFiltered ? (
         /* Search: no results */
         <div
+          className="px-4 md:px-10"
           style={{
-            padding: "60px 40px",
+            paddingTop: 60,
+            paddingBottom: 60,
             textAlign: "center",
             color: "var(--text-tertiary)",
             fontSize: 14,
@@ -143,8 +145,10 @@ export function WorkflowsView({
         </div>
       ) : (
         <div
+          className="px-4 md:px-10"
           style={{
-            padding: "32px 40px 60px",
+            paddingTop: 32,
+            paddingBottom: 60,
             display: "flex",
             flexDirection: "column",
             gap: 36,

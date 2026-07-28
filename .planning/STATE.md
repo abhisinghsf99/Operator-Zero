@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: milestone_complete
-stopped_at: Milestone complete (Phase 04 was final phase)
-last_updated: 2026-05-23T01:59:28.550Z
-last_activity: 2026-05-23
+status: completed
+stopped_at: Completed quick task 260601-gco — reasoningEffort:low + maxOutputTokens 1024 for meta/restock generation; @idempotent directive on inventorySetOnHandQuantities (117 tests, typecheck clean)
+last_updated: "2026-06-01T12:05:00.000Z"
+last_activity: "2026-06-01 - Fixed Groq gpt-oss-120b reasoning-token starvation in optimize-meta + propose-restock (providerOptions.groq.reasoningEffort=low, maxOutputTokens 1024). Fixed Shopify @idempotent directive requirement on inventorySetOnHandQuantities, reusing existing idempotency_key. All 3 workflows unblocked for live write on Groq drafter."
 progress:
   total_phases: 4
-  completed_phases: 3
+  completed_phases: 4
   total_plans: 22
   completed_plans: 22
-  percent: 75
+  percent: 100
 ---
 
 # Project State
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-05-21)
 Phase: 04
 Plan: Not started
 Status: Milestone complete
-Last activity: 2026-05-26 - Completed quick task 260526-luj: Fix chat (graceful Voyage-recall degradation) + BYOK showcase card
+Last activity: 2026-07-27 - Completed quick task 260727-gwq: demo-readiness sweep for LinkedIn launch. Engine correctness (L2 approval ordering, error propagation), real write tools, domain-expert prompt, Gemini provider switch, chat fixes, seed-data gaps closed. 564 tests green. Remaining orchestration: prod reseed + GOOGLE_GENERATIVE_AI_API_KEY + Vercel deploy + prod smoke test.
 
 Progress: [██████████] 95%
 
@@ -132,17 +132,35 @@ None yet.
 
 ### Quick Tasks Completed
 
-| # | Description | Date | Commit | Directory |
-|---|-------------|------|--------|-----------|
+| # | Description | Date | Commit | Status | Directory |
+|---|-------------|------|--------|--------|-----------|
 | 260523-1jq | Fix Shopify Connect button to collect myshopify store domain before OAuth redirect | 2026-05-23 | 4851b5b | [260523-1jq-fix-shopify-connect-button-to-collect-my](./quick/260523-1jq-fix-shopify-connect-button-to-collect-my/) |
 | 260526-fmp | Add one-click public demo mode (enterDemo + banner + destructive-action guards) | 2026-05-26 | d7b7cc0 | [260526-fmp-add-one-click-public-demo-mode-with-bann](./quick/260526-fmp-add-one-click-public-demo-mode-with-bann/) |
 | 260526-ii6 | Reset demo to baseline on each entry (in-app reseedDemo + reset route + tab-close beacon) | 2026-05-26 | b58c896 | [260526-ii6-reset-demo-to-baseline-on-each-entry-via](./quick/260526-ii6-reset-demo-to-baseline-on-each-entry-via/) |
 | 260526-kpx | Clean shape-aware approval preview (Q&A customer message + drafted reply, before/after, item list) | 2026-05-26 | 6453e56 | [260526-kpx-render-approval-preview-cleanly-especial](./quick/260526-kpx-render-approval-preview-cleanly-especial/) |
 | 260526-luj | Fix chat: graceful Voyage-recall degradation (no more 500 on free-tier 429) + non-editable BYOK showcase card | 2026-05-26 | 9f5cbf3 | [260526-luj-fix-chat-voyage-429-with-graceful-recall](./quick/260526-luj-fix-chat-voyage-429-with-graceful-recall/) |
 | 260526-l83 | Add logout/sign-out button to UI (desktop sidebar + Settings → Sessions) | 2026-05-26 | d8de2da | [260526-l83-add-logout-button](./quick/260526-l83-add-logout-button/) |
+| 260526-mfp | Seed Gmail mirror tables in reseedDemo (23 threads/messages, 9 product questions) — inbox tools now return data | 2026-05-26 | c3072a7 | [260526-mfp-seed-gmail-mirror-demo](./quick/260526-mfp-seed-gmail-mirror-demo/) |
+| 260526-r8o | Turn off demo auto-reset (removed reseed call + reset route + tab-close beacon) + cleared demo account data — for a permanent real Shopify dev store connection | 2026-05-26 | 8387197 | [260526-r8o-disable-demo-reset-clear-data](./quick/260526-r8o-disable-demo-reset-clear-data/) |
+| 260526-tl5 | Demo Shopify connection lock flag (DEMO_SHOPIFY_LOCKED, default unlocked) gating connect+disconnect guards + reworded demo banner | 2026-05-26 | c5d2d74 | [260526-tl5-demo-shopify-lock-flag](./quick/260526-tl5-demo-shopify-lock-flag/) |
+| 260526-v0o | Fix stale/never-synced Shopify connection badge — stamp integrations.last_synced_at at end of shopifyFullSyncForUser | 2026-05-26 | 16bbed1 | [260526-v0o-stamp-integration-last-synced](./quick/260526-v0o-stamp-integration-last-synced/) |
+| 260527-d97 | Fix chat assistant messages rendering raw markdown — render via react-markdown + remark-gfm (GFM tables), preserve streaming caret + T-2-06-02 XSS guard | 2026-05-27 | 0bd45f4 | | [260527-d97-fix-chat-assistant-messages-rendering-ra](./quick/260527-d97-fix-chat-assistant-messages-rendering-ra/) |
+| 260527-dse | Make chat header Search + ⋯ menu functional — in-thread search, Rename/Delete(soft)/Copy transcript/Pin; new deleteThread+togglePinThread actions, migration 0010 pinned_at, sidebar pin ordering | 2026-05-27 | 5d7442c | Needs Review | [260527-dse-make-chat-header-search-icon-and-more-op](./quick/260527-dse-make-chat-header-search-icon-and-more-op/) |
+| 260527-ebw | Provider abstraction + per-task model routing (Anthropic↔Groq) via Vercel AI SDK — MODEL_PROFILE/OZ_MODEL_&lt;ROLE&gt; routing, default anthropic = zero behavior change; chat route on streamText, 3 sites on generateText, dead streamChat removed | 2026-05-27 | 338d7e7 |  | [260527-ebw-model-routing-anthropic-groq-via-ai-sdk](./quick/260527-ebw-model-routing-anthropic-groq-via-ai-sdk/) |
+| 260528-sgu | Backfill after_state onto activity_entries in Shopify write path — updateProduct/updateInventory now persist the post-write mirror re-read onto the activity row (DRY backfillAfterState helper, user_id-scoped) so the Activity log shows a true before→after diff on real edits | 2026-05-29 | 690f122 | Verified | [260528-sgu-backfill-after-state-onto-activity-entri](./quick/260528-sgu-backfill-after-state-onto-activity-entri/) |
+| 260529-f4g | "Optimized product descriptions" workflow (vertical slice #2): run-time LLM generation wired into the frozen workflow engine via a new extractProposedAction tool-contract — generated copy flows into proposedAction so the L2 approval card shows it and the approved re-dispatch writes it without regenerating. Adds generation helper (cost-cap-gated, provider-routed, HTML-sanitized) + shopify_optimize_product_description smart tool (propose/write/L3) + idempotent seed script. 51 tests, engine 0-diff | 2026-05-29 | 7651b25 | Needs Review | [260529-f4g-optimized-product-descriptions-workflow-](./quick/260529-f4g-optimized-product-descriptions-workflow-/) |
+| 260529-jk4 | "Optimize SEO meta" workflow (Tool 13): shopify_optimize_meta smart tool (propose/write/L3) + generateOptimizedMeta helper (cost-cap-gated, SEO-length-guarded ≤60/≤160) + idempotent seed script. Surfaces generated meta title+description via pre-existing extractProposedAction contract (parenthesized OR precedence fix applied). 42 tests, engine 0-diff | 2026-05-29 | 23f4043 | Needs Review | [260529-jk4-meta-optimization-workflow-shopify-optim](./quick/260529-jk4-meta-optimization-workflow-shopify-optim/) |
+| 260529-jxq | "Low-stock restock proposals" workflow (Tool 14): shopify_propose_restock smart tool (propose/write/L3) + generateRestockProposal helper (cost-cap-gated; target_qty clamped to positive int >current, ≤1000) + idempotent seed script targeting variants inventory_qty≤5. Restock-to-target written via updateInventory; WRITE/PROPOSE branch keys on typeof inventory_qty==='number' so a target of 0 still routes to write. 47 tests, engine 0-diff | 2026-05-29 | 9f4dee6 | Needs Review | [260529-jxq-low-stock-restock-workflow-shopify-propo](./quick/260529-jxq-low-stock-restock-workflow-shopify-propo/) |
+| 260531-tsg | Fixed L2 approval preview rendering across BOTH surfaces (Approval Inbox `_preview.tsx` + chat `inline-approval-card.tsx`): extracted shared `sanitizeHtml` to `lib/html/sanitize.ts` + new pure `buildPreviewModel` (lib/approvals/preview-model.ts) discriminated union — html/fields/diff/list/email/text/empty + humanized generic fallback that never dumps escaped JSON. Both surfaces now render off it; raw `JSON.stringify(preview)` fallbacks deleted. HTML sanitized at render. 39 preview/sanitizer tests, 471 suite green, engine 0-diff | 2026-05-31 | 929b1b7 | Verified | [260531-tsg-fix-approval-preview-rendering-across-bo](./quick/260531-tsg-fix-approval-preview-rendering-across-bo/) |
+| 260531-vhh | Fixed live Shopify write path (Admin API 2024-10): updateProduct `bodyHtml`→`descriptionHtml` (mutation+re-read+mirror), updateInventory now resolves real inventoryItemId + locationId from the variant's inventoryItem/inventoryLevels (no read_locations scope needed; no hardcoded Location/1) + enables tracking when tracked:false; both fail loud on userErrors. Found via live smoke test. Descriptions (#2) confirmed writing live after this. 23 tests | 2026-05-31 | 8cb2052 | Verified (descriptions live) | [260531-vhh-fix-live-shopify-write-path-descriptionh](./quick/260531-vhh-fix-live-shopify-write-path-descriptionh/) |
+| 260531-w26 | parseMeta rewritten to extract balanced JSON (stops the fence regex from deleting Groq's ```json content); updateInventory adds `changeFromQuantity` (current on-hand) to inventorySetOnHandQuantities. 42 tests, typecheck clean. NOTE: meta still blocked live by Groq gpt-oss reasoning-token starvation (fix=reasoningEffort:low, not yet applied); restock still blocked by Shopify `@idempotent` directive requirement on the inventory mutation | 2026-05-31 | fdc3f71 | Partial (further live blockers found) | [260531-w26-fix-meta-json-fence-parsing-restock-chan](./quick/260531-w26-fix-meta-json-fence-parsing-restock-chan/) |
+| 260601-gco | Final live-write blockers: meta + restock generation set `providerOptions.groq.reasoningEffort:"low"` + maxOutputTokens 1024 (gpt-oss-120b was spending the whole budget on reasoning, emitting empty JSON); updateInventory adds the required `@idempotent(key:$idempotencyKey)` directive to inventorySetOnHandQuantities (reuses existing idempotency_key). 120 tests, typecheck clean. Merged after the repo was relocated to "100x Capstone Project/Operator-Zero" mid-run. Code-complete + unit-tested; live re-verification of meta/restock writes still pending | 2026-06-01 | 226beaa | Code-complete (live re-verify pending) | [260601-gco-meta-reasoningeffort-restock-idempotent-](./quick/260601-gco-meta-reasoningeffort-restock-idempotent-/) |
+| 260608-j3y | Mobile optimization pass — fixed the two surfaces that overlapped at ~390px by mirroring the Approvals drill-down convention. ACTIVITY: SSR `selectedEntry=null`, desktop default restored client-side via `matchMedia(min-width:768px)` (no hydration mismatch); resize divider + fixed-width detail `<aside>` now `hidden md:flex` (drag unreachable below md); mobile gets a full-width detail drill-down with a focus-restoring "← Back to activity" button. CHAT: `ThreadSidebar` gains a `className` prop — `hidden md:flex` on the active-thread view (full-width stream + "← Threads" back button in header), full-width list on the index; header/messages padding `px-4 md:px-8`. POLISH: shared `SurfaceHeader` horizontal padding `px-4 md:px-10`, all 4 loading skeletons + 3 workflows-view sites de-hardcoded from px-10. Desktop md+ pixel-identical. Typecheck clean, 490 tests green. Also pruned an orphaned June-1 worktree that was doubling the vitest run | 2026-06-08 | c582fde | Tests green (typecheck + 490 vitest) | [260608-j3y-mobile-optimization-fix-activity-and-cha](./quick/260608-j3y-mobile-optimization-fix-activity-and-cha/) |
+| 260618-nja | Land new users on Workflows after onboarding — both onboarding redirects (`completeOnboarding()` in actions.ts + completed-onboarding guard in page.tsx) changed from `/app/chat` to `/app/workflows`, the canonical default landing surface per D-16; the chat-specific `?welcome=1` seed intentionally dropped. Login + demo/sandbox already landed on /app/workflows. ONBOARD-08 test + doc comments (incl. `_steps/done.tsx`) updated; `grep app/chat app/onboarding/` clean, 15/15 onboarding-progress tests green | 2026-06-18 | a49f8dc | Tests green (15/15 onboarding-progress) | [260618-nja-land-new-users-on-workflows-after-onboar](./quick/260618-nja-land-new-users-on-workflows-after-onboar/) |
+| 260727-gwq | Demo-readiness sweep (3 plans, 11 commits): L2 approval ordering fixed (no pre-approval writes), tool errors propagate to failed runs, 8 stub write tools made real (sentinel-simulated in demo), domain-expert system prompt + registry-generated tools section, Gemini provider (`MODEL_PROFILE=google` via @ai-sdk/google), scheduled-workflow cron, real revert, 13 chat fixes (history ORDER BY, save-as-workflow UUID, auto-naming, auto-scroll, queue, sanitized errors, tool gating), seeded workflows on real registry tools + seed gaps closed (orders incl. #WB-48217, memory embeddings, dangling GIDs), sandbox disconnect guard, catalog-audit unblock, README/CLAUDE honesty. 564 tests green (from 490) | 2026-07-27 | 706c10d | Tests green (564 vitest, typecheck, build) | [260727-gwq-demo-readiness-sweep-agent-harness-chat-](./quick/260727-gwq-demo-readiness-sweep-agent-harness-chat-/) |
 
 ## Session Continuity
 
-Last session: 2026-05-23T00:30:18.000Z
-Stopped at: Completed Phase 04-04 — Autonomy thresholds + session management slice
+Last session: 2026-05-29T21:19:15.806Z
+Stopped at: Completed quick task 260529-jxq — shopify_propose_restock (Tool 14) + generateRestockProposal + seed script (47 tests, typecheck clean, engine frozen)
 Resume file: None

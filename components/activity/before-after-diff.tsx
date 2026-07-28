@@ -18,36 +18,62 @@
  */
 
 import { useState } from "react";
+import { isShopifyGid, resolveGidValue } from "@/lib/activity/humanize-gids";
 
 // ─── Field label maps (Pattern 6: RESEARCH.md D-14) ──────────────────────────
+
+/** Labels applied for every target type (merged under the per-type map). */
+const COMMON_LABELS: Record<string, string> = {
+  sku: "SKU",
+  price: "Price",
+  inventory_qty: "Inventory",
+  inventory_quantity: "Inventory",
+  status: "Status",
+  title: "Title",
+  handle: "URL handle",
+};
 
 const FIELD_LABELS: Record<string, Record<string, string>> = {
   product: {
     meta_title: "Meta title",
     meta_description: "Meta description",
     body_html: "Description",
-    status: "Status",
-    price: "Price",
-    inventory_quantity: "Inventory",
     title: "Product title",
-    handle: "URL handle",
     vendor: "Vendor",
     product_type: "Product type",
+  },
+  product_variant: {
+    title: "Variant",
   },
   email: {
     subject: "Subject",
     body: "Body",
     to: "To",
     from: "From",
-    status: "Status",
   },
   page: {
     title: "Page title",
     body_html: "Page content",
-    handle: "URL handle",
     published_at: "Published",
   },
 };
+
+/**
+ * System / identity fields that are never meaningful to a shop owner. Hidden
+ * from the diff so snapshots (e.g. an inventory variant row) read clean —
+ * the product identity is already shown in the panel heading.
+ */
+const HIDDEN_FIELDS = new Set<string>([
+  "user_id",
+  "product_gid",
+  "variant_gid",
+  "last_synced_at",
+  "id",
+  "created_at",
+  "updated_at",
+  "shopify_created_at",
+  "shopify_updated_at",
+]);
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -75,12 +101,13 @@ export function renderFieldDiff(
     ...Object.keys(after ?? {}),
   ]);
 
-  const labels = FIELD_LABELS[targetType] ?? {};
+  const labels = { ...COMMON_LABELS, ...(FIELD_LABELS[targetType] ?? {}) };
 
   return [...allKeys]
+    .filter((key) => !HIDDEN_FIELDS.has(key))
     .map((key) => ({
       field: key,
-      label: labels[key] ?? key,
+      label: labels[key] ?? prettifyKey(key),
       oldValue: (before ?? {})[key],
       newValue: (after ?? {})[key],
     }))
@@ -88,6 +115,13 @@ export function renderFieldDiff(
       // Only show fields that actually changed
       return JSON.stringify(d.oldValue) !== JSON.stringify(d.newValue);
     });
+}
+
+/** Fallback label for unknown keys: snake_case → Title Case. */
+function prettifyKey(key: string): string {
+  return key
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
 // ─── Value rendering ──────────────────────────────────────────────────────────
@@ -99,6 +133,7 @@ function renderValue(
   field: string,
   targetType: string,
   expanded: boolean,
+  gidTitles: Record<string, string> | undefined,
   onExpandToggle?: () => void
 ): React.ReactNode {
   if (value === null || value === undefined) {
@@ -107,6 +142,11 @@ function renderValue(
         (empty)
       </span>
     );
+  }
+
+  // Resolve any raw Shopify GID value to its product title.
+  if (isShopifyGid(value)) {
+    return <span>{resolveGidValue(value, gidTitles)}</span>;
   }
 
   const str = typeof value === "string" ? value : JSON.stringify(value);
@@ -151,9 +191,18 @@ function renderValue(
 function DiffRow({
   diff,
   targetType,
+  gidTitles,
+  snapshotOnly,
 }: {
   diff: FieldDiff;
   targetType: string;
+  gidTitles?: Record<string, string>;
+  /**
+   * When true, there is no after_state to diff against (e.g. an inventory
+   * snapshot). Render the recorded value neutrally as a point-in-time snapshot
+   * instead of faking a strikethrough "deletion".
+   */
+  snapshotOnly?: boolean;
 }) {
   // WR-07: independent expand state per side so "Show more" on the before value
   // does not also expand the after value (they previously shared one boolean).
@@ -184,79 +233,100 @@ function DiffRow({
         {diff.label}
       </span>
 
-      {/* Before value */}
-      {diff.oldValue !== undefined && (
-        <div
+      {/* Snapshot-only: single neutral value, no before→after framing */}
+      {snapshotOnly ? (
+        <span
           style={{
-            display: "flex",
-            gap: 6,
-            alignItems: "flex-start",
+            fontSize: 12.5,
+            lineHeight: 1.5,
+            color: "var(--text)",
+            wordBreak: "break-word",
           }}
         >
-          <span
-            aria-hidden="true"
-            style={{
-              width: 4,
-              height: 4,
-              borderRadius: "50%",
-              background: "var(--danger)",
-              marginTop: 6,
-              flexShrink: 0,
-            }}
-          />
-          <span
-            aria-label={`Before: ${String(diff.oldValue)}`}
-            style={{
-              fontSize: 12.5,
-              lineHeight: 1.5,
-              color: "var(--text-secondary)",
-              textDecoration: "line-through",
-              wordBreak: "break-word",
-              flex: 1,
-            }}
-          >
-            {renderValue(diff.oldValue, diff.field, targetType, expandedBefore, () =>
-              setExpandedBefore((v) => !v)
-            )}
-          </span>
-        </div>
-      )}
+          {renderValue(
+            diff.oldValue,
+            diff.field,
+            targetType,
+            expandedBefore,
+            gidTitles,
+            () => setExpandedBefore((v) => !v)
+          )}
+        </span>
+      ) : (
+        <>
+          {/* Before value */}
+          {diff.oldValue !== undefined && (
+            <div style={{ display: "flex", gap: 6, alignItems: "flex-start" }}>
+              <span
+                aria-hidden="true"
+                style={{
+                  width: 4,
+                  height: 4,
+                  borderRadius: "50%",
+                  background: "var(--danger)",
+                  marginTop: 6,
+                  flexShrink: 0,
+                }}
+              />
+              <span
+                aria-label={`Before: ${String(diff.oldValue)}`}
+                style={{
+                  fontSize: 12.5,
+                  lineHeight: 1.5,
+                  color: "var(--text-secondary)",
+                  textDecoration: "line-through",
+                  wordBreak: "break-word",
+                  flex: 1,
+                }}
+              >
+                {renderValue(
+                  diff.oldValue,
+                  diff.field,
+                  targetType,
+                  expandedBefore,
+                  gidTitles,
+                  () => setExpandedBefore((v) => !v)
+                )}
+              </span>
+            </div>
+          )}
 
-      {/* After value */}
-      {diff.newValue !== undefined && (
-        <div
-          style={{
-            display: "flex",
-            gap: 6,
-            alignItems: "flex-start",
-          }}
-        >
-          <span
-            aria-hidden="true"
-            style={{
-              width: 4,
-              height: 4,
-              borderRadius: "50%",
-              background: "var(--success)",
-              marginTop: 6,
-              flexShrink: 0,
-            }}
-          />
-          <span
-            aria-label={`After: ${String(diff.newValue)}`}
-            style={{
-              fontSize: 12.5,
-              lineHeight: 1.5,
-              color: "var(--text)",
-              wordBreak: "break-word",
-              flex: 1,
-            }}
-          >
-            {renderValue(diff.newValue, diff.field, targetType, expandedAfter, () =>
-              setExpandedAfter((v) => !v)
-            )}
-          </span>
-        </div>
+          {/* After value */}
+          {diff.newValue !== undefined && (
+            <div style={{ display: "flex", gap: 6, alignItems: "flex-start" }}>
+              <span
+                aria-hidden="true"
+                style={{
+                  width: 4,
+                  height: 4,
+                  borderRadius: "50%",
+                  background: "var(--success)",
+                  marginTop: 6,
+                  flexShrink: 0,
+                }}
+              />
+              <span
+                aria-label={`After: ${String(diff.newValue)}`}
+                style={{
+                  fontSize: 12.5,
+                  lineHeight: 1.5,
+                  color: "var(--text)",
+                  wordBreak: "break-word",
+                  flex: 1,
+                }}
+              >
+                {renderValue(
+                  diff.newValue,
+                  diff.field,
+                  targetType,
+                  expandedAfter,
+                  gidTitles,
+                  () => setExpandedAfter((v) => !v)
+                )}
+              </span>
+            </div>
+          )}
+        </>
       )}
     </div>
   );
@@ -268,14 +338,21 @@ interface BeforeAfterDiffProps {
   before: Record<string, unknown> | null;
   after: Record<string, unknown> | null;
   targetType: string | null;
+  /** Shopify GID → product title map for resolving GID-valued fields. */
+  gidTitles?: Record<string, string>;
 }
 
 export function BeforeAfterDiff({
   before,
   after,
   targetType,
+  gidTitles,
 }: BeforeAfterDiffProps) {
   const type = targetType ?? "product";
+
+  // No after_state recorded → render the captured before_state as a neutral
+  // point-in-time snapshot rather than a misleading all-"removed" diff.
+  const snapshotOnly = after == null && before != null;
 
   // Email: show sent badge instead of full diff (Discretion 3)
   if (type === "email") {
@@ -356,11 +433,21 @@ export function BeforeAfterDiff({
 
   return (
     <div
-      aria-label={`${diffs.length} field${diffs.length === 1 ? "" : "s"} changed`}
+      aria-label={
+        snapshotOnly
+          ? `${diffs.length} field${diffs.length === 1 ? "" : "s"} recorded`
+          : `${diffs.length} field${diffs.length === 1 ? "" : "s"} changed`
+      }
       style={{ display: "flex", flexDirection: "column" }}
     >
       {diffs.map((diff) => (
-        <DiffRow key={diff.field} diff={diff} targetType={type} />
+        <DiffRow
+          key={diff.field}
+          diff={diff}
+          targetType={type}
+          gidTitles={gidTitles}
+          snapshotOnly={snapshotOnly}
+        />
       ))}
     </div>
   );

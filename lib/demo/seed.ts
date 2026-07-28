@@ -3,12 +3,21 @@
  * Server-only — MUST NOT have "use client"; reads process.env server-side only.
  *
  * Faithful Drizzle port of /tmp/oz_seed.mjs onto serviceDb (RLS-bypass, service-role).
- * Wipes and re-seeds the demo user's app data in one transaction.
+ * Wipes and re-seeds a user's app data in one transaction.
+ *
+ * Three entry points:
+ *   - seedDemoFor(userId) — wipe + seed the Wanderbound/Sarah dataset for an
+ *     arbitrary user_id. Used for per-visitor sandboxes (anonymous users) AND by
+ *     reseedDemo() for the shared demo account.
+ *   - reseedDemo() — thin wrapper that seeds the env DEMO_USER_ID (shared account).
+ *   - wipeDemoFor(userId) — delete all of a user's seeded app data. Used by the
+ *     sandbox exit route + TTL-sweep cron to tear a throwaway visitor down.
  *
  * SECURITY:
- *   - USER is read from process.env.DEMO_USER_ID at call time.
- *   - If DEMO_USER_ID is unset or empty, reseedDemo() returns immediately with
- *     NO database access. This is the safety invariant: never wipe an arbitrary user.
+ *   - seedDemoFor / wipeDemoFor require a non-empty userId; they return with NO
+ *     database access if it's empty. This is the safety invariant: never wipe or
+ *     seed an arbitrary/unknown user.
+ *   - reseedDemo() reads process.env.DEMO_USER_ID at call time and no-ops if unset.
  *   - Every delete/update/insert is filtered by eq(table.user_id, USER).
  *   - serviceDb bypasses RLS — the user_id filter is the only isolation layer here.
  *   - This file is server-only; it must never be imported in client components.
@@ -22,9 +31,14 @@ import {
   brandVoiceSamples,
   autonomyThresholds,
   memoryItems,
+  memoryEmbeddings,
   userSessions,
   shopifyProducts,
   shopifyProductVariants,
+  shopifyOrders,
+  shopifyPages,
+  shopifyRedirects,
+  shopifySyncState,
   workflows,
   workflowVersions,
   workflowRuns,
@@ -32,18 +46,377 @@ import {
   activityEntries,
   threads,
   messages,
+  gmailThreads,
+  gmailMessages,
+  gmailSyncState,
+  agentTelemetry,
 } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
+import { SANDBOX_SENTINEL_TOKEN } from "./constants";
+import { embedTexts } from "@/lib/agent/embeddings";
 
 const SHOP = "wanderbound.myshopify.com";
 
-// dummy ciphertext placeholder for integration tokens (health never decrypts)
-const TOK = "demo-seed-not-a-real-token-0000000000000000000000000000";
+// dummy ciphertext placeholder for integration tokens (health never decrypts).
+// This exact sentinel ALSO signals "sandbox" to the Shopify write path
+// (lib/integrations/shopify/mutations.ts): a connection holding this token
+// simulates writes against the local mirror instead of calling Shopify.
+// Re-exported for backward compat with existing importers.
+export { SANDBOX_SENTINEL_TOKEN };
+const TOK = SANDBOX_SENTINEL_TOKEN;
 
-export async function reseedDemo(): Promise<void> {
+// Transaction handle type, derived from serviceDb so the wipe helper stays typed.
+type SeedTx = Parameters<Parameters<typeof serviceDb.transaction>[0]>[0];
+
+/**
+ * Delete every seeded app-data row for one user (child → parent order).
+ * Does NOT touch user_profiles (re-seed upserts it; cleanup removes it
+ * separately / via auth-user cascade) and does NOT touch sandbox_sessions
+ * (the registry is managed by the caller).
+ */
+async function wipeUserData(tx: SeedTx, USER: string): Promise<void> {
+  await tx.delete(approvals).where(eq(approvals.user_id, USER));
+  await tx.delete(activityEntries).where(eq(activityEntries.user_id, USER));
+  await tx.delete(agentTelemetry).where(eq(agentTelemetry.user_id, USER));
+  await tx.delete(messages).where(eq(messages.user_id, USER));
+  await tx.delete(threads).where(eq(threads.user_id, USER));
+  await tx.delete(workflowRuns).where(eq(workflowRuns.user_id, USER));
+  await tx
+    .update(workflows)
+    .set({ current_version_id: null })
+    .where(eq(workflows.user_id, USER));
+  await tx.delete(workflows).where(eq(workflows.user_id, USER)); // cascades workflow_versions
+  // memoryEmbeddings BEFORE memoryItems — FK-free but semantically dependent
+  // (embeds memory item content), so drop the derived rows first (WS11).
+  await tx.delete(memoryEmbeddings).where(eq(memoryEmbeddings.user_id, USER));
+  await tx.delete(memoryItems).where(eq(memoryItems.user_id, USER));
+  await tx.delete(brandVoiceSamples).where(eq(brandVoiceSamples.user_id, USER));
+  await tx.delete(brandVoiceProfiles).where(eq(brandVoiceProfiles.user_id, USER));
+  await tx.delete(autonomyThresholds).where(eq(autonomyThresholds.user_id, USER));
+  await tx.delete(userSessions).where(eq(userSessions.user_id, USER));
+  await tx.delete(integrations).where(eq(integrations.user_id, USER));
+  await tx
+    .delete(shopifyProductVariants)
+    .where(eq(shopifyProductVariants.user_id, USER));
+  await tx.delete(shopifyProducts).where(eq(shopifyProducts.user_id, USER));
+  // WS11: the seed writes these tables (orders/pages/redirects/sync state)
+  // but the original wipe never deleted them — a reseed left stale rows.
+  await tx.delete(shopifyOrders).where(eq(shopifyOrders.user_id, USER));
+  await tx.delete(shopifyPages).where(eq(shopifyPages.user_id, USER));
+  await tx.delete(shopifyRedirects).where(eq(shopifyRedirects.user_id, USER));
+  await tx.delete(shopifySyncState).where(eq(shopifySyncState.user_id, USER));
+  await tx.delete(gmailMessages).where(eq(gmailMessages.user_id, USER));
+  await tx.delete(gmailThreads).where(eq(gmailThreads.user_id, USER));
+  await tx.delete(gmailSyncState).where(eq(gmailSyncState.user_id, USER));
+}
+
+// ─── Seeded workflow definitions (module scope — WS1 regression guard) ─────────
+// [name, level, status, trigger_type, description, source, updatedAgo(hrs), steps[]]
+// WS1 fix: every step now names a REAL tool key from getToolDefinitions()
+// (lib/agent/tools) and carries params that pass that tool's Zod schema —
+// see tests/unit/seed-registry.test.ts, the regression guard for this.
+// Exported (not just used internally) so the registry-conformance test can
+// validate every step without touching the database.
+type StepTuple = [string, string, string, Record<string, unknown>];
+type WfDefTuple = [
+  string,
+  string,
+  string,
+  string,
+  string,
+  string,
+  number,
+  StepTuple[],
+];
+export const DEMO_WORKFLOW_DEFS: WfDefTuple[] = [
+  [
+    "Alt text for new product images",
+    "L3",
+    "active",
+    "schedule",
+    "Generates alt text from product name + category for any image missing it. Runs nightly.",
+    "chat",
+    3,
+    [
+      [
+        "scan",
+        "Scan catalog for images missing alt text",
+        "shopify_list_products",
+        { status: "active", limit: 50 },
+      ],
+      [
+        "write",
+        "Write alt text to Shopify",
+        "shopify_update_product_image_alt",
+        {
+          product_gid: "gid://shopify/Product/100000001",
+          image_id: "gid://shopify/MediaImage/100000001",
+          alt_text: "Full-grain leather weekender duffel in tan, standing upright",
+        },
+      ],
+    ],
+  ],
+  [
+    "Fix empty meta descriptions",
+    "L3",
+    "active",
+    "schedule",
+    "Fills missing meta descriptions in brand voice, grounded in product data.",
+    "chat",
+    9,
+    [
+      [
+        "scan",
+        "Find products with empty meta description",
+        "shopify_list_products",
+        { status: "active", limit: 50 },
+      ],
+      [
+        "optimize",
+        "Optimize meta title + description",
+        "shopify_optimize_meta",
+        { product_gid: "gid://shopify/Product/100000002" },
+      ],
+    ],
+  ],
+  [
+    "Answer customer product questions",
+    "L2",
+    "active",
+    "event",
+    "Drafts replies to product questions from the inbox; you approve before send.",
+    "chat",
+    2,
+    [
+      [
+        "triage",
+        "Check the support inbox for new questions",
+        "gmail_list_threads",
+        { support_only: true, limit: 10 },
+      ],
+      [
+        "open",
+        "Read the full thread",
+        "gmail_get_thread",
+        { gmail_thread_id: "gmail-thread-aa12" },
+      ],
+      [
+        "draft",
+        "Draft a reply grounded in product data",
+        "gmail_draft_reply",
+        {
+          thread_id: "gmail-thread-aa12",
+          subject: "Re: Leather care after rain?",
+          body: "Hi Maria — good news, a little rain won't hurt it. Let it air-dry away from heat, then rub in a thin coat of leather conditioner once it's fully dry. It'll darken slightly and even out over time.",
+        },
+      ],
+    ],
+  ],
+  [
+    "Low-stock flash-sale proposals",
+    "L2",
+    "active",
+    "event",
+    "When a slow-mover dips below threshold, proposes a weekend discount (≤20%).",
+    "promoted_from_activity",
+    26,
+    [
+      [
+        "scan",
+        "Check inventory against the low-stock threshold",
+        "shopify_get_inventory",
+        { low_stock_threshold: 5 },
+      ],
+      [
+        "propose",
+        "Propose a restock quantity for review",
+        "shopify_propose_restock",
+        { variant_gid: "gid://shopify/ProductVariant/100500014" },
+      ],
+    ],
+  ],
+  [
+    "Weekly SEO audit — Journals",
+    "L2",
+    "active",
+    "schedule",
+    "Scores Journal titles + meta against SEO best practices and proposes fixes.",
+    "chat",
+    30,
+    [
+      [
+        "pull",
+        "Pull the Journals collection",
+        "shopify_list_products",
+        { search: "Journals", limit: 50 },
+      ],
+      [
+        "optimize",
+        "Optimize meta title + description",
+        "shopify_optimize_meta",
+        { product_gid: "gid://shopify/Product/100000004" },
+      ],
+    ],
+  ],
+  [
+    "Retire long-out-of-stock products",
+    "L2",
+    "active",
+    "schedule",
+    "Flags products out of stock 90+ days and proposes retiring them.",
+    "chat",
+    50,
+    [
+      [
+        "scan",
+        "Find draft products that may be long out of stock",
+        "shopify_list_products",
+        { status: "draft", limit: 50 },
+      ],
+      [
+        "archive",
+        "Archive on approval",
+        "shopify_update_product_status",
+        { product_gid: "gid://shopify/Product/100000010", status: "archived" },
+      ],
+    ],
+  ],
+  [
+    "Tag cleanup — dedupe & fix",
+    "L1",
+    "active",
+    "manual",
+    "Finds duplicate and misspelled tags; you run it when ready.",
+    "chat",
+    96,
+    [
+      // L1 pauses at the first step by design (WR-05) — single-step definition.
+      [
+        "scan",
+        "Read all product tags",
+        "shopify_list_products",
+        { limit: 50 },
+      ],
+    ],
+  ],
+  [
+    "New collection copy — Explorer Series",
+    "L1",
+    "paused",
+    "manual",
+    "Drafts collection + product copy for new launches.",
+    "chat",
+    140,
+    [
+      [
+        "draft",
+        "Draft collection copy in brand voice",
+        "shopify_optimize_product_description",
+        {
+          product_gid: "gid://shopify/Product/100000001",
+          instructions:
+            "Collection launch copy for the Explorer Series. Lead with what it is for.",
+        },
+      ],
+    ],
+  ],
+  [
+    "Fix 'Default Title' products",
+    "L3",
+    "active",
+    "schedule",
+    "Rewrites products still showing the placeholder 'Default Title' in search.",
+    "chat",
+    6,
+    [
+      [
+        "scan",
+        "Find 'Default Title' products",
+        "shopify_list_products",
+        { status: "active", limit: 50 },
+      ],
+      [
+        "rewrite",
+        "Rewrite the product description",
+        "shopify_optimize_product_description",
+        { product_gid: "gid://shopify/Product/100000005" },
+      ],
+    ],
+  ],
+  [
+    "Weekend discount planner",
+    "L2",
+    "draft",
+    "manual",
+    "Plans a themed weekend promotion across a collection.",
+    "chat",
+    200,
+    [
+      [
+        "scan",
+        "Check inventory against the low-stock threshold",
+        "shopify_get_inventory",
+        { low_stock_threshold: 20 },
+      ],
+      [
+        "price",
+        "Set the weekend price",
+        "shopify_update_variant_price",
+        { variant_gid: "gid://shopify/ProductVariant/100500007", price: 54.4 },
+      ],
+    ],
+  ],
+];
+
+// ─── Seeded chat workflow_plan block (module scope — WS1 regression guard) ────
+// Thread A's inline workflow_plan message payload — matches workflow 5 above
+// (Weekly SEO audit — Journals): pull, optimize, then apply the approved title.
+// The old "apply" step dispatched a fake approval-gate tool name — approval is
+// an engine behavior, not a tool — replaced here with a real write so
+// Save-as-workflow still produces a runnable 3-step workflow and the
+// visualizer shows a 3-step plan.
+export const DEMO_CHAT_PLAN_STEPS = [
+  {
+    id: "pull",
+    name: "Pull the Journals collection",
+    tool: "shopify_list_products",
+    description: "31 products",
+    params: { search: "Journals", limit: 50 },
+  },
+  {
+    id: "optimize",
+    name: "Optimize meta title + description",
+    tool: "shopify_optimize_meta",
+    params: { product_gid: "gid://shopify/Product/100000004" },
+  },
+  {
+    id: "apply",
+    name: "Apply the new meta title",
+    tool: "shopify_update_meta_title",
+    params: {
+      product_gid: "gid://shopify/Product/100000004",
+      meta_title: "Refillable A5 Leather Notebook | Wanderbound",
+    },
+  },
+];
+
+/**
+ * Seed the Wanderbound/Sarah demo dataset for an arbitrary user_id.
+ * Wipes any existing app data for that user first, then inserts the full
+ * dataset in one transaction. Safe to call on a brand-new (anonymous) user —
+ * the wipe is a no-op when there's nothing there yet.
+ *
+ * @param opts.skipEmbeddings - when true, skips the post-commit memory
+ *   embeddings pass (WS11) so a caller (e.g. the per-visitor sandbox path)
+ *   can opt out of the Voyage AI network cost. Default false — embeddings
+ *   are seeded by default.
+ */
+export async function seedDemoFor(
+  USER: string,
+  opts?: { skipEmbeddings?: boolean }
+): Promise<void> {
   // USER GUARD — must be first, before any DB access
-  const USER = process.env.DEMO_USER_ID;
   if (!USER) return;
 
   // ── time helpers (computed at call time so rows stay "recent" on every reset) ──
@@ -53,28 +426,14 @@ export async function reseedDemo(): Promise<void> {
   const MIN = (m: number) => new Date(now.getTime() - m * 60 * 1000);
   const future = (d: number) => new Date(now.getTime() + d * 24 * 3600 * 1000);
 
-  await serviceDb.transaction(async (tx) => {
+  // WS11: memory embeddings are seeded AFTER the transaction commits — Voyage
+  // AI is a network call, and serviceDb is a max:1 pooled client, so an
+  // embedding call made INSIDE this transaction would stall the whole seed
+  // (and any other serviceDb caller) for its entire duration. The transaction
+  // returns the inserted memory item rows; the embedding pass runs after.
+  const seededMemoryItems = await serviceDb.transaction(async (tx) => {
     // ─── 1. WIPE existing app data for this user (child → parent) ────────────────
-    await tx.delete(approvals).where(eq(approvals.user_id, USER));
-    await tx.delete(activityEntries).where(eq(activityEntries.user_id, USER));
-    await tx.delete(messages).where(eq(messages.user_id, USER));
-    await tx.delete(threads).where(eq(threads.user_id, USER));
-    await tx.delete(workflowRuns).where(eq(workflowRuns.user_id, USER));
-    await tx
-      .update(workflows)
-      .set({ current_version_id: null })
-      .where(eq(workflows.user_id, USER));
-    await tx.delete(workflows).where(eq(workflows.user_id, USER)); // cascades workflow_versions
-    await tx.delete(memoryItems).where(eq(memoryItems.user_id, USER));
-    await tx.delete(brandVoiceSamples).where(eq(brandVoiceSamples.user_id, USER));
-    await tx.delete(brandVoiceProfiles).where(eq(brandVoiceProfiles.user_id, USER));
-    await tx.delete(autonomyThresholds).where(eq(autonomyThresholds.user_id, USER));
-    await tx.delete(userSessions).where(eq(userSessions.user_id, USER));
-    await tx.delete(integrations).where(eq(integrations.user_id, USER));
-    await tx
-      .delete(shopifyProductVariants)
-      .where(eq(shopifyProductVariants.user_id, USER));
-    await tx.delete(shopifyProducts).where(eq(shopifyProducts.user_id, USER));
+    await wipeUserData(tx, USER);
 
     // ─── 2. PROFILE (mark onboarding complete so surfaces don't redirect) ────────
     await tx
@@ -130,6 +489,65 @@ export async function reseedDemo(): Promise<void> {
       last_synced_at: MIN(4),
       connected_at: D(16),
     });
+
+    // ─── 3.5 GMAIL MIRROR ────────────────────────────────────────────────────────
+    // [gmail_thread_id, subject, fromEmail, isSupport, body_text, agoMin]
+    type GmailTuple = [string, string, string, boolean, string, number];
+    const gmailRows: GmailTuple[] = [
+      // PRODUCT QUESTIONS — isSupport = true (9)
+      ["gmail-thread-aa12", "Leather care after rain?", "maria.g@example.com", true, "Hi! I got caught in the rain with my Voyager and it's a bit damp. How do I care for the leather so it doesn't get ruined?", 95],
+      ["gmail-thread-bb34", 'Does the Voyager fit a 16" laptop?', "devin.r@example.com", true, "Will my 16-inch MacBook Pro fit in the Voyager Weekender? Looking for something for weekend work trips.", 140],
+      ["gmail-thread-cc56", "Gift wrapping available?", "priya.s@example.com", true, "Do you offer gift wrapping? I want to send the Field Notebook to my sister for her birthday next week.", 210],
+      ["gmail-thread-dd78", "Replacement strap for the Summit?", "tom.b@example.com", true, "The shoulder strap on my Summit Backpack is fraying after two years. Can I buy a replacement strap?", 330],
+      ["gmail-thread-ee90", "Tan vs Cognac in person?", "aisha.k@example.com", true, "How different are the Tan and Cognac in person? Hard to tell from the photos which one I'd like.", 480],
+      ["gmail-thread-ff12", "Can you monogram the Dopp Kit?", "marcus.l@example.com", true, "Do you do monogramming or initials on the Explorer Dopp Kit? Want to gift it to my brother.", 620],
+      ["gmail-thread-gg34", "Voyager vs Summit for a 5-day trip?", "elena.v@example.com", true, "Trying to decide between the Voyager Weekender and the Summit Backpack for a 5-day trip. Which would you recommend?", 760],
+      ["gmail-thread-hh56", "Does the Dopp Kit hold full-size bottles?", "jordan.p@example.com", true, "Will the Explorer Dopp Kit fit full-size toiletry bottles, or is it more for travel sizes?", 910],
+      ["gmail-thread-ii78", "Caring for waxed canvas?", "nina.r@example.com", true, "I have one of your waxed canvas pouches — does it need different care than the leather pieces?", 1080],
+      // ORDER-STATUS — isSupport = false (6)
+      ["gmail-thread-oo01", "Where's my order #WB-48217?", "greg.m@example.com", false, "Hi, I placed order #WB-48217 five days ago and haven't seen a shipping update. Can you check the status?", 175],
+      ["gmail-thread-oo02", "Order still processing?", "sara.t@example.com", false, "My order from last week still says processing. Is everything okay with it?", 260],
+      ["gmail-thread-oo03", "Tracking number?", "liam.c@example.com", false, "Could you send me the tracking number for my recent order? I want to make sure I'm home for delivery.", 400],
+      ["gmail-thread-oo04", "Delivery estimate?", "bea.n@example.com", false, "When should I expect my Field Notebook to arrive? Ordered it Tuesday.", 540],
+      ["gmail-thread-oo05", "Change shipping address", "owen.d@example.com", false, "I just moved — can you update the shipping address on my order before it goes out?", 700],
+      ["gmail-thread-oo06", "Order #WB-47990 status", "chloe.f@example.com", false, "Checking in on order #WB-47990 — the tracking hasn't updated in three days.", 860],
+      // NEWSLETTER — isSupport = false (5)
+      ["gmail-thread-nn01", "Re: Weekend at Wanderbound", "hannah.w@example.com", false, "Just wanted to say I love these emails — the photography is gorgeous. Keep them coming!", 300],
+      ["gmail-thread-nn02", "Unsubscribe", "paul.g@example.com", false, "Please remove me from your mailing list. Thanks.", 450],
+      ["gmail-thread-nn03", "Re: New arrivals", "yuki.m@example.com", false, "When's the next drop? I've been waiting for the olive colorway to come back.", 600],
+      ["gmail-thread-nn04", "Re: Spring lookbook", "dana.r@example.com", false, "Loved the lookbook. Any chance you'll do a version for smaller everyday bags?", 980],
+      ["gmail-thread-nn05", "Emailing a bit too often", "frank.h@example.com", false, "You're emailing a bit too often for me — can you dial it back or take me off the list?", 1200],
+      // SPAM — isSupport = false (3)
+      ["gmail-thread-ss01", "Boost your store traffic 10x", "outreach@rankboost-pro.com", false, "Hi, I noticed your website could rank higher on Google. We guarantee first-page results in 30 days. Reply to learn more.", 520],
+      ["gmail-thread-ss02", "You've been selected for a $500 gift card", "noreply@gift-rewards-claim.com", false, "Congratulations! You have been selected to receive a $500 gift card. Click here to claim before it expires.", 1320],
+      ["gmail-thread-ss03", "Quick question about Wanderbound", "hello@growth-agency-outreach.biz", false, "Hey, I help DTC brands scale to 7 figures. Do you have 15 minutes this week for a quick call?", 1500],
+    ];
+
+    for (const [tid, subject, fromEmail, isSupport, body, agoMin] of gmailRows) {
+      await tx.insert(gmailThreads).values({
+        user_id: USER,
+        gmail_thread_id: tid,
+        subject,
+        participants: [fromEmail, "sarah@wanderbound.co"],
+        is_customer_support: isSupport,
+        last_message_at: MIN(agoMin),
+        message_count: 1,
+        last_synced_at: MIN(4),
+      });
+      await tx.insert(gmailMessages).values({
+        user_id: USER,
+        gmail_message_id: `msg-${tid}`,
+        gmail_thread_id: tid,
+        from_address: fromEmail,
+        to_addresses: ["sarah@wanderbound.co"],
+        subject,
+        body_text: body,
+        body_html: null,
+        direction: "inbound",
+        gmail_received_at: MIN(agoMin),
+        last_synced_at: MIN(4),
+      });
+    }
 
     // ─── 4. BRAND VOICE ──────────────────────────────────────────────────────────
     const brandMd = `# Wanderbound — Brand Voice
@@ -226,16 +644,24 @@ export async function reseedDemo(): Promise<void> {
         D(7),
       ],
     ];
+    // Capture inserted ids + content (WS11) — the post-commit embeddings pass
+    // needs both, and cannot re-query inside this transaction (see the
+    // module-level comment on the embeddings pass, below).
+    const insertedMemoryItems: Array<{ id: string; content: string }> = [];
     for (const [category, content, source_type, confidence, created] of mem) {
-      await tx.insert(memoryItems).values({
-        user_id: USER,
-        category,
-        content,
-        source_type,
-        confidence,
-        created_at: created,
-        updated_at: created,
-      });
+      const [row] = await tx
+        .insert(memoryItems)
+        .values({
+          user_id: USER,
+          category,
+          content,
+          source_type,
+          confidence,
+          created_at: created,
+          updated_at: created,
+        })
+        .returning({ id: memoryItems.id, content: memoryItems.content });
+      if (row) insertedMemoryItems.push(row);
     }
 
     // ─── 7. SESSIONS ──────────────────────────────────────────────────────────────
@@ -448,164 +874,122 @@ export async function reseedDemo(): Promise<void> {
       pidx++;
     }
 
+    // ─── 8.5 ORDERS (WS11) — backs the inventory + Q&A order-status stories ──────
+    // Order #WB-48217 and #WB-47990 are the two orders the seeded inbox asks
+    // about (§3.5 gmailRows above): gmail-thread-oo01 ("Where's my order
+    // #WB-48217?" from greg.m@example.com) and gmail-thread-oo06 ("Order
+    // #WB-47990 status" from chloe.f@example.com). Kept explicit here so a
+    // future editor doesn't decouple the order data from the inbox story.
+    type OrderTuple = [string, string, string, number, number];
+    const orderDefs: OrderTuple[] = [
+      // [order_gid suffix, financial_status, fulfillment_status, daysAgo, total($)]
+      ["48217", "paid", "unfulfilled", 5, 189.0], // greg.m@example.com — Voyager Weekender
+      ["47990", "paid", "fulfilled", 12, 74.0], // chloe.f@example.com — Laptop Sleeve
+      // 16 more spread across the last 30 days — ~70% paid+fulfilled, ~20%
+      // paid+unfulfilled, ~10% refunded — totals drawn from real seeded price points.
+      ["48201", "paid", "fulfilled", 1, 52.0],
+      ["48195", "paid", "fulfilled", 2, 42.0],
+      ["48188", "paid", "fulfilled", 3, 68.0],
+      ["48176", "paid", "fulfilled", 4, 24.0],
+      ["48160", "paid", "fulfilled", 6, 18.0],
+      ["48142", "paid", "fulfilled", 8, 38.0],
+      ["48120", "paid", "fulfilled", 10, 189.0],
+      ["48099", "paid", "fulfilled", 13, 34.0],
+      ["48075", "paid", "fulfilled", 16, 9.0],
+      ["48050", "paid", "fulfilled", 19, 28.0],
+      ["48030", "paid", "fulfilled", 23, 248.0],
+      ["48110", "paid", "unfulfilled", 9, 74.0],
+      ["48060", "paid", "unfulfilled", 18, 52.0],
+      ["48015", "paid", "unfulfilled", 27, 189.0],
+      ["48090", "refunded", "unfulfilled", 14, 42.0],
+      ["48005", "refunded", "unfulfilled", 29, 68.0],
+    ];
+
+    for (const [
+      suffix,
+      financial_status,
+      fulfillment_status,
+      daysAgo,
+      total,
+    ] of orderDefs) {
+      await tx.insert(shopifyOrders).values({
+        user_id: USER,
+        order_gid: `gid://shopify/Order/${suffix}`,
+        total: total.toFixed(2),
+        financial_status,
+        fulfillment_status,
+        shopify_created_at: D(daysAgo),
+        last_synced_at: MIN(12),
+      });
+    }
+
+    // ─── 8.6 PAGES + REDIRECTS (WS11) — SEO tools return data, not [] ────────────
+    const pageDefs: [string, string, string, string][] = [
+      // [page_gid suffix, title, handle, body_html]
+      [
+        "1001",
+        "About",
+        "about",
+        "<p>Small-batch leather goods made by hand in Austin. We build for people who actually travel.</p>",
+      ],
+      [
+        "1002",
+        "Shipping & Returns",
+        "shipping-returns",
+        "<p>Orders ship within 2 business days. Returns are accepted within 30 days in unused condition.</p>",
+      ],
+      [
+        // Grounds the leather-care Q&A playbook answers (gmail-thread-aa12).
+        "1003",
+        "Leather Care",
+        "leather-care",
+        "<p>Full-grain leather softens and darkens with use. Wipe with a damp cloth, let it air-dry away from direct heat, and condition every few months with a leather balm. A little rain won't hurt it — just let it dry naturally before conditioning.</p>",
+      ],
+    ];
+    for (const [suffix, title, handle, body_html] of pageDefs) {
+      await tx.insert(shopifyPages).values({
+        user_id: USER,
+        page_gid: `gid://shopify/Page/${suffix}`,
+        title,
+        body_html,
+        handle,
+        last_synced_at: MIN(12),
+      });
+    }
+
+    const redirectDefs: [string, string, string][] = [
+      ["2001", "/products/trail-card-holder", "/products/card-sleeve-minimal"],
+      ["2002", "/products/mini-passport-sleeve-v1", "/products/passport-wallet-bridle"],
+    ];
+    for (const [suffix, path, target] of redirectDefs) {
+      await tx.insert(shopifyRedirects).values({
+        user_id: USER,
+        redirect_id: suffix,
+        path,
+        target,
+        last_synced_at: MIN(12),
+      });
+    }
+
+    // ─── 8.7 SYNC STATE (WS11) — Settings health checks read correctly ──────────
+    await tx.insert(shopifySyncState).values({
+      user_id: USER,
+      last_full_sync_at: MIN(12),
+      last_poll_at: MIN(12),
+      sync_status: "healthy",
+      webhook_subscriptions: [],
+    });
+    await tx.insert(gmailSyncState).values({
+      user_id: USER,
+      last_history_id: "184230771",
+      last_poll_at: MIN(4),
+      sync_status: "healthy",
+    });
+
     // ─── 9. WORKFLOWS (+ versions) ────────────────────────────────────────────────
-    // [name, level, status, trigger_type, description, source, updatedAgo(hrs), steps[]]
-    type StepTuple = [string, string, string];
-    type WfDefTuple = [
-      string,
-      string,
-      string,
-      string,
-      string,
-      string,
-      number,
-      StepTuple[],
-    ];
-    const wfDefs: WfDefTuple[] = [
-      [
-        "Alt text for new product images",
-        "L3",
-        "active",
-        "schedule",
-        "Generates alt text from product name + category for any image missing it. Runs nightly.",
-        "chat",
-        3,
-        [
-          ["scan", "Scan catalog for images missing alt text", "shopify_list_products"],
-          ["generate", "Draft alt text from name + type", "anthropic_generate"],
-          ["write", "Write alt text to Shopify", "shopify_update_image_alt"],
-          ["log", "Log to activity", "activity_log"],
-        ],
-      ],
-      [
-        "Fix empty meta descriptions",
-        "L3",
-        "active",
-        "schedule",
-        "Fills missing meta descriptions in brand voice, grounded in product data.",
-        "chat",
-        9,
-        [
-          ["scan", "Find products with empty meta description", "shopify_list_products"],
-          ["generate", "Write meta description (≤155 chars)", "anthropic_generate"],
-          ["write", "Update Shopify SEO fields", "shopify_update_meta_desc"],
-        ],
-      ],
-      [
-        "Answer customer product questions",
-        "L2",
-        "active",
-        "event",
-        "Drafts replies to product questions from the inbox; you approve before send.",
-        "chat",
-        2,
-        [
-          ["watch", "New customer email arrives", "gmail_trigger"],
-          ["classify", "Is this a product question?", "anthropic_classify"],
-          ["draft", "Draft a reply grounded in product data", "anthropic_generate"],
-          ["approve", "Ask Sarah to approve", "request_approval"],
-          ["send", "Send reply", "gmail_send"],
-        ],
-      ],
-      [
-        "Low-stock flash-sale proposals",
-        "L2",
-        "active",
-        "event",
-        "When a slow-mover dips below threshold, proposes a weekend discount (≤20%).",
-        "promoted_from_activity",
-        26,
-        [
-          ["watch", "Inventory drops below threshold", "shopify_inventory_trigger"],
-          ["analyze", "Check sell-through + margin", "compute"],
-          ["propose", "Propose a discount ≤20%", "request_approval"],
-        ],
-      ],
-      [
-        "Weekly SEO audit — Journals",
-        "L2",
-        "active",
-        "schedule",
-        "Scores Journal titles + meta against SEO best practices and proposes fixes.",
-        "chat",
-        30,
-        [
-          ["pull", "Pull Journals collection", "shopify_list_products"],
-          ["score", "Score titles + meta", "seo_score"],
-          ["propose", "Propose rewrites for weak ones", "request_approval"],
-        ],
-      ],
-      [
-        "Retire long-out-of-stock products",
-        "L2",
-        "active",
-        "schedule",
-        "Flags products out of stock 90+ days and proposes retiring them.",
-        "chat",
-        50,
-        [
-          ["scan", "Find products OOS 90+ days", "shopify_list_products"],
-          ["propose", "Propose retiring them", "request_approval"],
-          ["archive", "Archive on approval", "shopify_update_status"],
-        ],
-      ],
-      [
-        "Tag cleanup — dedupe & fix",
-        "L1",
-        "active",
-        "manual",
-        "Finds duplicate and misspelled tags; you run it when ready.",
-        "chat",
-        96,
-        [
-          ["scan", "Read all product tags", "shopify_list_products"],
-          ["cluster", "Cluster duplicates + misspellings", "compute"],
-          ["report", "Show proposed merges", "preview"],
-        ],
-      ],
-      [
-        "New collection copy — Explorer Series",
-        "L1",
-        "paused",
-        "manual",
-        "Drafts collection + product copy for new launches.",
-        "chat",
-        140,
-        [
-          ["brief", "Read collection brief", "read"],
-          ["draft", "Draft copy in brand voice", "anthropic_generate"],
-          ["preview", "Show drafts for review", "preview"],
-        ],
-      ],
-      [
-        "Fix 'Default Title' products",
-        "L3",
-        "active",
-        "schedule",
-        "Rewrites products still showing the placeholder 'Default Title' in search.",
-        "chat",
-        6,
-        [
-          ["scan", "Find 'Default Title' products", "shopify_list_products"],
-          ["generate", "Write a real title", "anthropic_generate"],
-          ["write", "Update product title", "shopify_update_product"],
-        ],
-      ],
-      [
-        "Weekend discount planner",
-        "L2",
-        "draft",
-        "manual",
-        "Plans a themed weekend promotion across a collection.",
-        "chat",
-        200,
-        [
-          ["pick", "Pick a collection + theme", "read"],
-          ["plan", "Plan discount + email", "compute"],
-          ["preview", "Show the plan", "preview"],
-        ],
-      ],
-    ];
+    // Definitions live at module scope (DEMO_WORKFLOW_DEFS, below wipeUserData) so
+    // tests/unit/seed-registry.test.ts can import + validate them without a DB.
+    const wfDefs = DEMO_WORKFLOW_DEFS;
 
     const wf: Record<
       string,
@@ -631,6 +1015,7 @@ export async function reseedDemo(): Promise<void> {
           name: s[1],
           tool: s[2],
           type: "action",
+          params: s[3],
           next_step: steps[i + 1]?.[0] ?? null,
         })),
       };
@@ -807,7 +1192,7 @@ export async function reseedDemo(): Promise<void> {
         "Low-stock flash-sale proposals",
       ],
       [
-        "shopify_update_product",
+        "shopify_update_product_description",
         "Rewrite flagship description: The Voyager Weekender",
         "high",
         {
@@ -888,10 +1273,12 @@ export async function reseedDemo(): Promise<void> {
         "Retire 3 products out of stock 90+ days",
         "low",
         {
+          // WS11: titles match the real seeded GIDs below (dangling-GID fix) —
+          // the approval card and the catalog now agree.
           items: [
-            { title: "Trail Card Holder (discontinued run)", oos_days: 112 },
-            { title: "Mini Passport Sleeve v1", oos_days: 98 },
-            { title: "Canvas Pouch — Olive", oos_days: 94 },
+            { title: "The Cartographer Roll", oos_days: 112 },
+            { title: "Travel Tag Set", oos_days: 98 },
+            { title: "Key Fob — Riveted", oos_days: 94 },
           ],
         },
         "These three have been out of stock 90+ days with no restock planned. Proposing to retire (archive) them — your past preference was 'retire' over 'hide'.",
@@ -901,9 +1288,9 @@ export async function reseedDemo(): Promise<void> {
           action: "update_status",
           status: "archived",
           product_gids: [
-            "gid://shopify/Product/100000201",
-            "gid://shopify/Product/100000202",
-            "gid://shopify/Product/100000203",
+            "gid://shopify/Product/100000010",
+            "gid://shopify/Product/100000013",
+            "gid://shopify/Product/100000009",
           ],
         },
         20,
@@ -1035,7 +1422,7 @@ export async function reseedDemo(): Promise<void> {
         "inventory",
         11,
         "product",
-        "gid://shopify/Product/100000201",
+        "gid://shopify/Product/100000010",
         "Retire long-out-of-stock products",
         true,
         null,
@@ -1424,7 +1811,11 @@ export async function reseedDemo(): Promise<void> {
         inline_block_type: blockType,
         inline_block_payload: blockPayload ?? null,
         status: "complete",
-        model_id: role === "assistant" ? "claude-opus-4-7" : null,
+        // WS11: seeded transcripts must match the provider the demo actually
+        // runs on (Plan 1 WS6 — Google AI Studio / Gemini). Source of truth
+        // for the active profile is MODEL_PROFILE=google (lib/agent/llm/models.ts);
+        // if that flips to a different provider, update this literal too.
+        model_id: role === "assistant" ? "gemini-3.6-flash" : null,
         token_input: role === "assistant" ? 1800 + mseq * 30 : null,
         token_output: role === "assistant" ? 240 + mseq * 12 : null,
         latency_ms: role === "assistant" ? 1400 + mseq * 50 : null,
@@ -1454,24 +1845,7 @@ export async function reseedDemo(): Promise<void> {
           "Score Journal titles + meta against SEO best practices and propose fixes.",
         automation_level: "L2",
         trigger_type: "schedule",
-        steps: [
-          {
-            id: "pull",
-            name: "Pull the Journals collection",
-            tool: "shopify_list_products",
-            description: "31 products",
-          },
-          {
-            id: "score",
-            name: "Score titles + meta descriptions",
-            tool: "seo_score",
-          },
-          {
-            id: "propose",
-            name: "Propose rewrites for the weak ones",
-            tool: "request_approval",
-          },
-        ],
+        steps: DEMO_CHAT_PLAN_STEPS,
       }
     );
     await msg(
@@ -1560,7 +1934,86 @@ export async function reseedDemo(): Promise<void> {
       120
     );
 
-    // Thread D — archived (shows the sidebar isn't empty / history exists)
-    await mkThread("Onboarding — connect store + set voice", 380, 14);
+    // Thread D — archived (shows the sidebar isn't empty / history exists).
+    // WS11: previously had 0 messages — now carries 3, with createdAgoMin
+    // consistent with the thread's 380-hour-old last_message_at (380h = 22,800 min).
+    const tD = await mkThread("Onboarding — connect store + set voice", 380, 14);
+    await msg(
+      tD,
+      "user",
+      "I just finished connecting my Shopify store — can you confirm it synced okay?",
+      22850
+    );
+    await msg(
+      tD,
+      "assistant",
+      "Confirmed — Shopify is connected and I synced 143 products from Wanderbound. Everything looks healthy. Next, let's set your brand voice so I write in your tone from day one.",
+      22820
+    );
+    await msg(
+      tD,
+      "user",
+      "Sounds good — go ahead and set the brand voice from the samples I gave you.",
+      22800
+    );
+
+    return insertedMemoryItems;
+  });
+
+  // ─── Memory embeddings (WS11) — OUTSIDE the transaction, best-effort ────────
+  // See the comment above the transaction call for why this must not run
+  // inside it. Wrapped in try/catch: seeding must never fail because
+  // embeddings are unavailable (missing VOYAGE_API_KEY, 429 rate limit,
+  // network error) — the demo is still fully usable without semantic recall.
+  if (!opts?.skipEmbeddings && seededMemoryItems.length > 0) {
+    try {
+      // Single batched call for all six memory items — removes the Voyage
+      // free-tier 3 req/min pacing problem entirely (embedTexts, added in
+      // lib/agent/embeddings.ts, accepts a string[] `input` per the Voyage API).
+      const vectors = await embedTexts(seededMemoryItems.map((m) => m.content));
+      await Promise.all(
+        seededMemoryItems.map((item, i) =>
+          serviceDb.insert(memoryEmbeddings).values({
+            user_id: USER,
+            source_type: "memory_item",
+            source_id: item.id,
+            content: item.content,
+            embedding: vectors[i],
+          })
+        )
+      );
+    } catch (err) {
+      console.warn(
+        JSON.stringify({
+          level: "warn",
+          event: "demo.seed.embeddings_failed",
+          userId: USER,
+          error: String(err),
+        })
+      );
+    }
+  }
+}
+
+/**
+ * Re-seed the SHARED demo account (env DEMO_USER_ID). No-ops if unset, so it's
+ * safe in environments where the shared demo isn't configured.
+ */
+export async function reseedDemo(): Promise<void> {
+  const USER = process.env.DEMO_USER_ID;
+  if (!USER) return;
+  await seedDemoFor(USER);
+}
+
+/**
+ * Tear down a sandbox visitor's app data. Deletes every seeded row for the user
+ * plus their profile, in one transaction. The caller is responsible for removing
+ * the auth identity (auth.admin.deleteUser) and the sandbox_sessions row.
+ */
+export async function wipeDemoFor(USER: string): Promise<void> {
+  if (!USER) return;
+  await serviceDb.transaction(async (tx) => {
+    await wipeUserData(tx, USER);
+    await tx.delete(userProfiles).where(eq(userProfiles.user_id, USER));
   });
 }

@@ -29,21 +29,26 @@ import { chatRateLimit } from "@/lib/rate-limit";
 import { withUserRls, threads, messages, workflows, workflowVersions } from "@/lib/db";
 import { buildSystemPrompt } from "@/lib/agent/prompt";
 import { checkCostCap, recordCost } from "@/lib/cost-cap";
-import { getAnthropicToolDefinitions, dispatchTool } from "@/lib/agent/tools/index";
-import { anthropic } from "@/lib/agent/anthropic";
-import type Anthropic from "@anthropic-ai/sdk";
+import { resolveModel, resolveModelChoice } from "@/lib/agent/llm/models";
+import { getAiSdkTools } from "@/lib/agent/llm/tools";
+import { costFor } from "@/lib/agent/llm/pricing";
+import { autoNameThreadIfDefault } from "@/app/app/chat/actions";
+import { streamText, stepCountIs } from "ai";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
-
-// Anthropic message param type for multi-turn tool loops
-type AnthropicMessage = Anthropic.MessageParam;
 
 // ─── Route config ─────────────────────────────────────────────────────────────
 
 /** Must be force-dynamic to prevent Next.js caching SSE responses */
 export const dynamic = "force-dynamic";
-/** Extended timeout — streaming chats can run for ~60s */
-export const maxDuration = 60;
+/**
+ * Extended timeout. The orchestrator runs an agentic tool loop (stepCountIs(5)),
+ * and on Groq (gpt-oss-120b) each step is a separate round-trip — multi-step
+ * tool conversations were hitting the old 60s ceiling and returning 504
+ * ("agent thinks but never responds"). 120s gives the loop headroom; the
+ * reasoningEffort:"low" cap below keeps most turns well under it.
+ */
+export const maxDuration = 120;
 
 // ─── Input validation ─────────────────────────────────────────────────────────
 
@@ -133,14 +138,18 @@ export async function POST(
     });
   }
 
-  // 6. Load prior messages for this thread (last 20 for token budget)
+  // 6. Load prior messages for this thread (last 20 — WS6/WS7.1: the Groq
+  // free-tier 8k tokens/min concession that capped this at 8 no longer applies
+  // under the Gemini profile). WS7.1: .orderBy(messages.created_at) — the prior
+  // select had no ordering, so the model could receive scrambled context.
   let priorMessages: Array<{ role: "user" | "assistant"; content: string }> = [];
   try {
     const msgRows = await withUserRls(claims as Record<string, unknown>, async (tx) => {
       return tx
         .select()
         .from(messages)
-        .where(eq(messages.thread_id, threadId));
+        .where(eq(messages.thread_id, threadId))
+        .orderBy(messages.created_at);
     }) as Array<{ role: string; content: string | null; status: string }>;
 
     priorMessages = msgRows
@@ -184,6 +193,11 @@ export async function POST(
   }
   void userMsgId; // suppress unused var warning
 
+  // Resolve the orchestrator model once — used for the placeholder model_id,
+  // the streamText call, cost computation, and the finalize update. Default
+  // profile = anthropic => choice.modelId === "claude-opus-4-7" (zero change).
+  const choice = resolveModelChoice("ORCHESTRATOR");
+
   // 8. Insert assistant placeholder with status='streaming' (CONV-09)
   let assistantMsgId: string | null = null;
   try {
@@ -196,7 +210,7 @@ export async function POST(
           role: "assistant",
           content: "",
           status: "streaming",
-          model_id: "claude-opus-4-7",
+          model_id: choice.modelId,
         })
         .returning();
     }) as Array<{ id: string }>;
@@ -257,9 +271,8 @@ export async function POST(
     );
     // Fall back to minimal static prompt — stream still starts
   }
-  const toolDefs = getAnthropicToolDefinitions(includeWriteTools);
 
-  // 10. Build the SSE ReadableStream — pump Anthropic deltas as SSE events
+  // 10. Build the SSE ReadableStream — pump AI SDK deltas as SSE events
   const encoder = new TextEncoder();
   let accumulatedContent = "";
   let inlineBlockType: string | null = null;
@@ -267,135 +280,168 @@ export async function POST(
 
   const stream = new ReadableStream({
     async start(controller) {
+      // WS7.2 — emit the real assistant message UUID as the FIRST SSE event,
+      // before the streamText loop starts, so the client can swap its
+      // optimistic `asst-${Date.now()}` id for the real one. This unblocks
+      // Save as workflow, which Zod-validates messageId as a UUID.
+      if (assistantMsgId) {
+        controller.enqueue(
+          encoder.encode(`data: ${JSON.stringify({ message_id: assistantMsgId })}\n\n`)
+        );
+      }
+
       try {
+        // Per-request agent context — captured in the getAiSdkTools closure below
+        // (NEVER a module-level singleton — wrong-user security regression, T-ebw-01).
         const agentCtx = {
           userId,
           automationLevel: "L2" as const,
           threadId,
         };
 
-        // ── Agentic tool loop (CR-05) ───────────────────────────────────────────
-        // Run the model, collect tool_use blocks, dispatch each, append tool_result
-        // user turn, re-invoke. Bounded by MAX_TOOL_ITERATIONS to prevent runaway.
-        const MAX_TOOL_ITERATIONS = 5;
-        let currentMessages: AnthropicMessage[] = allMessages.map(m => ({
-          role: m.role,
-          content: m.content,
-        }));
         let totalInputTokens = 0;
         let totalOutputTokens = 0;
 
-        for (let iteration = 0; iteration < MAX_TOOL_ITERATIONS; iteration++) {
-          const anthropicStream = anthropic.messages.stream({
-            model: "claude-opus-4-7",
-            system: systemPrompt,
-            messages: currentMessages,
-            tools: toolDefs as Parameters<typeof anthropic.messages.stream>[0]["tools"],
-            max_tokens: 4096,
-          });
+        // ── Agentic tool loop (CR-05) ───────────────────────────────────────────
+        // streamText runs the model + tool loop internally (execute delegates to
+        // dispatchTool), bounded by stopWhen: stepCountIs(5). We re-emit the same
+        // custom SSE events from result.fullStream so the client is untouched.
+        //
+        // reasoningEffort:"low" — when ORCHESTRATOR routes to Groq (gpt-oss-120b,
+        // the prod MODEL_PROFILE), uncapped reasoning lets the model spend its
+        // whole output budget on reasoning tokens, so it "thinks" but streams
+        // little/no text and multi-step tool loops blow past the timeout. "low"
+        // keeps turns fast and preserves output budget for the actual reply.
+        // Harmless on Anthropic — the groq providerOptions namespace is ignored.
+        // (Same fix already applied to optimize-meta.ts / propose-restock.ts.)
+        // Only emitted when the resolved provider is actually "groq" — Gemini
+        // and Anthropic don't have a reasoningEffort knob in this namespace.
+        //
+        // FORMER GROQ FREE-TIER TPM FIT (8000 tokens/min, cumulative per
+        // request) — retired under the Gemini profile, kept here for context:
+        //   - maxOutputTokens capped at 1536: Groq reserves input+output against
+        //     the per-minute budget, so a 4096 reservation alone ate half of it.
+        //   - stepCountIs(3): each extra tool round re-sends ALL prior tool
+        //     results, so accumulated context blew past 8k by step 3-4. Fewer
+        //     rounds = less accumulation (tool results are also capped, in
+        //     getAiSdkTools).
+        // gpt-oss-120b's agentic tool loop was genuinely tight against the free
+        // tier — those caps kept typical single tool-using turns under the cap.
+        // Gemini's generous limits mean the full budget/step count are safe again.
+        const providerOptions: { groq?: { reasoningEffort: "low" } } =
+          choice.provider === "groq" ? { groq: { reasoningEffort: "low" } } : {};
 
-          // Collect tool_use blocks from this iteration
-          const pendingToolUses: Array<{ id: string; name: string; input: unknown }> = [];
-          const assistantContentBlocks: Array<unknown> = [];
+        // WS7.13/WS12 (D-1/D-2): the chat toolset is read + meta tools plus ONLY
+        // the propose-safe write tools, minus ask_user_clarification (dead end —
+        // the route only renders workflow_plan/preview inline blocks).
+        const result = streamText({
+          model: resolveModel("ORCHESTRATOR"),
+          system: systemPrompt,
+          messages: allMessages,
+          tools: getAiSdkTools(includeWriteTools, agentCtx, {
+            writeTools: "propose-safe",
+            excludeTools: ["ask_user_clarification"],
+          }),
+          stopWhen: stepCountIs(5),
+          maxOutputTokens: choice.maxTokens,
+          providerOptions,
+          // WS7.7 — propagate the client's abort signal so a disconnect stops
+          // server-side model work instead of burning tokens/time unattended.
+          abortSignal: req.signal,
+        });
 
-          for await (const event of anthropicStream) {
-            // Text delta — only stream on the final turn (no tool requests)
-            // We forward text during every turn; the model's final turn has no tool_use.
-            if (
-              event.type === "content_block_delta" &&
-              event.delta.type === "text_delta"
-            ) {
-              accumulatedContent += event.delta.text;
-              controller.enqueue(
-                encoder.encode(
-                  `data: ${JSON.stringify({ text: event.delta.text })}\n\n`
-                )
-              );
-            }
-
-            // Capture completed tool_use blocks
-            if (
-              event.type === "content_block_stop"
-            ) {
-              // Handled below via finalMessage
-            }
+        for await (const part of result.fullStream) {
+          // Text delta — accumulate + forward as the unchanged { text } SSE event.
+          if (part.type === "text-delta") {
+            accumulatedContent += part.text;
+            controller.enqueue(
+              encoder.encode(`data: ${JSON.stringify({ text: part.text })}\n\n`)
+            );
+            continue;
           }
 
-          const finalMsg = await anthropicStream.finalMessage();
-          totalInputTokens += finalMsg.usage.input_tokens;
-          totalOutputTokens += (finalMsg.usage as { output_tokens?: number }).output_tokens ?? 0;
+          // Tool result — execute returned a ToolResult on part.output. Run the
+          // SAME inline-block extraction (JSON.parse(content)) as before. The
+          // execute() wrapper (dispatchTool) never throws, so tool failures surface
+          // as correctable results, not stream crashes (T-ebw-02).
+          if (part.type === "tool-result") {
+            const toolResult = part.output as
+              | { content?: string; is_error?: boolean }
+              | undefined;
+            if (toolResult && typeof toolResult.content === "string") {
+              try {
+                const parsed = JSON.parse(toolResult.content);
+                if (parsed.inline_block_type === "workflow_plan") {
+                  inlineBlockType = "workflow_plan";
+                  inlineBlockPayload = parsed.inline_block_payload;
+                  // Emit SSE event so client can render the visualizer
+                  controller.enqueue(
+                    encoder.encode(
+                      `data: ${JSON.stringify({
+                        inline_block_type: inlineBlockType,
+                        inline_block_payload: inlineBlockPayload,
+                      })}\n\n`
+                    )
+                  );
+                } else if (parsed.phase === "propose") {
+                  // D-1 propose-phase preview — makes the propose-safe write
+                  // tools' output visible instead of silent. Title is derived
+                  // from the tool name; content prefers `preview`, then
+                  // meta_title + meta_description, then body_html, then
+                  // rationale (whichever the specific propose-safe tool set).
+                  const toolNameLabels: Record<string, string> = {
+                    shopify_optimize_meta: "Proposed meta",
+                    shopify_optimize_product_description: "Proposed description",
+                    shopify_propose_restock: "Proposed restock",
+                  };
+                  const title = toolNameLabels[part.toolName] ?? "Proposed action";
+                  const content: string =
+                    typeof parsed.preview === "string" && parsed.preview
+                      ? parsed.preview
+                      : typeof parsed.meta_title === "string" || typeof parsed.meta_description === "string"
+                        ? `${parsed.meta_title ?? ""} — ${parsed.meta_description ?? ""}`.trim()
+                        : typeof parsed.body_html === "string"
+                          ? parsed.body_html
+                          : typeof parsed.rationale === "string"
+                            ? parsed.rationale
+                            : "";
 
-          // Collect tool_use content blocks from this turn's response
-          for (const block of finalMsg.content) {
-            assistantContentBlocks.push(block);
-            if (block.type === "tool_use") {
-              pendingToolUses.push({
-                id: block.id,
-                name: block.name,
-                input: block.input,
-              });
-            }
-          }
-
-          // If model made no tool calls, we're done
-          if (pendingToolUses.length === 0) {
-            break;
-          }
-
-          // Dispatch all tool calls and collect results
-          const toolResultContents: Array<{
-            type: "tool_result";
-            tool_use_id: string;
-            content: string;
-          }> = [];
-
-          for (const tu of pendingToolUses) {
-            try {
-              const toolResult = await dispatchTool(tu.name, tu.input, agentCtx);
-
-              // Check if tool result embeds an inline block (propose_workflow_plan)
-              if (toolResult && toolResult.content) {
-                try {
-                  const parsed = JSON.parse(toolResult.content);
-                  if (parsed.inline_block_type === "workflow_plan") {
-                    inlineBlockType = "workflow_plan";
-                    inlineBlockPayload = parsed.inline_block_payload;
-                    // Emit SSE event so client can render the visualizer
-                    controller.enqueue(
-                      encoder.encode(
-                        `data: ${JSON.stringify({
-                          inline_block_type: inlineBlockType,
-                          inline_block_payload: inlineBlockPayload,
-                        })}\n\n`
-                      )
-                    );
-                  }
-                } catch {
-                  // Not JSON or not an inline block — ignore
+                  inlineBlockType = "preview";
+                  inlineBlockPayload = { title, content };
+                  controller.enqueue(
+                    encoder.encode(
+                      `data: ${JSON.stringify({
+                        inline_block_type: inlineBlockType,
+                        inline_block_payload: inlineBlockPayload,
+                      })}\n\n`
+                    )
+                  );
                 }
+              } catch {
+                // Not JSON or not an inline block — ignore
               }
-
-              toolResultContents.push({
-                type: "tool_result",
-                tool_use_id: tu.id,
-                content: toolResult?.content ?? "",
-              });
-            } catch (toolErr) {
-              // Tool dispatch error — return an error result so the model can handle it
-              toolResultContents.push({
-                type: "tool_result",
-                tool_use_id: tu.id,
-                content: JSON.stringify({ error: String(toolErr) }),
-              });
             }
+            continue;
           }
 
-          // Append the assistant turn (with tool_use blocks) + tool results turn
-          currentMessages = [
-            ...currentMessages,
-            { role: "assistant" as const, content: assistantContentBlocks as Anthropic.ContentBlock[] },
-            { role: "user" as const, content: toolResultContents as Anthropic.ToolResultBlockParam[] },
-          ] as AnthropicMessage[];
+          // Final usage — read inputTokens/outputTokens off the finish part.
+          if (part.type === "finish") {
+            totalInputTokens = part.totalUsage.inputTokens ?? 0;
+            totalOutputTokens = part.totalUsage.outputTokens ?? 0;
+            continue;
+          }
+
+          // Provider/stream failure mid-turn (e.g. rate limit on a later tool
+          // step). fullStream reports it as an error PART — it does not throw —
+          // so without this the loop ends quietly and the user gets an empty
+          // "complete" reply. Throw into the catch path, which sends the
+          // generic error event and preserves any partial text.
+          if (part.type === "error") {
+            const cause = part.error;
+            throw new Error(
+              `model stream error: ${cause instanceof Error ? cause.message : String(cause)}`.slice(0, 500)
+            );
+          }
         }
 
         // 11. Finalize assistant message → status='complete'
@@ -403,9 +449,7 @@ export async function POST(
           input_tokens: totalInputTokens,
           output_tokens: totalOutputTokens,
         };
-        const costUsd =
-          (usage.input_tokens * 3 + ((usage as { output_tokens?: number }).output_tokens ?? 0) * 15) /
-          1_000_000;
+        const costUsd = costFor(choice.modelId, totalInputTokens, totalOutputTokens);
 
         // Record cost (T-2-05-02)
         await recordCost(userId, costUsd);
@@ -419,6 +463,7 @@ export async function POST(
                 .set({
                   content: accumulatedContent,
                   status: "complete",
+                  model_id: choice.modelId,
                   token_input: usage.input_tokens,
                   token_output: (usage as { output_tokens?: number }).output_tokens ?? null,
                   ...(inlineBlockType
@@ -461,15 +506,43 @@ export async function POST(
           }));
         }
 
+        // WS7.3 — auto-name the thread from the first user message if it's
+        // still titled "New conversation" (or blank). Thread naming must
+        // never break a reply — wrapped in try/catch and logged non-fatally.
+        try {
+          await autoNameThreadIfDefault(threadId, body.message);
+        } catch (autoNameErr) {
+          console.error(JSON.stringify({
+            level: "warn",
+            event: "chat.auto_name_thread_failed",
+            threadId,
+            error: autoNameErr instanceof Error ? autoNameErr.message : "unknown",
+            timestamp: new Date().toISOString(),
+          }));
+        }
+
         // Signal stream end
         controller.enqueue(encoder.encode(`data: [DONE]\n\n`));
         controller.close();
       } catch (err) {
-        // Emit error event so client can show retry UI (CONV-09)
+        // WS7.6 — never send the raw provider error to the client: it can leak
+        // API internals, prompts, or infra details. Emit a generic, user-facing
+        // message and log the real error server-side only, structured like the
+        // other logs in this file.
+        console.error(JSON.stringify({
+          level: "error",
+          event: "chat.stream_failed",
+          threadId,
+          error: err instanceof Error ? err.message : String(err),
+          timestamp: new Date().toISOString(),
+        }));
         try {
           controller.enqueue(
             encoder.encode(
-              `data: ${JSON.stringify({ error: "stream_error", message: String(err) })}\n\n`
+              `data: ${JSON.stringify({
+                error: "stream_error",
+                message: "Something went wrong generating that reply. Try again.",
+              })}\n\n`
             )
           );
           controller.close();
@@ -477,13 +550,23 @@ export async function POST(
           // Already closed
         }
 
-        // Mark assistant message as errored
+        // Persist what we have. A client disconnect (refresh, navigation) is
+        // not a generation failure: keep any partial text as a complete
+        // message so it survives reload instead of becoming an empty errored
+        // bubble. Only a true provider/stream failure marks the row errored.
+        const clientAborted = req.signal.aborted;
         if (assistantMsgId) {
           try {
             await withUserRls(claims as Record<string, unknown>, async (tx) => {
               return tx
                 .update(messages)
-                .set({ status: "errored" })
+                .set({
+                  content: accumulatedContent,
+                  status:
+                    clientAborted && accumulatedContent.length > 0
+                      ? "complete"
+                      : "errored",
+                })
                 .where(eq(messages.id, assistantMsgId));
             });
           } catch (errorMarkErr) {

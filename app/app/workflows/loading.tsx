@@ -14,7 +14,7 @@ export default function WorkflowsLoading() {
   return (
     <div className="h-full overflow-y-auto bg-[var(--bg)] animate-pulse">
       {/* Strip stats skeleton */}
-      <div className="border-b border-[var(--border)] px-10 py-5">
+      <div className="border-b border-[var(--border)] px-4 md:px-10 py-5">
         <div className="flex gap-8">
           {[1, 2, 3].map((i) => (
             <div key={i} className="flex flex-col gap-1.5">
@@ -26,14 +26,14 @@ export default function WorkflowsLoading() {
       </div>
 
       {/* Page header skeleton */}
-      <div className="px-10 pt-8 pb-4">
+      <div className="px-4 md:px-10 pt-8 pb-4">
         <div className="h-[11px] w-[100px] rounded-full bg-[var(--bg-elevated)]" />
         <div className="mt-3 h-[36px] w-[280px] rounded-[var(--r-sm)] bg-[var(--bg-elevated)]" />
         <div className="mt-2 h-[14px] w-[380px] rounded-full bg-[var(--bg-elevated)]" />
       </div>
 
       {/* Workflow cards skeleton */}
-      <div className="px-10 py-4 space-y-3">
+      <div className="px-4 md:px-10 py-4 space-y-3">
         {[1, 2, 3, 4].map((i) => (
           <div
             key={i}

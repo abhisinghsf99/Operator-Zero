@@ -46,3 +46,6 @@ export { agentTelemetry, costAggregates } from "./telemetry";
 // Phase 4 — Session registry + export job status
 export { userSessions } from "./user-sessions";
 export { userExports } from "./user-exports";
+
+// Demo sandbox — per-visitor ephemeral session registry
+export { sandboxSessions } from "./sandbox-sessions";

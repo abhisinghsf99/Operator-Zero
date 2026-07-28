@@ -26,6 +26,7 @@ vi.mock("@/lib/db/client", () => {
   function makeMockDb() {
     const chain = {
       from: vi.fn().mockReturnThis(),
+      innerJoin: vi.fn().mockReturnThis(),
       where: vi.fn().mockReturnThis(),
       orderBy: vi.fn().mockReturnThis(),
       limit: vi.fn().mockResolvedValue([]),
@@ -117,6 +118,7 @@ describe("AGENT-05 — Memory record/update/soft-delete + semantic recall", () =
 
     const selectChain = {
       from: vi.fn().mockReturnThis(),
+      innerJoin: vi.fn().mockReturnThis(),
       where: vi.fn().mockReturnThis(),
       orderBy: vi.fn().mockReturnThis(),
       limit: vi.fn().mockResolvedValue([]),
@@ -219,6 +221,7 @@ describe("AGENT-05 — Memory record/update/soft-delete + semantic recall", () =
     const limitMock = vi.fn().mockResolvedValue(mockResults);
     mockDb.select.mockReturnValue({
       from: vi.fn().mockReturnThis(),
+      innerJoin: vi.fn().mockReturnThis(),
       where: vi.fn().mockReturnThis(),
       orderBy: vi.fn().mockReturnThis(),
       limit: limitMock,

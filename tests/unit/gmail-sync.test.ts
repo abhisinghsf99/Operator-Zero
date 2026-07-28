@@ -125,15 +125,12 @@ vi.mock("@/lib/integrations/gmail/client", async (importOriginal) => {
   };
 });
 
-// Mock Anthropic for classifySupport
-vi.mock("@/lib/agent/anthropic", () => ({
-  anthropic: {
-    messages: {
-      create: vi.fn().mockResolvedValue({
-        content: [{ type: "text", text: "YES" }],
-      }),
-    },
-  },
+// Mock the AI SDK boundary for classifySupport (now uses generateText)
+vi.mock("ai", () => ({
+  generateText: vi.fn().mockResolvedValue({ text: "YES" }),
+}));
+vi.mock("@/lib/agent/llm/models", () => ({
+  resolveModel: vi.fn().mockReturnValue({ provider: "anthropic", modelId: "claude-haiku-4-5" }),
 }));
 
 // ─── Import after mocks ────────────────────────────────────────────────────────
@@ -299,12 +296,12 @@ describe("INTEG-05 — Gmail History API incremental cursor advance", () => {
     expect(gmailState.upsertedMessages.length).toBeGreaterThan(0);
   });
 
-  it("classifies customer support emails using Anthropic fast-path", async () => {
+  it("classifies customer support emails using the classifier fast-path", async () => {
     const isSupport = await classifySupport("Order question", "Where is my order?");
     expect(isSupport).toBe(true);
 
-    const { anthropic } = await import("@/lib/agent/anthropic");
-    expect(anthropic.messages.create).toHaveBeenCalled();
+    const { generateText } = await import("ai");
+    expect(generateText).toHaveBeenCalled();
   });
 
   it("sets gmail_threads.is_customer_support based on classification result", async () => {
