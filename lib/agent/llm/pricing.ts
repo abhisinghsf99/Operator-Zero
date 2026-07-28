@@ -38,6 +38,9 @@ const PRICING: Record<string, Rate> = {
   "openai/gpt-oss-20b": { input: 0.1, output: 0.5 },
 
   // ── Google AI Studio / Gemini (confirmed published rates as of the 2026-07-27 sweep) ──
+  // gemini-3-flash-preview: the free-tier demo orchestrator (via OZ_MODEL_* overrides) —
+  // its free daily quota (~1500 req/day) is ~75× gemini-3.6-flash's 20 req/day.
+  "gemini-3-flash-preview": { input: 0.5, output: 3 },
   "gemini-3.6-flash": { input: 1.5, output: 7.5 },
   "gemini-3.5-flash-lite": { input: 0.3, output: 2.5 },
   "gemini-2.5-flash": { input: 0.3, output: 2.5 },
