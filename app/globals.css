@@ -319,3 +319,15 @@ a {
     font-size: 16px !important;
   }
 }
+
+/* ─────────── 260831-ipj F5: dynamic viewport height ─────────── */
+/*
+ * 100dvh with a 100vh fallback for browsers without dynamic viewport units.
+ * A two-value cascade fallback (last value wins if supported) is not
+ * expressible as ordered Tailwind utilities, hence this hand-written class.
+ * On desktop 100dvh === 100vh, so desktop is unchanged by construction.
+ */
+.h-screen-dvh {
+  height: 100vh;
+  height: 100dvh;
+}

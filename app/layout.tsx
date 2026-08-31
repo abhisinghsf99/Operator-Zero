@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono, Instrument_Serif } from "next/font/google";
 import { Toaster } from "@/components/ui/sonner";
 import "./globals.css";
@@ -26,6 +26,16 @@ const instrumentSerif = Instrument_Serif({
 export const metadata: Metadata = {
   title: "Operator Zero",
   description: "Autonomous agent system for Shopify store operations",
+};
+
+// 260831-ipj F5: viewport-fit=cover is required for env(safe-area-inset-*) to
+// resolve to anything other than 0 — without it the safe-area padding already
+// applied in bottom-tabs.tsx is inert on notched devices. width/initialScale
+// reproduce Next's injected default; only viewportFit is new. No desktop effect.
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
 };
 
 export default function RootLayout({
