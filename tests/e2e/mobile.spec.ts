@@ -287,4 +287,66 @@ test.describe("260831-ipj — mobile rendering regressions", () => {
       }
     }
   );
+
+  // Task 8 findings — clipped stat strip / cramped chat header / crowded
+  // composer hints — surfaced by manual visual inspection after the F1-F6
+  // fixes landed. None of these regress document-level scrollWidth, which
+  // is why a scrollWidth check alone didn't catch them (8a clips inside a
+  // bordered container rather than extending the document).
+
+  test(
+    "workflows stat strip stacks to one column with the third stat inside the viewport (Task 8a)",
+    async ({ page }) => {
+      test.skip(!HAS_LIVE_STACK, "Requires live stack + auth session");
+      await page.goto("/app/workflows", { timeout: 30_000 });
+      const region = page.locator('[aria-label="Recent activity stats"]');
+      await expect(region).toBeVisible({ timeout: 15_000 });
+
+      const stats = region.locator("a");
+      await expect(stats).toHaveCount(3);
+
+      const viewportWidth = page.viewportSize()?.width ?? 0;
+      const thirdStatBox = await stats.nth(2).boundingBox();
+      expect(thirdStatBox).not.toBeNull();
+      if (thirdStatBox) {
+        expect(thirdStatBox.x + thirdStatBox.width).toBeLessThanOrEqual(viewportWidth);
+      }
+
+      // Dividers are meaningless in a stacked column and must not render
+      const dividers = region.locator('span[aria-hidden="true"]');
+      for (const divider of await dividers.all()) {
+        await expect(divider).toBeHidden();
+      }
+    }
+  );
+
+  test(
+    "chat thread header truncates a long title instead of wrapping onto the status text (Task 8b)",
+    async ({ page }) => {
+      test.skip(!HAS_LIVE_STACK, "Requires live stack + auth session");
+      await page.goto("/app/chat", { timeout: 30_000 });
+      const threadBtn = page.locator("nav[aria-label='Thread list'] button").first();
+      await expect(threadBtn).toBeVisible({ timeout: 15_000 });
+      await threadBtn.click();
+      await page.waitForURL(/\/app\/chat\//, { timeout: 30_000 });
+
+      // Decorative label is not load-bearing below md
+      await expect(page.getByText("here & remembering")).toBeHidden();
+    }
+  );
+
+  test(
+    "composer keyboard hint is hidden below md, memory indicator stays visible (Task 8c)",
+    async ({ page }) => {
+      test.skip(!HAS_LIVE_STACK, "Requires live stack + auth session");
+      await page.goto("/app/chat", { timeout: 30_000 });
+      const threadBtn = page.locator("nav[aria-label='Thread list'] button").first();
+      await expect(threadBtn).toBeVisible({ timeout: 15_000 });
+      await threadBtn.click();
+      await page.waitForURL(/\/app\/chat\//, { timeout: 30_000 });
+
+      await expect(page.getByText("remembers your store")).toBeVisible();
+      await expect(page.getByText("newline")).toBeHidden();
+    }
+  );
 });
