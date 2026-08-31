@@ -255,8 +255,10 @@ export function Composer({
 
   const isDisabled = disabled || (streaming && queue.length >= 10);
 
+  // 260831-ipj F3: wrapper horizontal padding is responsive (px-4 md:px-8 = 32px);
+  // vertical padding stays inline (16px top, 24px bottom) — unchanged from pre-fix.
   return (
-    <div style={{ padding: "16px 32px 24px", background: "var(--bg)" }}>
+    <div className="px-4 md:px-8" style={{ paddingTop: 16, paddingBottom: 24, background: "var(--bg)" }}>
       {/* Error banner */}
       {error && (
         <div
@@ -319,7 +321,14 @@ export function Composer({
             aria-label={placeholder}
             aria-describedby={streaming ? "composer-streaming-indicator" : undefined}
             style={{
-              all: "unset",
+              border: "none",
+              outline: "none",
+              padding: 0,
+              margin: 0,
+              appearance: "none",
+              boxShadow: "none",
+              whiteSpace: "pre-wrap",
+              overflowY: "auto",
               width: "100%",
               minHeight: 40,
               maxHeight: 140,
