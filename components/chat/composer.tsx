@@ -363,11 +363,14 @@ export function Composer({
 
             {/* Right: keyboard hints + send */}
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              {/* 260831-ipj Task 8c: no physical Enter key on touch devices —
+                  hint is useless below md and was squeezing "remembers your
+                  store" into a wrapped two-line block next to Send. */}
               <span
+                className="hidden md:inline-flex"
                 style={{
                   fontSize: 11,
                   color: "var(--text-tertiary)",
-                  display: "inline-flex",
                   alignItems: "center",
                   gap: 6,
                 }}
