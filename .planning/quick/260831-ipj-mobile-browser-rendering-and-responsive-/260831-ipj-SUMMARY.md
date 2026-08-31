@@ -16,6 +16,8 @@ key-files:
     - app/app/layout.tsx
     - "app/app/workflows/[id]/_workflow-detail-view.tsx"
     - app/app/workflows/_workflows-view.tsx
+    - components/workflows/recent-activity-strip.tsx
+    - components/chat/message-stream.tsx
     - tests/e2e/mobile.spec.ts
 
 key-decisions:
@@ -28,22 +30,24 @@ key-decisions:
   - "_activity-view.tsx mobile back-affordance padding (10px 16px) confirmed already mobile-safe inside its own md:hidden branch — left unchanged"
   - "Dev server's CSS pipeline (Turbopack + Tailwind v4 JIT) only recompiles globals.css when triggered by a scanned .tsx file edit — a globals.css-only edit does not trigger a rebuild on its own in this long-running dev process"
   - "Reused the shared demo account (DEMO_EMAIL/DEMO_PASSWORD in .env.local) with a saved Playwright storageState for Tasks 2-7 verification after the anonymous-sandbox rate limit (10/hour/IP) was exhausted during Task 1"
+  - "Task 8a: stat-strip gridTemplateColumns and divider display both moved from inline style to className — same F1 inline-vs-class precedence bug pattern applies to any inline display value, so all three Task 8 fixes route display through className rather than inline style"
+  - "Task 8b: chat-thread title truncation (overflow:hidden/ellipsis/nowrap) applied unconditionally, not md-gated, per explicit coordinator instruction — has zero visual effect on titles that already fit the row, only engages for pathologically long titles that would otherwise have wrapped/overflowed at any viewport"
 
 requirements-completed: []
 
-duration: ~2h (including one mid-session transient network interruption)
+duration: ~2h15m (including one mid-session transient network interruption + a post-checkpoint Task 8 addendum from independent coordinator review)
 completed: 2026-08-31
 ---
 
 # Quick Task 260831-ipj: Mobile Browser Rendering + Responsive Pass Summary
 
-**Fixed all six empirically-verified mobile rendering defects (F1-F6) — sidebar-eats-composer, one-word-per-line headings, broken newlines/auto-resize, iOS zoom-on-focus, dead safe-area insets, and hard-coded desktop padding — while keeping desktop rendering byte-for-byte identical across every structural CSS metric measured.**
+**Fixed all six empirically-verified mobile rendering defects (F1-F6) plus three additional defects (8a-8c) found via independent visual re-inspection — sidebar-eats-composer, one-word-per-line headings, broken newlines/auto-resize, iOS zoom-on-focus, dead safe-area insets, hard-coded desktop padding, a clipped stat strip, a cramped chat header, and a crowded composer hint row — while keeping desktop rendering byte-for-byte identical across every structural CSS metric measured.**
 
 ## Performance
 
-- **Tasks:** 7 (6 auto + 1 checkpoint, checkpoint awaiting human verification)
-- **Files modified:** 10 source files + 1 test file (11 total)
-- **Commits:** 6 (5 fix commits, 1 test commit)
+- **Tasks:** 8 (7 auto/test + 1 checkpoint, checkpoint awaiting human verification)
+- **Files modified:** 12 source files + 1 test file (13 total)
+- **Commits:** 8 (6 fix commits, 2 test commits)
 
 ## Accomplishments
 
@@ -53,8 +57,11 @@ completed: 2026-08-31
 - **F4** — One `@media (max-width:768px)` rule forces every input/textarea/select to 16px, preventing iOS Safari zoom-on-focus, without touching 13 individual inline `fontSize` call sites.
 - **F5** — Root layout now exports `viewport` with `viewport-fit=cover` (previously absent, meaning `env(safe-area-inset-*)` always resolved to 0); app shell switched from `h-screen` (100vh) to a `100dvh`-with-`100vh`-fallback class; main's bottom padding now accounts for the real tab-bar height including the safe-area inset.
 - **F6** — Five hard-coded padding sites in the workflow detail view and one in the workflows empty-state moved from inline `padding` to `px-4 md:px-{10,7}` classes; two candidate sites (`_activity-view.tsx`, `_settings-shell.tsx`) were investigated and confirmed to be non-issues (already mobile-safe / desktop-only branch respectively) rather than edited speculatively.
-- Added a durable `tests/e2e/mobile.spec.ts` regression block (`260831-ipj — mobile rendering regressions`) encoding verification-contract items 1-4, following the file's existing `HAS_LIVE_STACK` skip-guard convention.
-- **Desktop verified pixel-identical** across every structural metric measured (sidebar width, header padding, header row layout, h1 font-size, main padding, composer rect, input font sizes) — see Verification section.
+- **8a** — Workflows stat strip's `gridTemplateColumns` moved from inline style to a responsive className (`grid-cols-1` below md, restores the exact `1fr 0.5px 1fr 0.5px 1fr` desktop layout at md+); the third stat ("Time saved this week") is no longer clipped at the 390px viewport edge; the two vertical dividers hide below md instead of rendering as meaningless empty bars.
+- **8b** — Chat thread header title now truncates with an ellipsis instead of wrapping to 3 lines and squeezing the status text; the decorative "here & remembering" label hides below md (status dot stays visible at every width).
+- **8c** — Composer's keyboard-hint row ("⏎ send · ⇧⏎ newline") hides below md (no physical Enter key on touch), no longer crowding the "remembers your store" memory indicator into a wrapped block next to Send.
+- Added a durable `tests/e2e/mobile.spec.ts` regression block (`260831-ipj — mobile rendering regressions`) encoding verification-contract items 1-4 plus 3 more tests for 8a/8b/8c, following the file's existing `HAS_LIVE_STACK` skip-guard convention.
+- **Desktop verified pixel-identical** across every structural metric measured (sidebar width, header padding, header row layout, h1 font-size, main padding, composer rect, input font sizes, stat-strip grid tracks, divider visibility, hint visibility) — see Verification section.
 
 ## Task Commits
 
@@ -64,7 +71,8 @@ completed: 2026-08-31
 4. **Task 4: F3 + F4 — composer reset, responsive padding, 16px input floor** — `e6f286b` (fix)
 5. **Task 5: F5 — viewport-fit, dynamic viewport height, safe-area padding** — `aa997b4` (fix)
 6. **Task 6: F6 — responsive audit of hard-coded padding** — `3d0dd26` (fix)
-7. **Task 7: durable regression tests** — `6c24629` (test)
+7. **Task 7: durable regression tests (F1-F6)** — `6c24629` (test)
+8. **Task 8: 8a/8b/8c — stat strip clip, chat header truncation, composer hint crowding** — `949ff8b` (fix), `a9cf678` (test)
 
 **Plan metadata:** not yet committed (SUMMARY.md/STATE.md docs commit handled by orchestrator per constraint)
 
@@ -74,13 +82,15 @@ completed: 2026-08-31
 - `app/app/chat/page.tsx` — `!w-full md:!w-[260px]` → `w-full md:w-[260px]` (bangs obsolete once inline style no longer fights classes)
 - `app/app/chat/[threadId]/page.tsx` — stale comment describing the broken mechanism corrected
 - `components/design/primitives.tsx` — `SurfaceHeader` row: `flex-col` → `md:flex-row` stack; `h1` hard-coded `fontSize:38` → `text-[28px] md:text-[38px]`; `right` actions get `w-full shrink-0 md:w-auto`
-- `components/chat/composer.tsx` — `all:"unset"` replaced with explicit reset + `whiteSpace:pre-wrap` + `overflowY:auto`; wrapper padding `px-4 md:px-8`
+- `components/chat/composer.tsx` — `all:"unset"` replaced with explicit reset + `whiteSpace:pre-wrap` + `overflowY:auto`; wrapper padding `px-4 md:px-8`; keyboard-hint span hidden below md via `className="hidden md:inline-flex"` (Task 8c)
 - `app/globals.css` — F4 16px-input-floor media-query rule; `.h-screen-dvh` hand-written class
 - `app/layout.tsx` — added `viewport` export with `viewport-fit=cover`
 - `app/app/layout.tsx` — `h-screen` → `h-screen-dvh`; main `pb-[56px]` → `pb-[calc(56px+env(safe-area-inset-bottom,0px))]`
 - `app/app/workflows/[id]/_workflow-detail-view.tsx` — 5 padding sites (breadcrumb, stat bar, diagram column, runs panel, version panel) moved to `px-4 md:px-{10,7}`
 - `app/app/workflows/_workflows-view.tsx` — empty-state padding moved to `px-4 md:px-10`
-- `tests/e2e/mobile.spec.ts` — new `260831-ipj — mobile rendering regressions` test block (4 tests, contract items 1-4)
+- `components/workflows/recent-activity-strip.tsx` — stat-strip `gridTemplateColumns` and divider `display` moved from inline style to `className` (`grid-cols-1 md:grid-cols-[1fr_0.5px_1fr_0.5px_1fr]`, `hidden md:block`)
+- `components/chat/message-stream.tsx` — chat-thread header title gets `overflow:hidden/text-overflow:ellipsis/white-space:nowrap`; "here & remembering" label hidden below md
+- `tests/e2e/mobile.spec.ts` — `260831-ipj — mobile rendering regressions` test block, 7 tests total (4 for contract items 1-4, 3 for Task 8a/8b/8c)
 
 ## Decisions Made
 
@@ -116,8 +126,8 @@ See `key-decisions` in frontmatter. The two decisions worth calling out beyond t
 
 ---
 
-**Total deviations:** 3 (2 auto-worked-around tooling/environment issues, 1 deferred pre-existing unrelated failure)
-**Impact on plan:** None of the three affected the shipped fix code. No scope creep — all six findings (F1-F6) were fixed exactly as the plan specified, at their root cause.
+**Total deviations:** 3 (2 auto-worked-around tooling/environment issues, 1 deferred pre-existing unrelated failure) + Task 8 (3 additional in-scope findings from independent coordinator review, not a deviation — an explicit scope extension of the plan's own "full responsive audit" objective)
+**Impact on plan:** None of the three logged deviations affected the shipped fix code. No scope creep on F1-F6 — all six findings were fixed exactly as the plan specified, at their root cause. Task 8 (8a/8b/8c) extends the same objective to three defects the original contract didn't cover, fixed to the same standard (mobile-only, desktop pixel-identical, atomic commits).
 
 ## Verification
 
@@ -174,6 +184,60 @@ this plan's changes. The *structural* row-layout properties (`flex-direction`, `
 | `npx playwright test tests/e2e/a11y.spec.ts tests/e2e/keyboard.spec.ts` | 2 failed (pre-existing `/login` color-contrast, confirmed unrelated — see Deviations #3), 40 skipped |
 | `npx vitest run` | 568 passed, 2 skipped, 12 todo (0 failed) |
 
+### Task 8 (8a/8b/8c) — coordinator-flagged defects beyond the original F1-F6 contract
+
+Independent visual re-inspection after the F1-F6 fixes landed surfaced three additional mobile
+defects not covered by the original findings/verification contract. Fixed as Task 8, same
+standards (mobile-only, desktop pixel-identical, atomic commit per fix group).
+
+**8a — stat strip clipped on `/app/workflows`.** At 390px `gridTemplateColumns: "1fr 0.5px 1fr
+0.5px 1fr"` (inline, no breakpoint) gave each column ~110px, clipping the third stat at the
+viewport edge. Not caught by contract item 4 (`scrollWidth === clientWidth`) because it clips
+*inside* a bordered container rather than extending the document — confirmed the coordinator's
+note that this class of defect needs an explicit "is the element's right edge within the
+viewport" assertion, not a document-level overflow check.
+
+Verified at 390px: `gridTemplateColumns` computes to a single track (`"320px"`), all three stat
+rects report `right: 355` (within the 390px viewport, confirmed `thirdStatRightWithinViewport:
+true`), both dividers compute `display: none`. At 1280px: `gridTemplateColumns` computes to
+`"280.328px 0.5px 280.328px 0.5px 280.344px"` (5 tracks, `fr`-proportional — matches the original
+`1fr 0.5px 1fr 0.5px 1fr` exactly), both dividers `display: block`.
+
+**8b — chat thread header cramped the title.** No truncation on the title `<span>` meant a long
+thread title wrapped to 3 lines, squeezing "here & remembering" into a narrow column.
+
+Verified at 390px: title span computes `overflow: hidden`, `text-overflow: ellipsis`,
+`white-space: nowrap`; "here & remembering" computes `display: none`; status dot still visible
+(`display` non-`none`). At 1280px: "here & remembering" computes `display: block` (unchanged,
+visible); title row height `21px` identical at both viewports (confirms zero layout shift for
+titles that already fit — truncation is a no-op until a title is long enough to actually overflow,
+which is why applying it unconditionally rather than md-gating it, per the coordinator's explicit
+instruction, doesn't change desktop rendering for any title in the current dataset).
+
+**8c — composer hint row crowded Send.** The `<Kbd>⏎</Kbd> send · <Kbd>⇧⏎</Kbd> newline` hint is
+meaningless on a touch device (no physical Enter key) and was squeezing "remembers your store"
+into a wrapped two-line block.
+
+Verified at 390px: keyboard-hint span computes `display: none`; "remembers your store" indicator
+still visible (`display: flex`, unaffected). At 1280px: keyboard-hint span visible (non-`none`
+`display`), unchanged content/spacing (only the `display` property moved from inline style to
+`className`, all other inline properties — `fontSize`, `alignItems`, `gap` — untouched).
+
+**Desktop re-diff against `baseline-pre.json` (Task 1) after Task 8:** re-ran the same
+programmatic structural diff used for Task 7 (header padding, sidebar width/display, main
+padding, h1 font-size, composer textarea rect + font-size, all input font-sizes, `innerHeight`/
+`innerWidth`) across all 6 surfaces. **Zero differences** — Task 8's edits to
+`recent-activity-strip.tsx` and `message-stream.tsx` (both live on `/app/workflows` and
+`/app/chat/<thread>` respectively, surfaces already covered by the Task 1 baseline) introduced no
+desktop regression on any previously-tracked metric.
+
+`npx tsc --noEmit` clean; `npx vitest run` — 568 passed, 2 skipped, 12 todo (identical count to
+pre-Task-8, confirming zero unit-test regressions from the 3 component edits). Per the
+coordinator's instruction, the full `a11y.spec.ts` suite was not re-run — the pre-existing
+`/login` failure (Deviation #3 below) is unrelated to any Task 8 file and stays deferred.
+`npx playwright test tests/e2e/mobile.spec.ts --project=mobile-chrome` — 16 skipped (was 13), 0
+failed, exit 0 (3 new Task 8 tests added, same `HAS_LIVE_STACK` skip convention).
+
 ## Known Stubs
 
 None — this plan is a pure CSS/layout fix pass; no new data-fetching or UI stub surfaces were
@@ -195,11 +259,13 @@ changes are client-side layout/CSS.
 ## Next Steps
 
 Task 7 is a `checkpoint:human-verify` with `gate="blocking"` — **awaiting explicit user
-verification** before this plan can be marked complete. All 6 automated fix tasks are committed;
-the durable regression test is committed. The user should:
+verification** before this plan can be marked complete. All 6 F1-F6 fix tasks, the F1-F6 durable
+regression tests, the Task 8 (8a/8b/8c) fix, and the Task 8 durable regression tests are all
+committed. The user should:
 
 1. Open the dev server on a real phone or Chrome DevTools device toolbar at iPhone 13 (390×664)
-   and manually verify the 5-point checklist in the plan's `<how-to-verify>` block.
+   and manually verify the 5-point checklist in the plan's `<how-to-verify>` block, plus the three
+   Task 8 fixes (stat strip on `/app/workflows`, chat thread header title, composer hint row).
 2. Widen to ≥1280px and confirm desktop looks unchanged.
 3. Respond "approved" or describe what still renders wrong (surface + viewport width).
 
@@ -208,5 +274,6 @@ Follow-up quick task recommended for the pre-existing `/login` color-contrast fa
 
 ## Self-Check: PASSED
 
-All 11 modified/created source and test files confirmed present on disk. All 6 commit hashes
-(dbadb70, f481aa5, e6f286b, aa997b4, 3d0dd26, 6c24629) confirmed present in git log.
+All 13 modified/created source and test files confirmed present on disk (including Task 8's
+`recent-activity-strip.tsx` and `message-stream.tsx`). All 8 commit hashes (dbadb70, f481aa5,
+e6f286b, aa997b4, 3d0dd26, 6c24629, 949ff8b, a9cf678) confirmed present in git log.
