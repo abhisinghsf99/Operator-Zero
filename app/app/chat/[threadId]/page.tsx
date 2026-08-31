@@ -52,9 +52,8 @@ export default async function ChatThreadPage({ params }: ChatThreadPageProps) {
         Thread sidebar:
           Mobile (<md): hidden — a thread IS active, so the message stream fills full width.
           Desktop (md+): 260px, visible alongside the message stream.
-        className="hidden md:flex" uses the default inline width=260 since no width class is passed
-        (ThreadSidebar omits inline width only when className is provided — but hidden+flex
-        doesn't affect layout below md, and at md+ inline 260 applies alongside display:flex).
+        `hidden` wins the display group below md via ThreadSidebar's cn() merge (tailwind-merge
+        last-wins); `md:flex` restores the default `flex w-[260px]` at md+.
       */}
       <ThreadSidebar threads={threads} activeThreadId={threadId} className="hidden md:flex" />
 

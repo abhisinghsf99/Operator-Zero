@@ -10,11 +10,14 @@
  * Design contract: surface-conversation.jsx ThreadSidebar section.
  *
  * Mobile drill-down:
+ *   - Default classes (`flex w-[260px] shrink-0 flex-col`) live in `className`, not
+ *     inline style, so caller `className` overrides win via `cn()` (tailwind-merge
+ *     last-wins per property group) instead of losing to inline-style precedence.
  *   - When a thread is active ([threadId]/page.tsx), caller passes
  *     className="hidden md:flex" to hide the sidebar below md.
- *   - On the chat index (page.tsx), caller passes className="flex w-full md:w-[260px]"
+ *   - On the chat index (page.tsx), caller passes className="w-full md:w-[260px]"
  *     so the sidebar fills full width below md (it IS the thread list the user picks from).
- *   - Desktop (md+): sidebar is always 260px; className overrides are additive.
+ *   - Desktop (md+): sidebar is always 260px; className overrides restore that via `md:`.
  *
  * ACCESSIBILITY (WCAG 2.1 AA):
  *   - Thread list items are buttons with full keyboard nav
@@ -28,6 +31,7 @@ import { createThread } from "@/app/app/chat/actions";
 import type { ThreadListItem } from "@/app/app/chat/actions";
 import { Button, SectionHeader } from "@/components/design/primitives";
 import { Icons } from "@/components/design/icons";
+import { cn } from "@/lib/utils";
 
 interface ThreadSidebarProps {
   threads: ThreadListItem[];
@@ -71,14 +75,10 @@ export function ThreadSidebar({ threads, activeThreadId, className }: ThreadSide
 
   return (
     <aside
-      className={className}
+      className={cn("flex w-[260px] shrink-0 flex-col", className)}
       style={{
-        width: 260,
-        flexShrink: 0,
         borderRight: "0.5px solid var(--border)",
         background: "var(--bg)",
-        display: "flex",
-        flexDirection: "column",
       }}
       aria-label="Conversations"
     >
