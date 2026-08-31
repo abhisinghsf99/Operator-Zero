@@ -205,3 +205,86 @@ test.describe("UX-01 — Touch target sizes (≥44px) on mobile", () => {
     }
   );
 });
+
+// ─── 260831-ipj — mobile rendering regressions (F1-F6) ───────────────────────
+// Encodes verification-contract items 1-4 from 260831-ipj-FINDINGS.md. Runs at
+// Pixel 7 (412px logical) via --project=mobile-chrome; all four assertions
+// hold at 412px as well as the 390px width the findings were measured at.
+
+test.describe("260831-ipj — mobile rendering regressions", () => {
+  test(
+    "chat thread: sidebar hidden below md, composer reachable and preserves newlines (F1, F3)",
+    async ({ page }) => {
+      test.skip(!HAS_LIVE_STACK, "Requires live stack + auth session");
+      await page.goto("/app/chat");
+      const threadBtn = page.locator("nav[aria-label='Thread list'] button").first();
+      await expect(threadBtn).toBeVisible({ timeout: 15_000 });
+      await threadBtn.click();
+      await page.waitForURL(/\/app\/chat\//, { timeout: 30_000 });
+
+      // F1: thread sidebar must not render below md on the active-thread route
+      const aside = page.locator('aside[aria-label="Conversations"]');
+      await expect(aside).toBeHidden();
+
+      // F1: composer textarea must not be squeezed to a sliver
+      const textarea = page.locator("textarea").first();
+      await expect(textarea).toBeVisible({ timeout: 15_000 });
+      const box = await textarea.boundingBox();
+      expect(box).not.toBeNull();
+      if (box) {
+        expect(box.width).toBeGreaterThan(250);
+      }
+
+      // F3: all:"unset" must not have reset white-space away from pre-wrap
+      const whiteSpace = await textarea.evaluate((el) => getComputedStyle(el).whiteSpace);
+      expect(whiteSpace).toBe("pre-wrap");
+    }
+  );
+
+  test(
+    "all inputs and textareas compute >=16px font-size at mobile width (F4)",
+    async ({ page }) => {
+      test.skip(!HAS_LIVE_STACK, "Requires live stack + auth session");
+      for (const url of ["/app/workflows", "/app/approvals", "/app/activity", "/app/settings"]) {
+        await page.goto(url, { timeout: 30_000 });
+        const sizes = await page.$$eval("input, textarea", (els) =>
+          els.map((el) => parseFloat(getComputedStyle(el).fontSize))
+        );
+        for (const size of sizes) {
+          expect(size).toBeGreaterThanOrEqual(16);
+        }
+      }
+    }
+  );
+
+  test(
+    "SurfaceHeader title renders full-width without overlapping right actions (F2)",
+    async ({ page }) => {
+      test.skip(!HAS_LIVE_STACK, "Requires live stack + auth session");
+      for (const url of ["/app/workflows", "/app/approvals"]) {
+        await page.goto(url, { timeout: 30_000 });
+        const h1 = page.locator("h1").first();
+        await expect(h1).toBeVisible({ timeout: 15_000 });
+        const box = await h1.boundingBox();
+        expect(box).not.toBeNull();
+        if (box) {
+          expect(box.width).toBeGreaterThan(250);
+        }
+      }
+    }
+  );
+
+  test(
+    "no core surface introduces horizontal overflow at mobile width (F5, F6)",
+    async ({ page }) => {
+      test.skip(!HAS_LIVE_STACK, "Requires live stack + auth session");
+      for (const url of ["/app/workflows", "/app/approvals", "/app/activity", "/app/settings", "/app/chat"]) {
+        await page.goto(url, { timeout: 30_000 });
+        const overflow = await page.evaluate(
+          () => document.documentElement.scrollWidth - document.documentElement.clientWidth
+        );
+        expect(overflow).toBe(0);
+      }
+    }
+  );
+});
