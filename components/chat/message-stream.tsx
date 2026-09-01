@@ -419,15 +419,31 @@ export function ChatThreadView({
         </button>
         <Avatar agent size={32} />
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <span style={{ fontSize: 14, fontWeight: 500, color: "var(--text)" }}>
+          {/* 260831-ipj Task 8b: title truncates instead of wrapping to 3 lines
+              and squeezing the status text; decorative "here & remembering"
+              label hidden below md (not load-bearing on a 390px screen) —
+              status dot stays visible at every width. */}
+          <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
+            <span
+              className="min-w-0 flex-1"
+              style={{
+                fontSize: 14,
+                fontWeight: 500,
+                color: "var(--text)",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+              }}
+            >
               {headerTitle}
             </span>
             <span
-              style={{ width: 5, height: 5, borderRadius: "50%", background: "var(--success)" }}
+              style={{ width: 5, height: 5, borderRadius: "50%", background: "var(--success)", flexShrink: 0 }}
               aria-hidden="true"
             />
-            <span style={{ fontSize: 12, color: "var(--text-tertiary)" }}>here &amp; remembering</span>
+            <span className="hidden md:inline" style={{ fontSize: 12, color: "var(--text-tertiary)", flexShrink: 0 }}>
+              here &amp; remembering
+            </span>
           </div>
         </div>
         <IconButton

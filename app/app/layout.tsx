@@ -33,7 +33,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const isSandbox = (claims as { is_anonymous?: boolean } | null)?.is_anonymous === true;
 
   return (
-    <div className="flex flex-col h-screen overflow-hidden bg-[var(--bg)]">
+    <div className="flex flex-col h-screen-dvh overflow-hidden bg-[var(--bg)]">
       {/* Demo banner — rendered for the shared demo account and every sandbox visitor */}
       {isDemo && <DemoBanner variant={isSandbox ? "sandbox" : "shared"} />}
 
@@ -49,7 +49,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         <main
           id="main-content"
           className="flex-1 min-w-0 overflow-y-auto bg-[var(--bg)]
-                     pb-[56px] md:pb-0"
+                     pb-[calc(56px+env(safe-area-inset-bottom,0px))] md:pb-0"
           tabIndex={-1}
         >
           {children}

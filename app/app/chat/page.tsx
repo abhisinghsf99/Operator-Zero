@@ -41,7 +41,7 @@ export default async function ChatPage() {
       <ThreadSidebar
         threads={threads}
         activeThreadId={null}
-        className="flex !w-full md:!w-[260px]"
+        className="w-full md:w-[260px]"
       />
 
       {/*

@@ -255,8 +255,10 @@ export function Composer({
 
   const isDisabled = disabled || (streaming && queue.length >= 10);
 
+  // 260831-ipj F3: wrapper horizontal padding is responsive (px-4 md:px-8 = 32px);
+  // vertical padding stays inline (16px top, 24px bottom) — unchanged from pre-fix.
   return (
-    <div style={{ padding: "16px 32px 24px", background: "var(--bg)" }}>
+    <div className="px-4 md:px-8" style={{ paddingTop: 16, paddingBottom: 24, background: "var(--bg)" }}>
       {/* Error banner */}
       {error && (
         <div
@@ -319,7 +321,14 @@ export function Composer({
             aria-label={placeholder}
             aria-describedby={streaming ? "composer-streaming-indicator" : undefined}
             style={{
-              all: "unset",
+              border: "none",
+              outline: "none",
+              padding: 0,
+              margin: 0,
+              appearance: "none",
+              boxShadow: "none",
+              whiteSpace: "pre-wrap",
+              overflowY: "auto",
               width: "100%",
               minHeight: 40,
               maxHeight: 140,
@@ -354,11 +363,14 @@ export function Composer({
 
             {/* Right: keyboard hints + send */}
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              {/* 260831-ipj Task 8c: no physical Enter key on touch devices —
+                  hint is useless below md and was squeezing "remembers your
+                  store" into a wrapped two-line block next to Send. */}
               <span
+                className="hidden md:inline-flex"
                 style={{
                   fontSize: 11,
                   color: "var(--text-tertiary)",
-                  display: "inline-flex",
                   alignItems: "center",
                   gap: 6,
                 }}

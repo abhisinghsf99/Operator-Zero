@@ -386,8 +386,8 @@ export function SurfaceHeader({
         background: "var(--bg)",
       }}
     >
-      <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 24 }}>
-        <div style={{ display: "flex", flexDirection: "column", gap: 4, minWidth: 0 }}>
+      <div className="flex flex-col items-stretch gap-3 md:flex-row md:items-end md:justify-between md:gap-6">
+        <div className="min-w-0 flex-1" style={{ display: "flex", flexDirection: "column", gap: 4, minWidth: 0 }}>
           {kicker && (
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
               <span style={{ width: 6, height: 6, borderRadius: "50%", background: `var(--acc-${accent}-ink)` }} />
@@ -406,8 +406,8 @@ export function SurfaceHeader({
             </div>
           )}
           <h1
-            className="display"
-            style={{ fontSize: 38, margin: 0, color: "var(--text)", lineHeight: 1.05, letterSpacing: "-0.02em" }}
+            className="display text-[28px] md:text-[38px]"
+            style={{ margin: 0, color: "var(--text)", lineHeight: 1.05, letterSpacing: "-0.02em" }}
           >
             {title}
           </h1>
@@ -417,7 +417,7 @@ export function SurfaceHeader({
             </p>
           )}
         </div>
-        {right && <div style={{ display: "flex", alignItems: "center", gap: 8 }}>{right}</div>}
+        {right && <div className="w-full shrink-0 md:w-auto" style={{ display: "flex", alignItems: "center", gap: 8 }}>{right}</div>}
       </div>
       {children}
     </header>

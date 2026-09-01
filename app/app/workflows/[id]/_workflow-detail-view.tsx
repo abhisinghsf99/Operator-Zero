@@ -136,7 +136,7 @@ export function WorkflowDetailView({
       data-testid="workflow-detail-view"
     >
       {/* Breadcrumb — ChevronLeft icon matching design */}
-      <div style={{ padding: "20px 40px 0", display: "flex", alignItems: "center", gap: 8 }}>
+      <div className="px-4 md:px-10" style={{ paddingTop: 20, paddingBottom: 0, display: "flex", alignItems: "center", gap: 8 }}>
         <Link
           href="/app/workflows"
           style={{
@@ -163,8 +163,10 @@ export function WorkflowDetailView({
 
       {/* 5-stat bar */}
       <div
+        className="px-4 md:px-10"
         style={{
-          padding: "16px 40px",
+          paddingTop: 16,
+          paddingBottom: 16,
           display: "grid",
           gridTemplateColumns: "repeat(5, 1fr)",
           gap: 24,
@@ -207,7 +209,7 @@ export function WorkflowDetailView({
         }}
       >
         {/* Left: workflow definition diagram */}
-        <div style={{ padding: "32px 40px 60px", overflow: "auto" }}>
+        <div className="px-4 md:px-10" style={{ paddingTop: 32, paddingBottom: 60, overflow: "auto" }}>
           <SectionHeader
             right={
               <Link
@@ -259,7 +261,7 @@ export function WorkflowDetailView({
           }}
         >
           {/* Historical runs panel (Realtime) */}
-          <div style={{ flex: 1, padding: "32px 28px 0", overflow: "auto" }}>
+          <div className="px-4 md:px-7" style={{ flex: 1, paddingTop: 32, paddingBottom: 0, overflow: "auto" }}>
             <HistoricalRunsPanel
               workflowId={workflow.id}
               initialRuns={runs}
@@ -268,7 +270,7 @@ export function WorkflowDetailView({
           </div>
 
           {/* Version history panel */}
-          <div style={{ padding: "0 28px 32px" }}>
+          <div className="px-4 md:px-7" style={{ paddingTop: 0, paddingBottom: 32 }}>
             <VersionHistoryPanel
               workflowId={workflow.id}
               versions={versions}

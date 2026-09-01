@@ -205,7 +205,7 @@ function WorkflowsEmptyState({ onNewWorkflow }: { onNewWorkflow: () => void }) {
         accent="workflow"
       />
 
-      <div style={{ padding: "40px", display: "flex", justifyContent: "center" }}>
+      <div className="px-4 md:px-10" style={{ paddingTop: 40, paddingBottom: 40, display: "flex", justifyContent: "center" }}>
         <div
           style={{
             maxWidth: 520,

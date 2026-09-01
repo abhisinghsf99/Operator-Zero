@@ -205,15 +205,21 @@ export function RecentActivityStrip({ stats, userId }: RecentActivityStripProps)
 
   return (
     <div>
-      {/* Three-stat grid */}
+      {/* Three-stat grid — 260831-ipj Task 8a: gridTemplateColumns moved to
+          className (grid-cols-1 stacked below md, restores the original
+          "1fr 0.5px 1fr 0.5px 1fr" 5-track layout at md+) so the third stat
+          ("Time saved this week") is no longer clipped at the 390px edge.
+          Divider display also moved to className — an inline display:"block"
+          here would beat a "hidden" utility exactly like the F1 bug (thread
+          sidebar), so dividers (meaningless in a stacked column) are hidden
+          via className, not inline style. */}
       <div
+        className="grid grid-cols-1 md:grid-cols-[1fr_0.5px_1fr_0.5px_1fr]"
         style={{
           padding: "16px 18px",
           background: "var(--bg-elevated)",
           border: "0.5px solid var(--border)",
           borderRadius: "var(--r-lg)",
-          display: "grid",
-          gridTemplateColumns: "1fr 0.5px 1fr 0.5px 1fr",
           gap: 18,
           alignItems: "center",
         }}
@@ -232,7 +238,8 @@ export function RecentActivityStrip({ stats, userId }: RecentActivityStripProps)
 
         {/* Divider */}
         <span
-          style={{ background: "var(--border)", height: 40, display: "block" }}
+          className="hidden md:block"
+          style={{ background: "var(--border)", height: 40 }}
           aria-hidden="true"
         />
 
@@ -248,7 +255,8 @@ export function RecentActivityStrip({ stats, userId }: RecentActivityStripProps)
 
         {/* Divider */}
         <span
-          style={{ background: "var(--border)", height: 40, display: "block" }}
+          className="hidden md:block"
+          style={{ background: "var(--border)", height: 40 }}
           aria-hidden="true"
         />
 
