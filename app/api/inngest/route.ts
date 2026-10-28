@@ -26,6 +26,7 @@ import { exportAccountData } from "@/lib/inngest/functions/export-account-data";
 import { purgeAccount } from "@/lib/inngest/functions/purge-account";
 import { sandboxSweep } from "@/lib/inngest/functions/sandbox-sweep";
 import { sandboxExit } from "@/lib/inngest/functions/sandbox-exit";
+import { redisKeepalive } from "@/lib/inngest/functions/redis-keepalive";
 
 export const { GET, POST, PUT } = serve({
   client: inngest,
@@ -43,5 +44,6 @@ export const { GET, POST, PUT } = serve({
     purgeAccount,
     sandboxSweep,
     sandboxExit,
+    redisKeepalive,
   ],
 });
