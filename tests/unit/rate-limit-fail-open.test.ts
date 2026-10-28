@@ -33,7 +33,7 @@ describe("failOpen", () => {
     );
     await l.limit("1.2.3.4");
     expect(spy).toHaveBeenCalledTimes(1);
-    const raw = spy.mock.calls[0][0] as string;
+    const raw = spy.mock.calls[0]![0] as string;
     const parsed = JSON.parse(raw);
     expect(parsed.level).toBe("error");
     expect(parsed.event).toBe("ratelimit.redis_unavailable");
@@ -48,7 +48,7 @@ describe("failOpen", () => {
     const l = failOpen(fake(vi.fn().mockRejectedValue("WRONGPASS")), "chat");
     const res = await l.limit("user-1");
     expect(res.success).toBe(true);
-    const parsed = JSON.parse(spy.mock.calls[0][0] as string);
+    const parsed = JSON.parse(spy.mock.calls[0]![0] as string);
     expect(parsed.limiter).toBe("chat");
     expect(parsed.error).toBe("WRONGPASS");
   });
