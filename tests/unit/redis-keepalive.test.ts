@@ -40,7 +40,7 @@ describe("writeKeepalive", () => {
     expect(KEEPALIVE_TTL_SECONDS).toBe(604800);
     expect(result).toEqual({ ok: true, key: "oz:keepalive", at: NOW.toISOString() });
     expect(info).toHaveBeenCalledTimes(1);
-    expect(JSON.parse(info.mock.calls[0][0] as string)).toMatchObject({
+    expect(JSON.parse(info.mock.calls[0]![0] as string)).toMatchObject({
       level: "info",
       event: "redis.keepalive.ok",
       key: "oz:keepalive",
@@ -57,7 +57,7 @@ describe("writeKeepalive", () => {
     await expect(writeKeepalive(redis, NOW)).rejects.toBe(err);
     expect(info).not.toHaveBeenCalled();
     expect(error).toHaveBeenCalledTimes(1);
-    expect(JSON.parse(error.mock.calls[0][0] as string)).toMatchObject({
+    expect(JSON.parse(error.mock.calls[0]![0] as string)).toMatchObject({
       level: "error",
       event: "redis.keepalive.failed",
       key: "oz:keepalive",
@@ -72,7 +72,7 @@ describe("writeKeepalive", () => {
 
     await expect(writeKeepalive(redis, NOW)).rejects.toBe("boom");
     expect(info).not.toHaveBeenCalled();
-    expect(JSON.parse(error.mock.calls[0][0] as string)).toMatchObject({
+    expect(JSON.parse(error.mock.calls[0]![0] as string)).toMatchObject({
       error: "boom",
     });
   });
