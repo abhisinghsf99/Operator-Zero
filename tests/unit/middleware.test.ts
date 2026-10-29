@@ -24,11 +24,15 @@ import { NextRequest, NextResponse } from "next/server";
 // place when updateSession() calls createServerClient().
 
 const mockGetClaims = vi.fn();
+const mockGetUser = vi.fn();
+const mockSignOut = vi.fn();
 
 vi.mock("@supabase/ssr", () => ({
   createServerClient: vi.fn(() => ({
     auth: {
       getClaims: mockGetClaims,
+      getUser: mockGetUser,
+      signOut: mockSignOut,
     },
   })),
 }));
@@ -239,5 +243,60 @@ describe("updateSession — route guard", () => {
     // Middleware allows authenticated /onboarding (page RSC handles completion check)
     expect(response.status).toBe(200);
     expect(response.headers.get("Location")).toBeNull();
+  });
+});
+
+describe("updateSession — stale sandbox session (Guard 3)", () => {
+  const ANON_CLAIMS = { ...FAKE_CLAIMS, is_anonymous: true };
+  const claimsResult = (claims: object) => ({
+    data: { claims, header: { alg: "RS256", typ: "JWT" }, signature: new Uint8Array(0) },
+    error: null,
+  });
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockSignOut.mockResolvedValue({ error: null });
+  });
+
+  it("anonymous claims + deleted user + /app/workflows -> signs out, redirects to /login", async () => {
+    mockGetClaims.mockResolvedValueOnce(claimsResult(ANON_CLAIMS));
+    mockGetUser.mockResolvedValueOnce({
+      data: { user: null },
+      error: { message: "User from sub claim in JWT does not exist", status: 403 },
+    });
+
+    const response = await updateSession(buildRequest("/app/workflows"));
+
+    expect(mockSignOut).toHaveBeenCalledWith({ scope: "local" });
+    expect(response.status).toBe(307);
+    expect(response.headers.get("Location")).toMatch(/\/login$/);
+  });
+
+  it("anonymous claims + live user + /app/workflows -> pass-through", async () => {
+    mockGetClaims.mockResolvedValueOnce(claimsResult(ANON_CLAIMS));
+    mockGetUser.mockResolvedValueOnce({ data: { user: { id: ANON_CLAIMS.sub } }, error: null });
+
+    const response = await updateSession(buildRequest("/app/workflows"));
+
+    expect(mockSignOut).not.toHaveBeenCalled();
+    expect(response.status).toBe(200);
+  });
+
+  it("non-anonymous claims -> never calls getUser (no extra round-trip)", async () => {
+    mockGetClaims.mockResolvedValueOnce(claimsResult(FAKE_CLAIMS));
+
+    const response = await updateSession(buildRequest("/app/workflows"));
+
+    expect(mockGetUser).not.toHaveBeenCalled();
+    expect(response.status).toBe(200);
+  });
+
+  it("anonymous claims on a public path (/login) -> never calls getUser", async () => {
+    mockGetClaims.mockResolvedValueOnce(claimsResult(ANON_CLAIMS));
+
+    const response = await updateSession(buildRequest("/login"));
+
+    expect(mockGetUser).not.toHaveBeenCalled();
+    expect(response.status).toBe(200);
   });
 });
