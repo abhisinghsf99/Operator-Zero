@@ -112,6 +112,25 @@ export async function updateSession(request: NextRequest): Promise<NextResponse>
     return NextResponse.redirect(loginUrl, { status: 307 });
   }
 
+  // Guard 3: Stale sandbox session → sign out + /login.
+  // Sandbox (anonymous) users are hard-deleted by the beacon / TTL sweep, but
+  // their JWT stays locally valid until expiry, so getClaims() still passes and
+  // the first DB write FK-fails. For anonymous claims only, confirm the user
+  // still exists server-side; if not, clear the session cookies and bounce.
+  const isAnonymous = (claims as { is_anonymous?: boolean } | null)?.is_anonymous === true;
+  if (isAnonymous && (isAppRoute || isOnboardingRoute)) {
+    const { data: userData, error: userError } = await supabase.auth.getUser();
+    if (userError || !userData?.user) {
+      // signOut() clears cookies via setAll → lands on supabaseResponse.
+      await supabase.auth.signOut({ scope: "local" });
+      const loginUrl = request.nextUrl.clone();
+      loginUrl.pathname = "/login";
+      const redirect = NextResponse.redirect(loginUrl, { status: 307 });
+      supabaseResponse.cookies.getAll().forEach((cookie) => redirect.cookies.set(cookie));
+      return redirect;
+    }
+  }
+
   // Return the response carrying refreshed session cookies.
   return supabaseResponse;
 }
